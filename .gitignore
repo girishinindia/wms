@@ -1,0 +1,70 @@
+# Next.js portal + API.
+# https://help.github.com/articles/ignoring-files/
+
+# ── Dependencies ──────────────────────────────────────────────
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# ── Build output ──────────────────────────────────────────────
+/.next/
+/out/
+/build
+*.tsbuildinfo
+next-env.d.ts
+
+# ── Environment ───────────────────────────────────────────────
+# .env holds the live Supabase password and the Better Auth secret.
+# .env.example is the annotated template and is the ONLY one committed.
+.env
+.env.*
+!.env.example
+
+# ── Testing ───────────────────────────────────────────────────
+/coverage
+/playwright-report
+/test-results
+/.nyc_output
+
+# ── Hosting ───────────────────────────────────────────────────
+.vercel
+.netlify
+
+# ── Misc ──────────────────────────────────────────────────────
+.DS_Store
+*.pem
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ── OS ────────────────────────────────────────────────────────
+# This repo stands alone — there is no parent .gitignore covering
+# these, so every rule the project needs lives in this file.
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# ── Editors ───────────────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+*~
+
+# ── Scratch ───────────────────────────────────────────────────
+*.log
+tmp/
+.cache/
+.turbo/
