@@ -34,15 +34,30 @@ const fullSchema = { ...schema, ...relations };
 
 type Client = ReturnType<typeof postgres>;
 
-// Next's dev server re-evaluates modules on every edit. Without a global
-// the pool is recreated on each hot reload until the pooler stops
-// accepting new connections.
 type Db = PostgresJsDatabase<typeof fullSchema>;
 
+/**
+ * The pool is a module-level singleton, and in development it also hangs
+ * off globalThis.
+ *
+ * Both parts matter, for different reasons:
+ *
+ *   - Module scope alone is not enough in DEV, because Next re-evaluates
+ *     modules on every edit and each evaluation would open a new pool.
+ *   - globalThis alone is not enough in PRODUCTION. An earlier version of
+ *     this file assigned the global only when NODE_ENV !== "production",
+ *     so `getSql()` built a brand-new postgres client on EVERY call once
+ *     deployed. It surfaced as "sorry, too many clients already" under an
+ *     end-to-end run — not at boot, and never in dev, which is exactly
+ *     the kind of bug that reaches production.
+ */
 const globalForDb = globalThis as unknown as {
   __wmsSql?: Client;
   __wmsDb?: Db;
 };
+
+let sqlSingleton: Client | undefined;
+let dbSingleton: Db | undefined;
 
 function createClient(): Client {
   const url = process.env.DATABASE_URL;
@@ -73,18 +88,47 @@ function createClient(): Client {
     ssl,
     connect_timeout: 10,
     idle_timeout: 20,
+    /**
+     * int8 (bigint) arrives as a STRING by default, because 2^63 does not
+     * fit a JS number. Every primary key in this schema is
+     * `bigint generated always as identity`, so without this every id in
+     * every API response is a string — which contradicts the OpenAPI
+     * document (`z.number().int()`) and makes `id === 5` quietly false.
+     *
+     * Parsed to a number, with a guard: identity columns start at 1 and
+     * would need 9 quadrillion rows to reach MAX_SAFE_INTEGER, so the
+     * throw is unreachable in practice and precise if it ever is not.
+     */
+    types: {
+      bigint: {
+        to: 20,
+        from: [20],
+        serialize: (value: number | bigint) => value.toString(),
+        parse: (value: string) => {
+          const n = Number(value);
+          if (!Number.isSafeInteger(n)) {
+            throw new Error(
+              `bigint ${value} exceeds Number.MAX_SAFE_INTEGER; this column ` +
+                `needs { mode: "bigint" } in schema.ts`,
+            );
+          }
+          return n;
+        },
+      },
+    },
   });
 }
 
 export function getSql(): Client {
-  const client = globalForDb.__wmsSql ?? createClient();
-  if (process.env.NODE_ENV !== "production") globalForDb.__wmsSql = client;
-  return client;
+  sqlSingleton ??= globalForDb.__wmsSql ?? createClient();
+  // Survive hot reload in dev; harmless in production, where the module
+  // is evaluated once.
+  globalForDb.__wmsSql = sqlSingleton;
+  return sqlSingleton;
 }
 
 export function getDb(): Db {
-  const instance =
-    globalForDb.__wmsDb ?? drizzle(getSql(), { schema: fullSchema });
-  if (process.env.NODE_ENV !== "production") globalForDb.__wmsDb = instance;
-  return instance;
+  dbSingleton ??= globalForDb.__wmsDb ?? drizzle(getSql(), { schema: fullSchema });
+  globalForDb.__wmsDb = dbSingleton;
+  return dbSingleton;
 }

@@ -1,0 +1,6584 @@
+{
+  "id": "529cd3cd-bf8b-459e-9c9d-9b2776cb2343",
+  "prevId": "98c7aa10-5b7d-4ae9-a30d-114beba13a08",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "wms.city": {
+      "name": "city",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.city_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "state_id": {
+          "name": "state_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "city_state_idx": {
+          "name": "city_state_idx",
+          "columns": [
+            {
+              "expression": "state_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "city_state_id_fkey": {
+          "name": "city_state_id_fkey",
+          "tableFrom": "city",
+          "tableTo": "state",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "state_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "city_created_by_fkey": {
+          "name": "city_created_by_fkey",
+          "tableFrom": "city",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "city_updated_by_fkey": {
+          "name": "city_updated_by_fkey",
+          "tableFrom": "city",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "city_deleted_by_fkey": {
+          "name": "city_deleted_by_fkey",
+          "tableFrom": "city",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "deleted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "city_state_id_name_key": {
+          "name": "city_state_id_name_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "state_id",
+            "name"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "wms.country": {
+      "name": "country",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.country_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "iso2": {
+          "name": "iso2",
+          "type": "char(2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "iso3": {
+          "name": "iso3",
+          "type": "char(3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phone_code": {
+          "name": "phone_code",
+          "type": "varchar(6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency_code": {
+          "name": "currency_code",
+          "type": "char(3)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "country_created_by_fkey": {
+          "name": "country_created_by_fkey",
+          "tableFrom": "country",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "country_updated_by_fkey": {
+          "name": "country_updated_by_fkey",
+          "tableFrom": "country",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "country_deleted_by_fkey": {
+          "name": "country_deleted_by_fkey",
+          "tableFrom": "country",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "deleted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "country_iso2_key": {
+          "name": "country_iso2_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "iso2"
+          ]
+        },
+        "country_iso3_key": {
+          "name": "country_iso3_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "iso3"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "wms.importer_client": {
+      "name": "importer_client",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.importer_client_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "importer_id": {
+          "name": "importer_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_name": {
+          "name": "legal_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gstin": {
+          "name": "gstin",
+          "type": "wms.gstin",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_person": {
+          "name": "contact_person",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_mobile": {
+          "name": "contact_mobile",
+          "type": "wms.mobile_in",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contact_email": {
+          "name": "contact_email",
+          "type": "citext",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "landmark": {
+          "name": "landmark",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "city_id": {
+          "name": "city_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pincode": {
+          "name": "pincode",
+          "type": "wms.pincode_in",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "record_status",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ACTIVE'"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "importer_client_city_idx": {
+          "name": "importer_client_city_idx",
+          "columns": [
+            {
+              "expression": "city_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "importer_client_idx": {
+          "name": "importer_client_idx",
+          "columns": [
+            {
+              "expression": "importer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(deleted_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "importer_client_name_trgm": {
+          "name": "importer_client_name_trgm",
+          "columns": [
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "gin_trgm_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "importer_client_importer_id_fkey": {
+          "name": "importer_client_importer_id_fkey",
+          "tableFrom": "importer_client",
+          "tableTo": "importer",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "importer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "importer_client_city_id_fkey": {
+          "name": "importer_client_city_id_fkey",
+          "tableFrom": "importer_client",
+          "tableTo": "city",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "city_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "importer_client_created_by_fkey": {
+          "name": "importer_client_created_by_fkey",
+          "tableFrom": "importer_client",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "importer_client_updated_by_fkey": {
+          "name": "importer_client_updated_by_fkey",
+          "tableFrom": "importer_client",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "importer_client_deleted_by_fkey": {
+          "name": "importer_client_deleted_by_fkey",
+          "tableFrom": "importer_client",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "deleted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "importer_client_importer_id_code_key": {
+          "name": "importer_client_importer_id_code_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "importer_id",
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "wms.importer": {
+      "name": "importer",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.importer_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "company_name": {
+          "name": "company_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_name": {
+          "name": "legal_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trade_name": {
+          "name": "trade_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "landmark": {
+          "name": "landmark",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "area": {
+          "name": "area",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "city_id": {
+          "name": "city_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pincode": {
+          "name": "pincode",
+          "type": "wms.pincode_in",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gstin": {
+          "name": "gstin",
+          "type": "wms.gstin",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pan": {
+          "name": "pan",
+          "type": "wms.pan_no",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_person": {
+          "name": "contact_person",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contact_email": {
+          "name": "contact_email",
+          "type": "citext",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contact_mobile": {
+          "name": "contact_mobile",
+          "type": "wms.mobile_in",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alternate_mobile": {
+          "name": "alternate_mobile",
+          "type": "wms.mobile_in",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "credit_limit": {
+          "name": "credit_limit",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "credit_days": {
+          "name": "credit_days",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "payment_terms": {
+          "name": "payment_terms",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "currency_code": {
+          "name": "currency_code",
+          "type": "char(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'INR'"
+        },
+        "billing_cycle": {
+          "name": "billing_cycle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'MONTHLY'"
+        },
+        "is_credit_blocked": {
+          "name": "is_credit_blocked",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "credit_block_reason": {
+          "name": "credit_block_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "record_status",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "kyc_status": {
+          "name": "kyc_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'NOT_STARTED'"
+        },
+        "kyc_submitted_at": {
+          "name": "kyc_submitted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_by": {
+          "name": "approved_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejected_by": {
+          "name": "rejected_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejected_at": {
+          "name": "rejected_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rejection_reason": {
+          "name": "rejection_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suspended_reason": {
+          "name": "suspended_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "importer_approved_by_idx": {
+          "name": "importer_approved_by_idx",
+          "columns": [
+            {
+              "expression": "approved_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(approved_by IS NOT NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "importer_city_fk_idx": {
+          "name": "importer_city_fk_idx",
+          "columns": [
+            {
+              "expression": "city_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "importer_created_by_idx": {
+          "name": "importer_created_by_idx",
+          "columns": [
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(created_by IS NOT NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "importer_gstin_uk": {
+          "name": "importer_gstin_uk",
+          "columns": [
+            {
+              "expression": "gstin",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "bpchar_ops"
+            }
+          ],
+          "isUnique": true,
+          "where": "((gstin IS NOT NULL) AND (deleted_at IS NULL))",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "importer_kyc_idx": {
+          "name": "importer_kyc_idx",
+          "columns": [
+            {
+              "expression": "kyc_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(deleted_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "importer_kyc_queue_idx": {
+          "name": "importer_kyc_queue_idx",
+          "columns": [
+            {
+              "expression": "kyc_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "((deleted_at IS NULL) AND (kyc_status = ANY (ARRAY['SUBMITTED'::text, 'UNDER_REVIEW'::text])))",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "importer_name_trgm": {
+          "name": "importer_name_trgm",
+          "columns": [
+            {
+              "expression": "company_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "gin_trgm_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "importer_pan_uk": {
+          "name": "importer_pan_uk",
+          "columns": [
+            {
+              "expression": "pan",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "bpchar_ops"
+            }
+          ],
+          "isUnique": true,
+          "where": "((pan IS NOT NULL) AND (deleted_at IS NULL))",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "importer_pending_idx": {
+          "name": "importer_pending_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "((deleted_at IS NULL) AND (status = 'PENDING'::wms.record_status))",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "importer_status_idx": {
+          "name": "importer_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(deleted_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "importer_city_id_fkey": {
+          "name": "importer_city_id_fkey",
+          "tableFrom": "importer",
+          "tableTo": "city",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "city_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "importer_approved_by_fkey": {
+          "name": "importer_approved_by_fkey",
+          "tableFrom": "importer",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "approved_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "importer_rejected_by_fkey": {
+          "name": "importer_rejected_by_fkey",
+          "tableFrom": "importer",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "rejected_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "importer_created_by_fkey": {
+          "name": "importer_created_by_fkey",
+          "tableFrom": "importer",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "importer_updated_by_fkey": {
+          "name": "importer_updated_by_fkey",
+          "tableFrom": "importer",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "importer_deleted_by_fkey": {
+          "name": "importer_deleted_by_fkey",
+          "tableFrom": "importer",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "deleted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "importer_code_key": {
+          "name": "importer_code_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "importer_entity_type_check": {
+          "name": "importer_entity_type_check",
+          "value": "entity_type = ANY (ARRAY['PROPRIETORSHIP'::text, 'PARTNERSHIP'::text, 'LLP'::text, 'PRIVATE_LIMITED'::text, 'PUBLIC_LIMITED'::text, 'HUF'::text, 'TRUST'::text, 'SOCIETY'::text, 'GOVERNMENT'::text])"
+        },
+        "importer_billing_cycle_check": {
+          "name": "importer_billing_cycle_check",
+          "value": "billing_cycle = ANY (ARRAY['WEEKLY'::text, 'FORTNIGHTLY'::text, 'MONTHLY'::text, 'PER_TRANSACTION'::text])"
+        },
+        "importer_origin_check": {
+          "name": "importer_origin_check",
+          "value": "origin = ANY (ARRAY['SELF_REGISTERED'::text, 'CREATED_BY_ADMIN'::text])"
+        },
+        "importer_kyc_status_check": {
+          "name": "importer_kyc_status_check",
+          "value": "kyc_status = ANY (ARRAY['NOT_STARTED'::text, 'SUBMITTED'::text, 'UNDER_REVIEW'::text, 'VERIFIED'::text, 'REJECTED'::text])"
+        },
+        "importer_check": {
+          "name": "importer_check",
+          "value": "((origin = 'SELF_REGISTERED'::text) AND (created_by IS NULL)) OR ((origin = 'CREATED_BY_ADMIN'::text) AND (created_by IS NOT NULL))"
+        },
+        "importer_check1": {
+          "name": "importer_check1",
+          "value": "(status <> 'REJECTED'::wms.record_status) OR (rejection_reason IS NOT NULL)"
+        },
+        "importer_check2": {
+          "name": "importer_check2",
+          "value": "(NOT is_credit_blocked) OR (credit_block_reason IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.notification_delivery": {
+      "name": "notification_delivery",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.notification_delivery_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "notification_id": {
+          "name": "notification_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "notif_channel",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "delivery_status",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'PENDING'"
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_message_id": {
+          "name": "provider_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_response": {
+          "name": "provider_response",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "max_attempts": {
+          "name": "max_attempts",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 3
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scheduled_for": {
+          "name": "scheduled_for",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "next_retry_at": {
+          "name": "next_retry_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failed_at": {
+          "name": "failed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cost_paise": {
+          "name": "cost_paise",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "notif_delivery_due_idx": {
+          "name": "notif_delivery_due_idx",
+          "columns": [
+            {
+              "expression": "scheduled_for",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(status = ANY (ARRAY['PENDING'::wms.delivery_status, 'QUEUED'::wms.delivery_status]))",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notif_delivery_notification_idx": {
+          "name": "notif_delivery_notification_idx",
+          "columns": [
+            {
+              "expression": "notification_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notif_delivery_provider_uk": {
+          "name": "notif_delivery_provider_uk",
+          "columns": [
+            {
+              "expression": "provider",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            },
+            {
+              "expression": "provider_message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": true,
+          "where": "(provider_message_id IS NOT NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notif_delivery_retry_idx": {
+          "name": "notif_delivery_retry_idx",
+          "columns": [
+            {
+              "expression": "next_retry_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(status = 'FAILED'::wms.delivery_status)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notif_delivery_worker_idx": {
+          "name": "notif_delivery_worker_idx",
+          "columns": [
+            {
+              "expression": "scheduled_for",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            },
+            {
+              "expression": "channel",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(status = ANY (ARRAY['PENDING'::wms.delivery_status, 'QUEUED'::wms.delivery_status]))",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "notification_delivery_notification_id_fkey": {
+          "name": "notification_delivery_notification_id_fkey",
+          "tableFrom": "notification_delivery",
+          "tableTo": "notification",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "notification_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "wms.notification_event": {
+      "name": "notification_event",
+      "schema": "wms",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "module": {
+          "name": "module",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload_schema": {
+          "name": "payload_schema",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "default_priority": {
+          "name": "default_priority",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 5
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "wms.notification": {
+      "name": "notification",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.notification_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "event_key": {
+          "name": "event_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rule_id": {
+          "name": "rule_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recipient_user_id": {
+          "name": "recipient_user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "warehouse_id": {
+          "name": "warehouse_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "importer_id": {
+          "name": "importer_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action_url": {
+          "name": "action_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "priority": {
+          "name": "priority",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 5
+        },
+        "correlation_id": {
+          "name": "correlation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dedupe_key": {
+          "name": "dedupe_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "read_at": {
+          "name": "read_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "notification_actor_idx": {
+          "name": "notification_actor_idx",
+          "columns": [
+            {
+              "expression": "actor_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(actor_user_id IS NOT NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notification_correlation_idx": {
+          "name": "notification_correlation_idx",
+          "columns": [
+            {
+              "expression": "correlation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(correlation_id IS NOT NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notification_dedupe_uk": {
+          "name": "notification_dedupe_uk",
+          "columns": [
+            {
+              "expression": "dedupe_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notification_entity_idx": {
+          "name": "notification_entity_idx",
+          "columns": [
+            {
+              "expression": "entity_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            },
+            {
+              "expression": "entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notification_event_fk_idx": {
+          "name": "notification_event_fk_idx",
+          "columns": [
+            {
+              "expression": "event_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notification_feed_idx": {
+          "name": "notification_feed_idx",
+          "columns": [
+            {
+              "expression": "recipient_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first",
+              "opclass": "timestamptz_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notification_imp_idx": {
+          "name": "notification_imp_idx",
+          "columns": [
+            {
+              "expression": "importer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(importer_id IS NOT NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notification_rule_fk_idx": {
+          "name": "notification_rule_fk_idx",
+          "columns": [
+            {
+              "expression": "rule_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notification_unread_idx": {
+          "name": "notification_unread_idx",
+          "columns": [
+            {
+              "expression": "recipient_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first",
+              "opclass": "timestamptz_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(read_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notification_wh_idx": {
+          "name": "notification_wh_idx",
+          "columns": [
+            {
+              "expression": "warehouse_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(warehouse_id IS NOT NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "notification_event_key_fkey": {
+          "name": "notification_event_key_fkey",
+          "tableFrom": "notification",
+          "tableTo": "notification_event",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "event_key"
+          ],
+          "columnsTo": [
+            "key"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "notification_rule_id_fkey": {
+          "name": "notification_rule_id_fkey",
+          "tableFrom": "notification",
+          "tableTo": "notification_rule",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "rule_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "notification_recipient_user_id_fkey": {
+          "name": "notification_recipient_user_id_fkey",
+          "tableFrom": "notification",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "recipient_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "notification_actor_user_id_fkey": {
+          "name": "notification_actor_user_id_fkey",
+          "tableFrom": "notification",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "notification_warehouse_id_fkey": {
+          "name": "notification_warehouse_id_fkey",
+          "tableFrom": "notification",
+          "tableTo": "warehouse",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "warehouse_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "notification_importer_id_fkey": {
+          "name": "notification_importer_id_fkey",
+          "tableFrom": "notification",
+          "tableTo": "importer",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "importer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "notification_priority_check": {
+          "name": "notification_priority_check",
+          "value": "(priority >= 1) AND (priority <= 9)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.notification_preference": {
+      "name": "notification_preference",
+      "schema": "wms",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_key": {
+          "name": "event_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "notif_channel",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "notif_pref_event_idx": {
+          "name": "notif_pref_event_idx",
+          "columns": [
+            {
+              "expression": "event_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "notification_preference_user_id_fkey": {
+          "name": "notification_preference_user_id_fkey",
+          "tableFrom": "notification_preference",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "notification_preference_event_key_fkey": {
+          "name": "notification_preference_event_key_fkey",
+          "tableFrom": "notification_preference",
+          "tableTo": "notification_event",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "event_key"
+          ],
+          "columnsTo": [
+            "key"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "notification_preference_pkey": {
+          "name": "notification_preference_pkey",
+          "columns": [
+            "user_id",
+            "event_key",
+            "channel"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "wms.notification_quiet_hours": {
+      "name": "notification_quiet_hours",
+      "schema": "wms",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "start_time": {
+          "name": "start_time",
+          "type": "time",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'22:00:00'"
+        },
+        "end_time": {
+          "name": "end_time",
+          "type": "time",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'07:00:00'"
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Asia/Kolkata'"
+        },
+        "applies_to": {
+          "name": "applies_to",
+          "type": "wms.notif_channel[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"SMS\",\"PUSH\"}'"
+        },
+        "is_enabled": {
+          "name": "is_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "notification_quiet_hours_user_id_fkey": {
+          "name": "notification_quiet_hours_user_id_fkey",
+          "tableFrom": "notification_quiet_hours",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "wms.notification_rule": {
+      "name": "notification_rule",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.notification_rule_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "event_key": {
+          "name": "event_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "audience": {
+          "name": "audience",
+          "type": "notif_audience",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role_filter": {
+          "name": "role_filter",
+          "type": "role_key",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "channels": {
+          "name": "channels",
+          "type": "wms.notif_channel[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{\"IN_APP\"}'"
+        },
+        "is_mandatory": {
+          "name": "is_mandatory",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "condition": {
+          "name": "condition",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delay_minutes": {
+          "name": "delay_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "notif_rule_role_idx": {
+          "name": "notif_rule_role_idx",
+          "columns": [
+            {
+              "expression": "role_filter",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(role_filter IS NOT NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notification_rule_event_idx": {
+          "name": "notification_rule_event_idx",
+          "columns": [
+            {
+              "expression": "event_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "is_active",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notification_rule_uk": {
+          "name": "notification_rule_uk",
+          "columns": [
+            {
+              "expression": "event_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            },
+            {
+              "expression": "audience",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            },
+            {
+              "expression": "role_filter",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "notification_rule_event_key_fkey": {
+          "name": "notification_rule_event_key_fkey",
+          "tableFrom": "notification_rule",
+          "tableTo": "notification_event",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "event_key"
+          ],
+          "columnsTo": [
+            "key"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "notification_rule_role_filter_fkey": {
+          "name": "notification_rule_role_filter_fkey",
+          "tableFrom": "notification_rule",
+          "tableTo": "role",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "role_filter"
+          ],
+          "columnsTo": [
+            "key"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "notification_rule_check": {
+          "name": "notification_rule_check",
+          "value": "(audience <> ALL (ARRAY['ROLE'::wms.notif_audience, 'WAREHOUSE_ROLE'::wms.notif_audience, 'IMPORTER_ROLE'::wms.notif_audience])) OR (role_filter IS NOT NULL)"
+        },
+        "notification_rule_channels_check": {
+          "name": "notification_rule_channels_check",
+          "value": "array_length(channels, 1) > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.notification_template": {
+      "name": "notification_template",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.notification_template_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "event_key": {
+          "name": "event_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "notif_channel",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "locale": {
+          "name": "locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'en'"
+        },
+        "version": {
+          "name": "version",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action_url": {
+          "name": "action_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dlt_template_id": {
+          "name": "dlt_template_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dlt_entity_id": {
+          "name": "dlt_entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sender_id": {
+          "name": "sender_id",
+          "type": "varchar(11)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "notification_template_event_key_fkey": {
+          "name": "notification_template_event_key_fkey",
+          "tableFrom": "notification_template",
+          "tableTo": "notification_event",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "event_key"
+          ],
+          "columnsTo": [
+            "key"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "notification_template_created_by_fkey": {
+          "name": "notification_template_created_by_fkey",
+          "tableFrom": "notification_template",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "notification_template_updated_by_fkey": {
+          "name": "notification_template_updated_by_fkey",
+          "tableFrom": "notification_template",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "notification_template_event_key_channel_locale_version_key": {
+          "name": "notification_template_event_key_channel_locale_version_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "event_key",
+            "channel",
+            "locale",
+            "version"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "notification_template_check": {
+          "name": "notification_template_check",
+          "value": "(channel <> 'SMS'::wms.notif_channel) OR (dlt_template_id IS NOT NULL)"
+        },
+        "notification_template_check1": {
+          "name": "notification_template_check1",
+          "value": "(channel <> 'EMAIL'::wms.notif_channel) OR (subject IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.permission": {
+      "name": "permission",
+      "schema": "wms",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "resource": {
+          "name": "resource",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "module": {
+          "name": "module",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_dangerous": {
+          "name": "is_dangerous",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "permission_resource_idx": {
+          "name": "permission_resource_idx",
+          "columns": [
+            {
+              "expression": "resource",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "permission_action_check": {
+          "name": "permission_action_check",
+          "value": "action = ANY (ARRAY['create'::text, 'read'::text, 'update'::text, 'delete'::text, 'approve'::text, 'export'::text, 'assign'::text])"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.permission_override": {
+      "name": "permission_override",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.permission_override_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "effect": {
+          "name": "effect",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'DENY'"
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "perm_override_perm_idx": {
+          "name": "perm_override_perm_idx",
+          "columns": [
+            {
+              "expression": "permission",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "permission_override_uk": {
+          "name": "permission_override_uk",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "permission",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": true,
+          "where": "(revoked_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "permission_override_user_id_fkey": {
+          "name": "permission_override_user_id_fkey",
+          "tableFrom": "permission_override",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "permission_override_permission_fkey": {
+          "name": "permission_override_permission_fkey",
+          "tableFrom": "permission_override",
+          "tableTo": "permission",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "permission"
+          ],
+          "columnsTo": [
+            "key"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "permission_override_granted_by_fkey": {
+          "name": "permission_override_granted_by_fkey",
+          "tableFrom": "permission_override",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "granted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "permission_override_effect_check": {
+          "name": "permission_override_effect_check",
+          "value": "effect = 'DENY'::text"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.role_creation_rule": {
+      "name": "role_creation_rule",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.role_creation_rule_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "actor_role": {
+          "name": "actor_role",
+          "type": "role_key",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "target_role": {
+          "name": "target_role",
+          "type": "role_key",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope": {
+          "name": "scope",
+          "type": "creation_scope",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "creation_rule_target_idx": {
+          "name": "creation_rule_target_idx",
+          "columns": [
+            {
+              "expression": "target_role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "role_creation_rule_uk": {
+          "name": "role_creation_rule_uk",
+          "columns": [
+            {
+              "expression": "actor_role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            },
+            {
+              "expression": "target_role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "role_creation_rule_actor_role_fkey": {
+          "name": "role_creation_rule_actor_role_fkey",
+          "tableFrom": "role_creation_rule",
+          "tableTo": "role",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "actor_role"
+          ],
+          "columnsTo": [
+            "key"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "role_creation_rule_target_role_fkey": {
+          "name": "role_creation_rule_target_role_fkey",
+          "tableFrom": "role_creation_rule",
+          "tableTo": "role",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "target_role"
+          ],
+          "columnsTo": [
+            "key"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "wms.role": {
+      "name": "role",
+      "schema": "wms",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "role_key",
+          "typeSchema": "wms",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "domain": {
+          "name": "domain",
+          "type": "role_domain",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "level": {
+          "name": "level",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_protected": {
+          "name": "is_protected",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "is_exclusive": {
+          "name": "is_exclusive",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "is_immutable": {
+          "name": "is_immutable",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "wms.role_permission": {
+      "name": "role_permission",
+      "schema": "wms",
+      "columns": {
+        "role": {
+          "name": "role",
+          "type": "role_key",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scope": {
+          "name": "scope",
+          "type": "access_scope",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "role_permission_perm_idx": {
+          "name": "role_permission_perm_idx",
+          "columns": [
+            {
+              "expression": "permission",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "role_permission_role_fkey": {
+          "name": "role_permission_role_fkey",
+          "tableFrom": "role_permission",
+          "tableTo": "role",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "role"
+          ],
+          "columnsTo": [
+            "key"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "role_permission_permission_fkey": {
+          "name": "role_permission_permission_fkey",
+          "tableFrom": "role_permission",
+          "tableTo": "permission",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "permission"
+          ],
+          "columnsTo": [
+            "key"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "role_permission_pkey": {
+          "name": "role_permission_pkey",
+          "columns": [
+            "role",
+            "permission"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "role_permission_scope_check": {
+          "name": "role_permission_scope_check",
+          "value": "scope <> 'NONE'::wms.access_scope"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.sales_agent_client": {
+      "name": "sales_agent_client",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.sales_agent_client_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "agent_user_id": {
+          "name": "agent_user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assigned_by": {
+          "name": "assigned_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assigned_at": {
+          "name": "assigned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "revoked_by": {
+          "name": "revoked_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "agent_client_client_idx": {
+          "name": "agent_client_client_idx",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sales_agent_client_uk": {
+          "name": "sales_agent_client_uk",
+          "columns": [
+            {
+              "expression": "agent_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": true,
+          "where": "(revoked_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "sales_agent_client_agent_user_id_fkey": {
+          "name": "sales_agent_client_agent_user_id_fkey",
+          "tableFrom": "sales_agent_client",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "agent_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sales_agent_client_client_id_fkey": {
+          "name": "sales_agent_client_client_id_fkey",
+          "tableFrom": "sales_agent_client",
+          "tableTo": "importer_client",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sales_agent_client_assigned_by_fkey": {
+          "name": "sales_agent_client_assigned_by_fkey",
+          "tableFrom": "sales_agent_client",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "assigned_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "sales_agent_client_revoked_by_fkey": {
+          "name": "sales_agent_client_revoked_by_fkey",
+          "tableFrom": "sales_agent_client",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "revoked_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "wms.state": {
+      "name": "state",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.state_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "country_id": {
+          "name": "country_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "state_country_idx": {
+          "name": "state_country_idx",
+          "columns": [
+            {
+              "expression": "country_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "state_country_id_fkey": {
+          "name": "state_country_id_fkey",
+          "tableFrom": "state",
+          "tableTo": "country",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "country_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "state_created_by_fkey": {
+          "name": "state_created_by_fkey",
+          "tableFrom": "state",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "state_updated_by_fkey": {
+          "name": "state_updated_by_fkey",
+          "tableFrom": "state",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "state_deleted_by_fkey": {
+          "name": "state_deleted_by_fkey",
+          "tableFrom": "state",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "deleted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "state_country_id_code_key": {
+          "name": "state_country_id_code_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "country_id",
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "wms.transporter": {
+      "name": "transporter",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.transporter_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_name": {
+          "name": "legal_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gstin": {
+          "name": "gstin",
+          "type": "wms.gstin",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pan": {
+          "name": "pan",
+          "type": "wms.pan_no",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_person": {
+          "name": "contact_person",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contact_mobile": {
+          "name": "contact_mobile",
+          "type": "wms.mobile_in",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alternate_mobile": {
+          "name": "alternate_mobile",
+          "type": "wms.mobile_in",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_email": {
+          "name": "contact_email",
+          "type": "citext",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "office_phone": {
+          "name": "office_phone",
+          "type": "varchar(15)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "website": {
+          "name": "website",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "city_id": {
+          "name": "city_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pincode": {
+          "name": "pincode",
+          "type": "wms.pincode_in",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "record_status",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ACTIVE'"
+        },
+        "blacklisted": {
+          "name": "blacklisted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "blacklist_reason": {
+          "name": "blacklist_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "transporter_city_fk_idx": {
+          "name": "transporter_city_fk_idx",
+          "columns": [
+            {
+              "expression": "city_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "transporter_created_by_idx": {
+          "name": "transporter_created_by_idx",
+          "columns": [
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "transporter_gstin_uk": {
+          "name": "transporter_gstin_uk",
+          "columns": [
+            {
+              "expression": "gstin",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "bpchar_ops"
+            }
+          ],
+          "isUnique": true,
+          "where": "((gstin IS NOT NULL) AND (deleted_at IS NULL))",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "transporter_name_trgm": {
+          "name": "transporter_name_trgm",
+          "columns": [
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "gin_trgm_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "transporter_status_idx": {
+          "name": "transporter_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(deleted_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "transporter_city_id_fkey": {
+          "name": "transporter_city_id_fkey",
+          "tableFrom": "transporter",
+          "tableTo": "city",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "city_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "transporter_created_by_fkey": {
+          "name": "transporter_created_by_fkey",
+          "tableFrom": "transporter",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "transporter_updated_by_fkey": {
+          "name": "transporter_updated_by_fkey",
+          "tableFrom": "transporter",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "transporter_deleted_by_fkey": {
+          "name": "transporter_deleted_by_fkey",
+          "tableFrom": "transporter",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "deleted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "transporter_code_key": {
+          "name": "transporter_code_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "transporter_check": {
+          "name": "transporter_check",
+          "value": "(NOT blacklisted) OR (blacklist_reason IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.user_device": {
+      "name": "user_device",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.user_device_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "platform": {
+          "name": "platform",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "push_token": {
+          "name": "push_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "device_model": {
+          "name": "device_model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "os_version": {
+          "name": "os_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "app_version": {
+          "name": "app_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "user_device_token_uk": {
+          "name": "user_device_token_uk",
+          "columns": [
+            {
+              "expression": "push_token",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "user_device_user_idx": {
+          "name": "user_device_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "is_active",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "user_device_user_id_fkey": {
+          "name": "user_device_user_id_fkey",
+          "tableFrom": "user_device",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "user_device_platform_check": {
+          "name": "user_device_platform_check",
+          "value": "platform = ANY (ARRAY['ANDROID'::text, 'IOS'::text, 'WEB'::text])"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.user_role_assignment": {
+      "name": "user_role_assignment",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.user_role_assignment_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "role_key",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role_domain": {
+          "name": "role_domain",
+          "type": "role_domain",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "warehouse_id": {
+          "name": "warehouse_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "importer_id": {
+          "name": "importer_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assigned_by": {
+          "name": "assigned_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assigned_at": {
+          "name": "assigned_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "revoked_by": {
+          "name": "revoked_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoke_reason": {
+          "name": "revoke_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ura_assigned_by_idx": {
+          "name": "ura_assigned_by_idx",
+          "columns": [
+            {
+              "expression": "assigned_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(assigned_by IS NOT NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ura_importer_idx": {
+          "name": "ura_importer_idx",
+          "columns": [
+            {
+              "expression": "importer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(revoked_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ura_role_idx": {
+          "name": "ura_role_idx",
+          "columns": [
+            {
+              "expression": "role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(revoked_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ura_role_importer_idx": {
+          "name": "ura_role_importer_idx",
+          "columns": [
+            {
+              "expression": "role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            },
+            {
+              "expression": "importer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "((revoked_at IS NULL) AND (importer_id IS NOT NULL))",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ura_role_warehouse_idx": {
+          "name": "ura_role_warehouse_idx",
+          "columns": [
+            {
+              "expression": "role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            },
+            {
+              "expression": "warehouse_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "((revoked_at IS NULL) AND (warehouse_id IS NOT NULL))",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ura_user_active_idx": {
+          "name": "ura_user_active_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "role_domain",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "warehouse_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "importer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(revoked_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ura_user_idx": {
+          "name": "ura_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(revoked_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ura_warehouse_idx": {
+          "name": "ura_warehouse_idx",
+          "columns": [
+            {
+              "expression": "warehouse_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(revoked_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "user_role_assignment_uk": {
+          "name": "user_role_assignment_uk",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            },
+            {
+              "expression": "warehouse_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "importer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": true,
+          "where": "(revoked_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "user_role_assignment_user_id_fkey": {
+          "name": "user_role_assignment_user_id_fkey",
+          "tableFrom": "user_role_assignment",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "user_role_assignment_warehouse_id_fkey": {
+          "name": "user_role_assignment_warehouse_id_fkey",
+          "tableFrom": "user_role_assignment",
+          "tableTo": "warehouse",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "warehouse_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "user_role_assignment_importer_id_fkey": {
+          "name": "user_role_assignment_importer_id_fkey",
+          "tableFrom": "user_role_assignment",
+          "tableTo": "importer",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "importer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "user_role_assignment_assigned_by_fkey": {
+          "name": "user_role_assignment_assigned_by_fkey",
+          "tableFrom": "user_role_assignment",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "assigned_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "user_role_assignment_revoked_by_fkey": {
+          "name": "user_role_assignment_revoked_by_fkey",
+          "tableFrom": "user_role_assignment",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "revoked_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "user_role_assignment_role_role_domain_fkey": {
+          "name": "user_role_assignment_role_role_domain_fkey",
+          "tableFrom": "user_role_assignment",
+          "tableTo": "role",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "role",
+            "role_domain"
+          ],
+          "columnsTo": [
+            "key",
+            "domain"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "user_role_assignment_check": {
+          "name": "user_role_assignment_check",
+          "value": "CHECK (\nCASE role_domain\n    WHEN 'PLATFORM'::wms.role_domain THEN ((warehouse_id IS NULL) AND (importer_id IS NULL))\n    WHEN 'WAREHOUSE'::wms.role_domain THEN ((warehouse_id IS NOT NULL) AND (importer_id IS NULL))\n    WHEN 'IMPORTER'::wms.role_domain THEN ((importer_id IS NOT NULL) AND (warehouse_id IS NULL))\n    ELSE NULL::boolean\nEND)"
+        },
+        "user_role_assignment_check1": {
+          "name": "user_role_assignment_check1",
+          "value": "(revoked_at IS NULL) OR (revoke_reason IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.user_session": {
+      "name": "user_session",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.user_session_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "active_role": {
+          "name": "active_role",
+          "type": "role_key",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "active_warehouse_id": {
+          "name": "active_warehouse_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "active_importer_id": {
+          "name": "active_importer_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ip": {
+          "name": "ip",
+          "type": "inet",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "device_name": {
+          "name": "device_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "platform": {
+          "name": "platform",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "issued_at": {
+          "name": "issued_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_reason": {
+          "name": "revoked_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "user_session_cleanup_idx": {
+          "name": "user_session_cleanup_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(revoked_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "user_session_expiry_idx": {
+          "name": "user_session_expiry_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(revoked_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "user_session_user_idx": {
+          "name": "user_session_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(revoked_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "user_session_user_id_fkey": {
+          "name": "user_session_user_id_fkey",
+          "tableFrom": "user_session",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "user_session_token_hash_key": {
+          "name": "user_session_token_hash_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "user_session_platform_check": {
+          "name": "user_session_platform_check",
+          "value": "platform = ANY (ARRAY['WEB'::text, 'ANDROID'::text, 'IOS'::text])"
+        },
+        "user_session_check": {
+          "name": "user_session_check",
+          "value": "expires_at > issued_at"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.user_verification_token": {
+      "name": "user_verification_token",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.user_verification_token_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "purpose": {
+          "name": "purpose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sent_to": {
+          "name": "sent_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "max_attempts": {
+          "name": "max_attempts",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 5
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consumed_at": {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "ip": {
+          "name": "ip",
+          "type": "inet",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "user_token_hash_uk": {
+          "name": "user_token_hash_uk",
+          "columns": [
+            {
+              "expression": "token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "user_token_lookup_idx": {
+          "name": "user_token_lookup_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            },
+            {
+              "expression": "purpose",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(consumed_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "user_verification_token_user_id_fkey": {
+          "name": "user_verification_token_user_id_fkey",
+          "tableFrom": "user_verification_token",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "user_verification_token_purpose_check": {
+          "name": "user_verification_token_purpose_check",
+          "value": "purpose = ANY (ARRAY['EMAIL_VERIFY'::text, 'MOBILE_VERIFY'::text, 'PASSWORD_RESET'::text, 'LOGIN_OTP'::text, 'INVITE'::text])"
+        },
+        "user_verification_token_channel_check": {
+          "name": "user_verification_token_channel_check",
+          "value": "channel = ANY (ARRAY['EMAIL'::text, 'SMS'::text])"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.users": {
+      "name": "users",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.users_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "email": {
+          "name": "email",
+          "type": "citext",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_verified_at": {
+          "name": "email_verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_name": {
+          "name": "first_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_name": {
+          "name": "last_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mobile": {
+          "name": "mobile",
+          "type": "wms.mobile_in",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mobile_verified_at": {
+          "name": "mobile_verified_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password_changed_at": {
+          "name": "password_changed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "photo_url": {
+          "name": "photo_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "locale": {
+          "name": "locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'en'"
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'Asia/Kolkata'"
+        },
+        "default_role": {
+          "name": "default_role",
+          "type": "role_key",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "record_status",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ACTIVE'"
+        },
+        "must_change_password": {
+          "name": "must_change_password",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "last_login_at": {
+          "name": "last_login_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_login_ip": {
+          "name": "last_login_ip",
+          "type": "inet",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failed_login_count": {
+          "name": "failed_login_count",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "locked_until": {
+          "name": "locked_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "path": {
+          "name": "path",
+          "type": "ltree",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "depth": {
+          "name": "depth",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false,
+          "generated": {
+            "as": "nlevel(path)",
+            "type": "stored"
+          }
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deactivated_by": {
+          "name": "deactivated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deactivated_at": {
+          "name": "deactivated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deactivation_reason": {
+          "name": "deactivation_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "signup_company_name": {
+          "name": "signup_company_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "users_created_by_idx": {
+          "name": "users_created_by_idx",
+          "columns": [
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "users_email_uk": {
+          "name": "users_email_uk",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "citext_ops"
+            }
+          ],
+          "isUnique": true,
+          "where": "(deleted_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "users_locked_idx": {
+          "name": "users_locked_idx",
+          "columns": [
+            {
+              "expression": "locked_until",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "timestamptz_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(locked_until IS NOT NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "users_login_idx": {
+          "name": "users_login_idx",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "citext_ops"
+            },
+            {
+              "expression": "password_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "citext_ops"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "citext_ops"
+            },
+            {
+              "expression": "locked_until",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "citext_ops"
+            },
+            {
+              "expression": "failed_login_count",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "citext_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(deleted_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "users_mobile_uk": {
+          "name": "users_mobile_uk",
+          "columns": [
+            {
+              "expression": "mobile",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "bpchar_ops"
+            }
+          ],
+          "isUnique": true,
+          "where": "(deleted_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "users_name_trgm": {
+          "name": "users_name_trgm",
+          "columns": [
+            {
+              "expression": "(((first_name || ' '::text) || last_name)) gin_trgm_ops",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "users_path_gist": {
+          "name": "users_path_gist",
+          "columns": [
+            {
+              "expression": "path",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "gist_ltree_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gist",
+          "with": {}
+        },
+        "users_status_idx": {
+          "name": "users_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "enum_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(deleted_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "users_created_by_fkey": {
+          "name": "users_created_by_fkey",
+          "tableFrom": "users",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "users_updated_by_fkey": {
+          "name": "users_updated_by_fkey",
+          "tableFrom": "users",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "users_deactivated_by_fkey": {
+          "name": "users_deactivated_by_fkey",
+          "tableFrom": "users",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "deactivated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "users_deleted_by_fkey": {
+          "name": "users_deleted_by_fkey",
+          "tableFrom": "users",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "deleted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "users_check": {
+          "name": "users_check",
+          "value": "(status <> 'SUSPENDED'::wms.record_status) OR (deactivation_reason IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.vehicle": {
+      "name": "vehicle",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.vehicle_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "transporter_id": {
+          "name": "transporter_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "vehicle_type_id": {
+          "name": "vehicle_type_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registration_number": {
+          "name": "registration_number",
+          "type": "wms.vehicle_reg",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chassis_number": {
+          "name": "chassis_number",
+          "type": "varchar(25)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "engine_number": {
+          "name": "engine_number",
+          "type": "varchar(25)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fuel_type": {
+          "name": "fuel_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capacity_kg": {
+          "name": "capacity_kg",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capacity_cbm": {
+          "name": "capacity_cbm",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "length_ft": {
+          "name": "length_ft",
+          "type": "numeric(6, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "width_ft": {
+          "name": "width_ft",
+          "type": "numeric(6, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "height_ft": {
+          "name": "height_ft",
+          "type": "numeric(6, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "axle_count": {
+          "name": "axle_count",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "record_status",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ACTIVE'"
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "vehicle_active_idx": {
+          "name": "vehicle_active_idx",
+          "columns": [
+            {
+              "expression": "transporter_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "((deleted_at IS NULL) AND (status = 'ACTIVE'::wms.record_status))",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "vehicle_created_by_idx": {
+          "name": "vehicle_created_by_idx",
+          "columns": [
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "vehicle_reg_trgm": {
+          "name": "vehicle_reg_trgm",
+          "columns": [
+            {
+              "expression": "registration_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "gin_trgm_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "vehicle_registration_uk": {
+          "name": "vehicle_registration_uk",
+          "columns": [
+            {
+              "expression": "registration_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "text_ops"
+            }
+          ],
+          "isUnique": true,
+          "where": "(deleted_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "vehicle_transporter_idx": {
+          "name": "vehicle_transporter_idx",
+          "columns": [
+            {
+              "expression": "transporter_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(deleted_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "vehicle_type_fk_idx": {
+          "name": "vehicle_type_fk_idx",
+          "columns": [
+            {
+              "expression": "vehicle_type_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "vehicle_transporter_id_fkey": {
+          "name": "vehicle_transporter_id_fkey",
+          "tableFrom": "vehicle",
+          "tableTo": "transporter",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "transporter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "vehicle_vehicle_type_id_fkey": {
+          "name": "vehicle_vehicle_type_id_fkey",
+          "tableFrom": "vehicle",
+          "tableTo": "vehicle_type",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "vehicle_type_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "vehicle_created_by_fkey": {
+          "name": "vehicle_created_by_fkey",
+          "tableFrom": "vehicle",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "vehicle_updated_by_fkey": {
+          "name": "vehicle_updated_by_fkey",
+          "tableFrom": "vehicle",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "vehicle_deleted_by_fkey": {
+          "name": "vehicle_deleted_by_fkey",
+          "tableFrom": "vehicle",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "deleted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "vehicle_fuel_type_check": {
+          "name": "vehicle_fuel_type_check",
+          "value": "fuel_type = ANY (ARRAY['DIESEL'::text, 'PETROL'::text, 'CNG'::text, 'LNG'::text, 'ELECTRIC'::text, 'HYBRID'::text])"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.vehicle_type": {
+      "name": "vehicle_type",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.vehicle_type_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "axle_count": {
+          "name": "axle_count",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capacity_kg": {
+          "name": "capacity_kg",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "capacity_cbm": {
+          "name": "capacity_cbm",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "length_ft": {
+          "name": "length_ft",
+          "type": "numeric(6, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "width_ft": {
+          "name": "width_ft",
+          "type": "numeric(6, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "height_ft": {
+          "name": "height_ft",
+          "type": "numeric(6, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "vehicle_type_created_by_fkey": {
+          "name": "vehicle_type_created_by_fkey",
+          "tableFrom": "vehicle_type",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "vehicle_type_updated_by_fkey": {
+          "name": "vehicle_type_updated_by_fkey",
+          "tableFrom": "vehicle_type",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "vehicle_type_deleted_by_fkey": {
+          "name": "vehicle_type_deleted_by_fkey",
+          "tableFrom": "vehicle_type",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "deleted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "vehicle_type_code_key": {
+          "name": "vehicle_type_code_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "vehicle_type_category_check": {
+          "name": "vehicle_type_category_check",
+          "value": "category = ANY (ARRAY['THREE_WHEELER'::text, 'LCV'::text, 'MCV'::text, 'HCV'::text, 'TRAILER'::text, 'CONTAINER'::text])"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.warehouse": {
+      "name": "warehouse",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.warehouse_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "warehouse_type_id": {
+          "name": "warehouse_type_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "landmark": {
+          "name": "landmark",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "area": {
+          "name": "area",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "city_id": {
+          "name": "city_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pincode": {
+          "name": "pincode",
+          "type": "wms.pincode_in",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "latitude": {
+          "name": "latitude",
+          "type": "numeric(9, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "longitude": {
+          "name": "longitude",
+          "type": "numeric(9, 6)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "gmap_url": {
+          "name": "gmap_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "total_area_sqft": {
+          "name": "total_area_sqft",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usable_area_sqft": {
+          "name": "usable_area_sqft",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "storage_capacity_cbm": {
+          "name": "storage_capacity_cbm",
+          "type": "numeric(12, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pallet_positions": {
+          "name": "pallet_positions",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dock_count": {
+          "name": "dock_count",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_vehicle_length_ft": {
+          "name": "max_vehicle_length_ft",
+          "type": "numeric(6, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "floor_count": {
+          "name": "floor_count",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "has_racking": {
+          "name": "has_racking",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "has_cctv": {
+          "name": "has_cctv",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "has_weighbridge": {
+          "name": "has_weighbridge",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "contact_person": {
+          "name": "contact_person",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_mobile": {
+          "name": "contact_mobile",
+          "type": "wms.mobile_in",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "alternate_mobile": {
+          "name": "alternate_mobile",
+          "type": "wms.mobile_in",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "warehouse_active_idx": {
+          "name": "warehouse_active_idx",
+          "columns": [
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "bool_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(deleted_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "warehouse_city_fk_idx": {
+          "name": "warehouse_city_fk_idx",
+          "columns": [
+            {
+              "expression": "city_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "warehouse_city_idx": {
+          "name": "warehouse_city_idx",
+          "columns": [
+            {
+              "expression": "city_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "where": "(deleted_at IS NULL)",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "warehouse_created_by_idx": {
+          "name": "warehouse_created_by_idx",
+          "columns": [
+            {
+              "expression": "created_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "warehouse_name_trgm": {
+          "name": "warehouse_name_trgm",
+          "columns": [
+            {
+              "expression": "name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "gin_trgm_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        },
+        "warehouse_type_fk_idx": {
+          "name": "warehouse_type_fk_idx",
+          "columns": [
+            {
+              "expression": "warehouse_type_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "warehouse_warehouse_type_id_fkey": {
+          "name": "warehouse_warehouse_type_id_fkey",
+          "tableFrom": "warehouse",
+          "tableTo": "warehouse_type",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "warehouse_type_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "warehouse_city_id_fkey": {
+          "name": "warehouse_city_id_fkey",
+          "tableFrom": "warehouse",
+          "tableTo": "city",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "city_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "warehouse_created_by_fkey": {
+          "name": "warehouse_created_by_fkey",
+          "tableFrom": "warehouse",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "warehouse_updated_by_fkey": {
+          "name": "warehouse_updated_by_fkey",
+          "tableFrom": "warehouse",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "warehouse_deleted_by_fkey": {
+          "name": "warehouse_deleted_by_fkey",
+          "tableFrom": "warehouse",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "deleted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "warehouse_code_key": {
+          "name": "warehouse_code_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "warehouse_check": {
+          "name": "warehouse_check",
+          "value": "(usable_area_sqft IS NULL) OR (total_area_sqft IS NULL) OR (usable_area_sqft <= total_area_sqft)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "wms.warehouse_transporter": {
+      "name": "warehouse_transporter",
+      "schema": "wms",
+      "columns": {
+        "warehouse_id": {
+          "name": "warehouse_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transporter_id": {
+          "name": "transporter_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_preferred": {
+          "name": "is_preferred",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "contract_ref": {
+          "name": "contract_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contract_start": {
+          "name": "contract_start",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contract_end": {
+          "name": "contract_end",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_by": {
+          "name": "approved_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "wh_transporter_trp_idx": {
+          "name": "wh_transporter_trp_idx",
+          "columns": [
+            {
+              "expression": "transporter_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "int8_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "warehouse_transporter_warehouse_id_fkey": {
+          "name": "warehouse_transporter_warehouse_id_fkey",
+          "tableFrom": "warehouse_transporter",
+          "tableTo": "warehouse",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "warehouse_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "warehouse_transporter_transporter_id_fkey": {
+          "name": "warehouse_transporter_transporter_id_fkey",
+          "tableFrom": "warehouse_transporter",
+          "tableTo": "transporter",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "transporter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "warehouse_transporter_approved_by_fkey": {
+          "name": "warehouse_transporter_approved_by_fkey",
+          "tableFrom": "warehouse_transporter",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "approved_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "warehouse_transporter_pkey": {
+          "name": "warehouse_transporter_pkey",
+          "columns": [
+            "warehouse_id",
+            "transporter_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "wms.warehouse_type": {
+      "name": "warehouse_type",
+      "schema": "wms",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "wms.warehouse_type_id_seq",
+            "schema": "wms",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_by": {
+          "name": "deleted_by",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "warehouse_type_created_by_fkey": {
+          "name": "warehouse_type_created_by_fkey",
+          "tableFrom": "warehouse_type",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "warehouse_type_updated_by_fkey": {
+          "name": "warehouse_type_updated_by_fkey",
+          "tableFrom": "warehouse_type",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "warehouse_type_deleted_by_fkey": {
+          "name": "warehouse_type_deleted_by_fkey",
+          "tableFrom": "warehouse_type",
+          "tableTo": "users",
+          "schemaTo": "wms",
+          "columnsFrom": [
+            "deleted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "warehouse_type_code_key": {
+          "name": "warehouse_type_code_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "wms.access_scope": {
+      "name": "access_scope",
+      "schema": "wms",
+      "values": [
+        "NONE",
+        "OWN",
+        "WAREHOUSE",
+        "ALL"
+      ]
+    },
+    "wms.audit_operation": {
+      "name": "audit_operation",
+      "schema": "wms",
+      "values": [
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "RESTORE",
+        "LOGIN",
+        "LOGOUT",
+        "DENY",
+        "EXPORT",
+        "APPROVE",
+        "REJECT"
+      ]
+    },
+    "wms.audit_result": {
+      "name": "audit_result",
+      "schema": "wms",
+      "values": [
+        "SUCCESS",
+        "DENIED",
+        "FAILED"
+      ]
+    },
+    "wms.creation_scope": {
+      "name": "creation_scope",
+      "schema": "wms",
+      "values": [
+        "ANY",
+        "SAME_WAREHOUSE",
+        "SAME_IMPORTER",
+        "SELF_REGISTER"
+      ]
+    },
+    "wms.delivery_status": {
+      "name": "delivery_status",
+      "schema": "wms",
+      "values": [
+        "PENDING",
+        "QUEUED",
+        "SENT",
+        "DELIVERED",
+        "READ",
+        "FAILED",
+        "SUPPRESSED",
+        "EXPIRED"
+      ]
+    },
+    "wms.notif_audience": {
+      "name": "notif_audience",
+      "schema": "wms",
+      "values": [
+        "ACTOR",
+        "SUBJECT",
+        "PARENT",
+        "ANCESTORS",
+        "ALL_SUPER_ADMINS",
+        "ROLE",
+        "WAREHOUSE_ROLE",
+        "IMPORTER_ROLE",
+        "EXPLICIT"
+      ]
+    },
+    "wms.notif_channel": {
+      "name": "notif_channel",
+      "schema": "wms",
+      "values": [
+        "IN_APP",
+        "EMAIL",
+        "SMS",
+        "PUSH",
+        "WHATSAPP"
+      ]
+    },
+    "wms.record_status": {
+      "name": "record_status",
+      "schema": "wms",
+      "values": [
+        "DRAFT",
+        "PENDING",
+        "ACTIVE",
+        "SUSPENDED",
+        "CLOSED",
+        "REJECTED"
+      ]
+    },
+    "wms.role_domain": {
+      "name": "role_domain",
+      "schema": "wms",
+      "values": [
+        "PLATFORM",
+        "WAREHOUSE",
+        "IMPORTER"
+      ]
+    },
+    "wms.role_key": {
+      "name": "role_key",
+      "schema": "wms",
+      "values": [
+        "SUPER_ADMIN",
+        "WAREHOUSE_ADMIN",
+        "TRANSPORTER_MANAGER",
+        "INWARD_MANAGER",
+        "STORAGE_MANAGER",
+        "PACKAGE_MANAGER",
+        "DISPATCH_MANAGER",
+        "IMPORTER",
+        "SALES_AGENT"
+      ]
+    }
+  },
+  "schemas": {
+    "wms": "wms"
+  },
+  "sequences": {
+    "wms.audit_log_id_seq": {
+      "name": "audit_log_id_seq",
+      "schema": "wms",
+      "increment": "1",
+      "startWith": "1",
+      "minValue": "1",
+      "maxValue": "9223372036854775807",
+      "cache": "1",
+      "cycle": false
+    }
+  },
+  "roles": {},
+  "policies": {},
+  "views": {
+    "wms.user_effective_permission": {
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope_rank": {
+          "name": "scope_rank",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "access_scope",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "warehouse_ids": {
+          "name": "warehouse_ids",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "importer_ids": {
+          "name": "importer_ids",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_by_roles": {
+          "name": "granted_by_roles",
+          "type": "wms.role_key[]",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "SELECT ura.user_id, rp.permission, max(wms.access_rank(rp.scope)) AS scope_rank, (array_agg(rp.scope ORDER BY (wms.access_rank(rp.scope)) DESC))[1] AS scope, array_remove(array_agg(DISTINCT ura.warehouse_id), NULL::bigint) AS warehouse_ids, array_remove(array_agg(DISTINCT ura.importer_id), NULL::bigint) AS importer_ids, array_agg(DISTINCT ura.role) AS granted_by_roles FROM wms.user_role_assignment ura JOIN wms.role_permission rp ON rp.role = ura.role JOIN wms.users au ON au.id = ura.user_id WHERE ura.revoked_at IS NULL AND au.deleted_at IS NULL AND au.status = 'ACTIVE'::wms.record_status AND NOT (EXISTS ( SELECT 1 FROM wms.permission_override po WHERE po.user_id = ura.user_id AND po.permission = rp.permission AND po.revoked_at IS NULL AND (po.expires_at IS NULL OR po.expires_at > now()))) GROUP BY ura.user_id, rp.permission",
+      "name": "user_effective_permission",
+      "schema": "wms",
+      "isExisting": false,
+      "materialized": false
+    },
+    "wms.v_last_change": {
+      "columns": {
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "entity_label": {
+          "name": "entity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor_name": {
+          "name": "actor_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "acting_role": {
+          "name": "acting_role",
+          "type": "role_key",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "operation": {
+          "name": "operation",
+          "type": "audit_operation",
+          "typeSchema": "wms",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "diff": {
+          "name": "diff",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "definition": "SELECT DISTINCT ON (entity_type, entity_id) entity_type, entity_id, entity_label, occurred_at, actor_user_id, actor_name, acting_role, operation, diff, reason FROM wms.audit_log WHERE result = 'SUCCESS'::wms.audit_result AND (operation = ANY (ARRAY['INSERT'::wms.audit_operation, 'UPDATE'::wms.audit_operation, 'DELETE'::wms.audit_operation, 'RESTORE'::wms.audit_operation])) ORDER BY entity_type, entity_id, occurred_at DESC",
+      "name": "v_last_change",
+      "schema": "wms",
+      "isExisting": false,
+      "materialized": false
+    }
+  },
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

@@ -55,6 +55,19 @@ export const usersInWms = wms.table("users", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	deletedBy: bigint("deleted_by", { mode: "number" }),
 	deletedAt: timestamp("deleted_at", { withTimezone: true, mode: 'string' }),
+	/**
+	 * What a self-registering user typed as their company, before an
+	 * `importer` row exists.
+	 *
+	 * It cannot go on `importer` at signup: that table needs an address,
+	 * a city and a pincode, none of which a signup form collects. And it
+	 * must not be discarded, because the IMPORTER role is exclusive and
+	 * IMMUTABLE — assigning it before the account is verified would
+	 * permanently lock a user who mistyped their email.
+	 *
+	 * So the name is parked here until approval creates the importer.
+	 */
+	signupCompanyName: text("signup_company_name"),
 }, (table) => [
 	index("users_created_by_idx").using("btree", table.createdBy.asc().nullsLast().op("int8_ops")),
 	uniqueIndex("users_email_uk").using("btree", table.email.asc().nullsLast().op("citext_ops")).where(sql`(deleted_at IS NULL)`),

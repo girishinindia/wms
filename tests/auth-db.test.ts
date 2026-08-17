@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import postgres from "postgres";
+import type postgres from "postgres";
+
+import { testDb } from "./db";
 
 /**
  * OTP and session behaviour, against a real PostgreSQL running the wms
@@ -25,7 +27,7 @@ describeDb("OTP and sessions", () => {
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.DATABASE_SSL = "disable";
-    sql = postgres(URL!, { max: 1, prepare: false, onnotice: () => {} });
+    sql = testDb(URL!);
     const [row] = await sql`
       insert into wms.users (email, first_name, last_name, mobile)
       values ('auth-test@smoke.invalid','Auth','Test','9800000098')

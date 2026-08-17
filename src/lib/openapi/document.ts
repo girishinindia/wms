@@ -1,15 +1,30 @@
-import {
-  extendZodWithOpenApi,
-  OpenAPIRegistry,
-  OpenApiGeneratorV31,
-} from "@asteasolutions/zod-to-openapi";
-import { z } from "zod";
+import { OpenAPIRegistry, OpenApiGeneratorV31 } from "@asteasolutions/zod-to-openapi";
+
+// Extended `z`, imported first so `.openapi()` exists before any schema
+// module below is evaluated. See lib/openapi/zod.ts.
+import { z } from "@/lib/openapi/zod";
 
 import {
   forgotPasswordSchema,
   signInSchema,
   signUpSchema,
 } from "@/lib/validation/auth";
+import {
+  forgotPasswordRequestSchema,
+  loginRequestSchema,
+  loginResponseSchema,
+  okResponseSchema,
+  otpSendRequestSchema,
+  otpSendResponseSchema,
+  otpVerifyRequestSchema,
+  otpVerifyResponseSchema,
+  registerRequestSchema,
+  registerResponseSchema,
+  resetPasswordRequestSchema,
+  resetPasswordResponseSchema,
+  sessionResponseSchema,
+} from "@/lib/validation/api-auth";
+import { errorSchema } from "@/lib/api/respond";
 
 /**
  * The OpenAPI document, generated from the same Zod schemas the forms and
@@ -24,8 +39,6 @@ import {
  * Only endpoints that actually exist are listed. A spec that documents
  * routes returning 404 is worse than no spec.
  */
-
-extendZodWithOpenApi(z);
 
 const registry = new OpenAPIRegistry();
 
@@ -149,20 +162,204 @@ registry.registerPath({
   },
 });
 
-// ── Auth payloads ─────────────────────────────────────────────
+// ── Browser form payloads ─────────────────────────────────────
 //
-// Registered as components, not paths: the routes are not built yet, and
-// listing a path that 404s makes the whole document untrustworthy. These
-// appear under "Models" in Scalar so the mobile and web clients can agree
-// on the shape now, and the paths get added in the same commit as the
-// handlers.
+// These describe the FORMS, which is not the same thing as the API: a
+// form has confirmPassword and a terms checkbox, the API has a reCAPTCHA
+// token and a platform. Registered as components only, so a client can
+// see what the web forms collect without mistaking them for endpoints.
 
-registry.register("SignInRequest", signInSchema.openapi("SignInRequest"));
-registry.register("SignUpRequest", signUpSchema.openapi("SignUpRequest"));
+registry.register("SignInFormRequest", signInSchema.openapi("SignInFormRequest"));
+registry.register("SignUpFormRequest", signUpSchema.openapi("SignUpFormRequest"));
 registry.register(
-  "ForgotPasswordRequest",
-  forgotPasswordSchema.openapi("ForgotPasswordRequest")
+  "ForgotPasswordFormRequest",
+  forgotPasswordSchema.openapi("ForgotPasswordFormRequest")
 );
+
+// ── Auth endpoints ────────────────────────────────────────────
+
+const ApiError = registry.register("ApiError", errorSchema.openapi("ApiError"));
+
+const errorResponse = (description: string) => ({
+  description,
+  content: { "application/json": { schema: ApiError } },
+});
+
+/**
+ * Every auth path is public — that is what makes them the ones worth
+ * rate-limiting. `security: []` states it rather than leaving a client
+ * to guess from the absence of the field.
+ */
+const authPath = (config: {
+  path: string;
+  operationId: string;
+  summary: string;
+  description: string;
+  request?: z.ZodTypeAny;
+  response: z.ZodTypeAny;
+  status?: number;
+  method?: "post" | "get";
+  responses?: Record<number, ReturnType<typeof errorResponse>>;
+}) => {
+  registry.registerPath({
+    method: config.method ?? "post",
+    path: config.path,
+    operationId: config.operationId,
+    tags: ["Auth"],
+    summary: config.summary,
+    description: config.description,
+    security: [],
+    ...(config.request
+      ? {
+          request: {
+            body: {
+              required: true,
+              content: { "application/json": { schema: config.request } },
+            },
+          },
+        }
+      : {}),
+    responses: {
+      [config.status ?? 200]: {
+        description: "Success.",
+        content: { "application/json": { schema: config.response } },
+      },
+      422: errorResponse("The body failed validation. `error.fields` is keyed by field name."),
+      429: errorResponse("Rate limited. `Retry-After` gives the wait in seconds."),
+      ...(config.responses ?? {}),
+    },
+  });
+};
+
+authPath({
+  path: "/api/v1/auth/register",
+  operationId: "register",
+  summary: "Register a new importer account",
+  status: 201,
+  description:
+    "Creates the account and sends a separate code to the email address " +
+    "and the mobile number.\n\n**Answers identically whether or not the " +
+    "address is already registered.** A signup form that says \"this email " +
+    "is taken\" is a free account enumerator.\n\n**No role is assigned " +
+    "here.** `IMPORTER` is exclusive and immutable — once granted, not " +
+    "even a Super Admin can change it — so it is not attached until the " +
+    "account is verified and an importer record is approved.",
+  request: registerRequestSchema,
+  response: registerResponseSchema,
+  responses: { 400: errorResponse("reCAPTCHA rejected the request.") },
+});
+
+authPath({
+  path: "/api/v1/auth/otp/send",
+  operationId: "sendOtp",
+  summary: "Send or resend verification codes",
+  description:
+    "Issues a **separate** code per channel — email and SMS never share " +
+    "a code, or compromising one channel would compromise the check.\n\n" +
+    "Always answers `sent: true`, account or not. The per-send cooldown " +
+    "is enforced in Postgres so it survives a Redis eviction; the daily " +
+    "cap is in Upstash because every send spends real SMS credit.",
+  request: otpSendRequestSchema,
+  response: otpSendResponseSchema,
+  responses: { 400: errorResponse("reCAPTCHA rejected the request.") },
+});
+
+authPath({
+  path: "/api/v1/auth/otp/verify",
+  operationId: "verifyOtp",
+  summary: "Verify one or both codes",
+  description:
+    "Codes are single-use and consumed in the same statement that " +
+    "validates them, so a replay cannot succeed and two concurrent " +
+    "requests cannot both win.\n\nOn a completed `passwordRecovery` the " +
+    "response carries a short-lived `resetToken`. That, not the OTP, is " +
+    "what `/password/reset` consumes — the OTP is still sitting in the " +
+    "user's inbox and text messages.",
+  request: otpVerifyRequestSchema,
+  response: otpVerifyResponseSchema,
+  responses: {
+    400: errorResponse("The code was wrong."),
+    410: errorResponse("The code expired. Request a new one."),
+  },
+});
+
+authPath({
+  path: "/api/v1/auth/login",
+  operationId: "login",
+  summary: "Sign in with a password",
+  description:
+    "Password only — no OTP on everyday sign-in. Warehouse staff sign in " +
+    "at the start of each shift, and a code per shift gets worked around " +
+    "rather than tolerated. The weight is carried by argon2id, escalating " +
+    "lockout, and per-IP **and** per-account rate limits.\n\nEvery " +
+    "credential failure returns the same message in the same time, so the " +
+    "endpoint cannot be used to discover which addresses are registered.\n\n" +
+    "On success an httpOnly session cookie is set.",
+  request: loginRequestSchema,
+  response: loginResponseSchema,
+  responses: {
+    401: errorResponse("Wrong identifier or password."),
+    403: errorResponse("The account is not active."),
+    423: errorResponse("Locked after repeated failures. `Retry-After` gives the wait."),
+  },
+});
+
+authPath({
+  path: "/api/v1/auth/logout",
+  operationId: "logout",
+  summary: "Sign out",
+  description:
+    "Revokes the session row and clears the cookie. **Always succeeds**, " +
+    "including for a token that was already dead — an error here reads as " +
+    "\"you are still signed in\" on a shared terminal, which is the " +
+    "opposite of what happened.",
+  response: okResponseSchema,
+});
+
+authPath({
+  path: "/api/v1/auth/session",
+  operationId: "getSession",
+  method: "get",
+  summary: "The current user and their permissions",
+  description:
+    "Permissions come from `user_effective_permission`, which already " +
+    "collapses every role the user holds to the widest scope per " +
+    "permission and subtracts deny overrides — so the client gets one " +
+    "flat list and never reasons about role precedence.\n\nReturns 401 " +
+    "rather than an empty session: \"not signed in\" and \"signed in with " +
+    "no permissions\" are different states.",
+  response: sessionResponseSchema,
+  responses: { 401: errorResponse("No valid session cookie.") },
+});
+
+authPath({
+  path: "/api/v1/auth/password/forgot",
+  operationId: "forgotPassword",
+  summary: "Begin a password reset",
+  description:
+    "Answers `ok: true` for every input, always, and takes the same time " +
+    "either way. This is the classic enumeration endpoint: anything that " +
+    "distinguishes \"we sent you a code\" from \"no such account\" turns " +
+    "the login page into a directory of your customers.",
+  request: forgotPasswordRequestSchema,
+  response: okResponseSchema,
+  responses: { 400: errorResponse("reCAPTCHA rejected the request.") },
+});
+
+authPath({
+  path: "/api/v1/auth/password/reset",
+  operationId: "resetPassword",
+  summary: "Set a new password",
+  description:
+    "Consumes the `resetToken` from `/otp/verify`.\n\n**Every other " +
+    "session is revoked.** If the reason somebody reset their password is " +
+    "that someone else had it, leaving that session alive defeats the " +
+    "entire exercise — the most common way a successful reset achieves " +
+    "nothing.",
+  request: resetPasswordRequestSchema,
+  response: resetPasswordResponseSchema,
+  responses: { 410: errorResponse("The reset ticket expired or was already used.") },
+});
 
 // ── Document ──────────────────────────────────────────────────
 
@@ -208,6 +405,13 @@ export function buildOpenApiDocument() {
     tags: [
       { name: "Health", description: "Liveness and readiness probes." },
       { name: "Meta", description: "Index and documentation." },
+      {
+        name: "Auth",
+        description:
+          "Registration, dual-channel OTP, sign-in and password reset. " +
+          "Every endpoint here is public and therefore rate-limited by IP " +
+          "and by account.",
+      },
     ],
   });
 }

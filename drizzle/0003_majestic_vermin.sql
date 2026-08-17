@@ -1,0 +1,1 @@
+ALTER TABLE "wms"."users" ADD COLUMN "signup_company_name" text;
