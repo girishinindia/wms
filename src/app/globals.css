@@ -115,6 +115,59 @@ html[data-theme="light"] .card-shadow-lg {
     0 2px 6px -2px rgb(13 35 34 / 0.1),
     0 20px 48px -16px rgb(13 35 34 / 0.25);
 }
+
+/* ── Light theme: text opacity and status colours ───────────────
+   Secondary text throughout the panel is written with an opacity
+   modifier tuned for a dark page (text-verdigris-200/60 and friends);
+   on white the same alpha reads as fog. Rather than rewrite every
+   class, the light theme lifts each of those utilities to a solid
+   colour. The classes are Tailwind's own names, escaped.
+   Status pills and danger icons use the 200/300 tints of amber and
+   rose, meant for a dark ground; on white they need the 700/800s. */
+html[data-theme="light"] .text-verdigris-200\/80,
+html[data-theme="light"] .text-verdigris-200\/75,
+html[data-theme="light"] .text-verdigris-200\/70 {
+  color: var(--color-verdigris-100);
+}
+html[data-theme="light"] .text-verdigris-200\/60,
+html[data-theme="light"] .text-verdigris-200\/55,
+html[data-theme="light"] .text-verdigris-200\/50 {
+  color: var(--color-verdigris-200);
+}
+html[data-theme="light"] .text-verdigris-200\/45,
+html[data-theme="light"] .text-verdigris-200\/40 {
+  color: var(--color-verdigris-300);
+}
+html[data-theme="light"] .text-verdigris-200\/30 {
+  color: color-mix(in oklab, var(--color-verdigris-300) 70%, transparent);
+}
+html[data-theme="light"] .text-amber-100,
+html[data-theme="light"] .text-amber-200,
+html[data-theme="light"] .text-amber-300 {
+  color: #92400e;
+}
+html[data-theme="light"] .text-rose-100,
+html[data-theme="light"] .text-rose-200,
+html[data-theme="light"] .text-rose-300,
+html[data-theme="light"] .text-rose-200\/60,
+html[data-theme="light"] .text-rose-200\/70,
+html[data-theme="light"] .text-rose-300\/85 {
+  color: #9f1239;
+}
+/* Icon buttons and other borders drawn at 15% teal vanish on white. */
+html[data-theme="light"] .border-verdigris-300\/15,
+html[data-theme="light"] .border-verdigris-300\/12,
+html[data-theme="light"] .border-verdigris-300\/10 {
+  border-color: color-mix(in oklab, var(--color-verdigris-300) 30%, transparent);
+}
+html[data-theme="light"] .border-verdigris-300\/20,
+html[data-theme="light"] .border-verdigris-300\/25 {
+  border-color: color-mix(in oklab, var(--color-verdigris-300) 45%, transparent);
+}
+html[data-theme="light"] .border-rose-400\/25,
+html[data-theme="light"] .border-rose-400\/30 {
+  border-color: color-mix(in oklab, #9f1239 45%, transparent);
+}
 html[data-theme="light"] ::selection {
   background: color-mix(in oklab, var(--color-patina) 30%, transparent);
   color: #0d2322;
