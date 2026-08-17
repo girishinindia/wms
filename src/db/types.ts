@@ -10,7 +10,11 @@ import { customType } from "drizzle-orm/pg-core";
  *                   place someone forgets becomes a duplicate account.
  *   ltree           the user hierarchy path. Replacing it with text loses
  *                   the @> and <@ operators that make "notify everyone
- *                   above this user" a single index scan.
+ *                   above this user" a single index scan. Installed in
+ *                   the `extensions` schema (see 00_extensions.sql),
+ *                   which is on the database's default search_path, so
+ *                   the name stays unqualified here — drizzle-kit cannot
+ *                   express a schema-qualified custom type.
  *   domains         gstin / pan_no / mobile_in / pincode_in / vehicle_reg.
  *                   The regex lives in the database, so a malformed GSTIN
  *                   cannot arrive from ANY code path — including psql and

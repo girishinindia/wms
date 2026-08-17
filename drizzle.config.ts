@@ -36,6 +36,15 @@ export default defineConfig({
     url: process.env.DIRECT_URL!,
   },
 
+  // Drizzle's own bookkeeping table goes in wms, not in a new `drizzle`
+  // schema. The target project is shared with four other applications;
+  // this pack creates exactly one schema and everything lives in it, so
+  // `drop schema wms cascade` leaves nothing behind.
+  migrations: {
+    table: "__drizzle_migrations",
+    schema: "wms",
+  },
+
   // Extensions are shared and live outside wms; never let a diff try to
   // create or drop them.
   extensionsFilters: ["postgis"],

@@ -43,15 +43,17 @@ if (migrations.length === 0) throw new Error("no migrations found in ./drizzle")
 const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
 
 try {
-  await sql`CREATE SCHEMA IF NOT EXISTS "drizzle"`;
+  // Schema must match `migrations.schema` in drizzle.config.ts — wms,
+  // not the default `drizzle`, because the target project is shared.
+  await sql`CREATE SCHEMA IF NOT EXISTS "wms"`;
   await sql`
-    CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations" (
+    CREATE TABLE IF NOT EXISTS "wms"."__drizzle_migrations" (
       id SERIAL PRIMARY KEY,
       hash text NOT NULL,
       created_at bigint
     )`;
 
-  const existing = await sql`SELECT hash FROM "drizzle"."__drizzle_migrations"`;
+  const existing = await sql`SELECT hash FROM "wms"."__drizzle_migrations"`;
   const known = new Set(existing.map((r) => r.hash));
   const pending = migrations.filter((m) => !known.has(m.hash));
 
@@ -65,7 +67,7 @@ try {
     // One transaction: either the baseline is recorded or it is not.
     await sql.begin(async (tx) => {
       for (const m of pending) {
-        await tx`INSERT INTO "drizzle"."__drizzle_migrations" (hash, created_at)
+        await tx`INSERT INTO "wms"."__drizzle_migrations" (hash, created_at)
                  VALUES (${m.hash}, ${m.folderMillis})`;
       }
     });
