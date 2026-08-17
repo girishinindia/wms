@@ -13,13 +13,27 @@ import {
   LayersIcon,
   MapIcon,
   MenuIcon,
+  MoonIcon,
   PinIcon,
   SidebarIcon,
+  SunIcon,
   TruckIcon,
 } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+
+import {
+  applyFont,
+  applyTheme,
+  clearPrefs,
+  DEFAULT_FONT,
+  FONT_STEPS,
+  readFont,
+  readTheme,
+  type FontStep,
+  type Theme,
+} from "@/lib/admin/prefs";
 
 import { groupNav, isGroup, type AdminNavItem } from "./nav";
 import RouterRecovery, { rememberIntent } from "./RouterRecovery";
@@ -78,6 +92,32 @@ export default function AdminShell({
       /* private mode: forget between loads, nothing else */
     }
   }, []);
+  /**
+   * Theme and text size. The boot script in the layout already applied
+   * the saved values before paint; this mirrors them into state so the
+   * buttons show the right thing, and applies changes.
+   */
+  const [theme, setTheme] = useState<Theme>("dark");
+  const [font, setFont] = useState<FontStep>(DEFAULT_FONT);
+  useEffect(() => {
+    setTheme(readTheme());
+    setFont(readFont());
+    // Leaving the panel by a client route (sign-out) should not carry
+    // the light theme onto the marketing page.
+    return () => clearPrefs();
+  }, []);
+  const switchTheme = () => {
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    applyTheme(next);
+  };
+  const stepFont = (dir: -1 | 0 | 1) => {
+    const i = FONT_STEPS.indexOf(font);
+    const next = dir === 0 ? DEFAULT_FONT : (FONT_STEPS[Math.min(FONT_STEPS.length - 1, Math.max(0, i + dir))] ?? DEFAULT_FONT);
+    setFont(next);
+    applyFont(next);
+  };
+
   const toggleSidebar = () => {
     setCollapsed((c) => {
       try {
@@ -304,6 +344,59 @@ export default function AdminShell({
           <span className={`text-sm font-semibold text-verdigris-50 ${collapsed ? "" : "lg:hidden"}`}>
             Genius WMS
           </span>
+
+          <div className="ml-auto flex items-center gap-1.5">
+            {/* Text size: smaller, reset, larger. Scales the root font,
+                and everything here is in rem, so everything scales. */}
+            <div
+              role="group"
+              aria-label="Text size"
+              className="inline-flex items-center rounded-lg border border-verdigris-300/15"
+            >
+              <button
+                type="button"
+                onClick={() => stepFont(-1)}
+                disabled={font === FONT_STEPS[0]}
+                aria-label="Smaller text"
+                title="Smaller text"
+                className="px-2 py-1.5 text-[11px] font-semibold text-verdigris-200 hover:text-verdigris-50 disabled:opacity-35"
+              >
+                A−
+              </button>
+              <button
+                type="button"
+                onClick={() => stepFont(0)}
+                aria-label={`Text size ${font}%. Reset to default`}
+                title={`${font}% — reset`}
+                className={`border-x border-verdigris-300/15 px-2 py-1.5 text-[12px] font-semibold hover:text-verdigris-50 ${
+                  font === DEFAULT_FONT ? "text-verdigris-200/60" : "text-verdigris-50"
+                }`}
+              >
+                A
+              </button>
+              <button
+                type="button"
+                onClick={() => stepFont(1)}
+                disabled={font === FONT_STEPS[FONT_STEPS.length - 1]}
+                aria-label="Larger text"
+                title="Larger text"
+                className="px-2 py-1.5 text-[13px] font-semibold text-verdigris-200 hover:text-verdigris-50 disabled:opacity-35"
+              >
+                A+
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={switchTheme}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              aria-pressed={theme === "light"}
+              title={theme === "dark" ? "Light theme" : "Dark theme"}
+              className="rounded-lg border border-verdigris-300/15 p-2 text-verdigris-200 hover:border-verdigris-300/40 hover:text-verdigris-50"
+            >
+              {theme === "dark" ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />}
+            </button>
+          </div>
         </header>
 
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>

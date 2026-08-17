@@ -99,6 +99,14 @@ export type MasterResource = {
    * drawer can show them without the page guessing.
    */
   hasAudit: true;
+  /**
+   * When adding rows one at a time is the wrong shape. The create drawer
+   * then takes many names in one box and posts them to `endpoint` as
+   * `{ [parentKey]: id, names: string[] }`; the endpoint dedupes and
+   * reports what it skipped. Cities: a state's cities arrive as a
+   * pasted column, never one at a time.
+   */
+  bulkCreate?: { endpoint: string; label: string; hint: string; placeholder: string };
 };
 
 /** Fixed-width `char` columns pad on write. Trim and upper, or you store
@@ -319,6 +327,12 @@ const city: MasterResource = {
   permission: "master.city",
   intro: "Addresses on importers, warehouses and transporters all resolve to this list.",
   hasAudit: true,
+  bulkCreate: {
+    endpoint: "/admin/cities",
+    label: "Cities",
+    hint: "One per line, or comma separated. Paste a whole column if you have one.",
+    placeholder: "Mumbai\nThane\nNavi Mumbai\nPune",
+  },
   fields: [{ key: "name", column: "name", label: "Name", type: "text", required: true }],
   parent: {
     key: "stateId",

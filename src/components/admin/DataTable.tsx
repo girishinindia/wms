@@ -78,7 +78,7 @@ export type DataTableProps<T> = {
  * column names read at a glance rather than as a faint rule.
  */
 const HEADER =
-  "bg-ink-900/70 px-4 py-3 text-[12px] font-bold uppercase tracking-[0.08em] text-white";
+  "bg-ink-900/70 px-4 py-3 text-[12px] font-bold uppercase tracking-[0.08em] text-verdigris-50";
 
 export default function DataTable<T>({
   columns,

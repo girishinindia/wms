@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import AdminShell from "@/components/admin/AdminShell";
 import { visibleNav } from "@/components/admin/nav";
+import { PREFS_BOOT_SCRIPT } from "@/lib/admin/prefs";
 import { currentActor } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
@@ -56,15 +57,21 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   }
 
   return (
-    <AdminShell
-      items={items}
-      user={{
-        name: `${actor.session.firstName} ${actor.session.lastName}`.trim(),
-        email: actor.session.email,
-        roles: actor.roles.map((r) => r.role),
-      }}
-    >
-      {children}
-    </AdminShell>
+    <>
+      {/* Theme and text size, applied before first paint so a light,
+          larger panel does not flash dark and small on the way in.
+          Static string from prefs.ts; nothing user-supplied is in it. */}
+      <script dangerouslySetInnerHTML={{ __html: PREFS_BOOT_SCRIPT }} />
+      <AdminShell
+        items={items}
+        user={{
+          name: `${actor.session.firstName} ${actor.session.lastName}`.trim(),
+          email: actor.session.email,
+          roles: actor.roles.map((r) => r.role),
+        }}
+      >
+        {children}
+      </AdminShell>
+    </>
   );
 }

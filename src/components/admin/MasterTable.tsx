@@ -64,7 +64,17 @@ export type MasterSpec = {
   canCreate: boolean;
   canUpdate: boolean;
   canDelete: boolean;
+  /** Create takes many names at once (cities). See the registry. */
+  bulkCreate?: { endpoint: string; label: string; hint: string; placeholder: string } | null;
 };
+
+/** Split a pasted list: one per line, or comma separated — people paste both. */
+export function splitNames(text: string): string[] {
+  return text
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
 
 type Draft = Record<string, string>;
 type Drawer =
@@ -149,6 +159,39 @@ export default function MasterTable({
       setErrors({ [spec.parent.key]: `Choose a ${spec.parent.label.toLowerCase()}` });
       return;
     }
+
+    // Many at once: the textarea, split, to the bulk endpoint.
+    if (drawer.mode === "create" && spec.bulkCreate && spec.parent) {
+      const names = splitNames(draft.__bulk ?? "");
+      if (names.length === 0) {
+        setBusy(null);
+        setErrors({ __bulk: `Enter at least one ${spec.singular}` });
+        return;
+      }
+      const result = await api<{ created: number; skipped: string[] }>(spec.bulkCreate.endpoint, {
+        body: { [spec.parent.key]: body[spec.parent.key], names },
+      });
+      setBusy(null);
+      if (!result.ok) {
+        if (result.error.fields) setErrors(result.error.fields);
+        toast.error(result.error.message);
+        return;
+      }
+      const { created, skipped } = result.data;
+      if (created === 0) {
+        toast.info("Nothing added — all of those already exist there.");
+      } else if (skipped.length > 0) {
+        toast.success(
+          `Added ${created}. Skipped ${skipped.length} already there: ${skipped.slice(0, 3).join(", ")}${skipped.length > 3 ? "…" : ""}`,
+        );
+      } else {
+        toast.success(`Added ${created} ${created === 1 ? spec.singular : spec.label.toLowerCase()}.`);
+      }
+      close();
+      router.refresh();
+      return;
+    }
+
     const result =
       drawer.mode === "create"
         ? await api<{ id: number }>(`/admin/master/${spec.slug}`, { body })
@@ -477,7 +520,7 @@ function MasterDrawer({
     : (spec.parent?.options ?? []);
   const title =
     drawer.mode === "create"
-      ? `Add ${spec.singular}`
+      ? `Add ${spec.bulkCreate ? spec.label.toLowerCase() : spec.singular}`
       : drawer.mode === "edit"
         ? `Edit ${spec.singular}`
         : cap(spec.singular);
@@ -566,7 +609,32 @@ function MasterDrawer({
               </div>
             ) : null}
 
-            {spec.fields.map((f) => (
+            {drawer.mode === "create" && spec.bulkCreate ? (
+              <div>
+                <label htmlFor="f-bulk" className="text-[12px] font-medium text-verdigris-200/70">
+                  {spec.bulkCreate.label} *
+                </label>
+                <textarea
+                  id="f-bulk"
+                  rows={9}
+                  value={draft.__bulk ?? ""}
+                  placeholder={spec.bulkCreate.placeholder}
+                  onChange={(e) => setDraft({ ...draft, __bulk: e.target.value })}
+                  className={`${input} ${tone("__bulk")}`}
+                />
+                <p className="mt-1 text-xs text-verdigris-200/50" aria-live="polite">
+                  {(() => {
+                    const n = splitNames(draft.__bulk ?? "").length;
+                    return n === 0
+                      ? spec.bulkCreate.hint
+                      : `${n} ${n === 1 ? "name" : "names"} ready. ${spec.bulkCreate.hint}`;
+                  })()}
+                </p>
+                {errors.__bulk ? <p className="mt-1 text-xs text-rose-300">{errors.__bulk}</p> : null}
+              </div>
+            ) : null}
+
+            {spec.fields.map((f) => (drawer.mode === "create" && spec.bulkCreate ? null : (
               <div key={f.key}>
                 <label htmlFor={`f-${f.key}`} className="text-[12px] font-medium text-verdigris-200/70">
                   {f.label}{f.required && !view ? " *" : ""}
@@ -609,7 +677,7 @@ function MasterDrawer({
                 )}
                 {errors[f.key] ? <p className="mt-1 text-xs text-rose-300">{errors[f.key]}</p> : null}
               </div>
-            ))}
+            )))}
           </form>
 
           {view && row ? (
@@ -657,7 +725,11 @@ function MasterDrawer({
               <button type="submit" form="master-drawer-form" disabled={busy}
                 className="inline-flex items-center gap-2 rounded-lg bg-verdigris-400 px-4 py-2 text-sm font-semibold text-ink-900 hover:bg-patina disabled:opacity-60">
                 {busy ? <Spinner className="h-3.5 w-3.5" /> : null}
-                {drawer.mode === "create" ? `Add ${spec.singular}` : "Save changes"}
+                {drawer.mode === "create"
+                  ? spec.bulkCreate
+                    ? `Add ${spec.label.toLowerCase()}`
+                    : `Add ${spec.singular}`
+                  : "Save changes"}
               </button>
             </>
           )}

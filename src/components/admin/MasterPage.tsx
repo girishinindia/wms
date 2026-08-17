@@ -234,6 +234,7 @@ export default async function MasterPage({
     canCreate: grantFor(guard.actor, `${resource.permission}.create`) !== null,
     canUpdate: grantFor(guard.actor, `${resource.permission}.update`) !== null,
     canDelete: grantFor(guard.actor, `${resource.permission}.delete`) !== null,
+    bulkCreate: resource.bulkCreate ?? null,
   };
 
   // The extra filters, rendered inside the toolbar's GET form so they
