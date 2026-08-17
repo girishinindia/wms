@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
 import {
-  ADMIN_NAV,
   ADMIN_NAV_ITEMS,
   groupNav,
   isGroup,
@@ -147,6 +147,44 @@ describe("admin navigation: grouping", () => {
       (s) => s !== "cities",
     );
     expect(navSlugs.sort()).toEqual(Object.keys(MASTER_RESOURCES).sort());
+  });
+});
+
+describe("the sidebar navigates with the browser, not the router", () => {
+  const shellRaw = readFileSync(
+    new URL("../src/components/admin/AdminShell.tsx", import.meta.url),
+    "utf8",
+  );
+  /** The comments explain at length why `<Link>` is gone, so they have to
+   *  come out before asserting that it is. */
+  const shell = shellRaw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  /**
+   * Three separate reports of "I click the menu and nothing happens"
+   * came from three different client-routing failures — chunks 404ing
+   * after a deploy, a navigation aborting silently, and a router that
+   * stopped responding in one tab. They share the property that makes
+   * them so hard to place: when client routing fails, it fails without
+   * saying anything, and the menu just looks broken.
+   *
+   * A browser navigation cannot fail silently. This pins that decision
+   * so it is not casually undone by someone tidying up imports.
+   */
+  it("uses plain anchors for every nav item", () => {
+    expect(shell).not.toMatch(/from "next\/link"/);
+    expect(shell).not.toMatch(/<Link\b/);
+    expect(shell).toMatch(/<a\b[\s\S]*href=\{item\.href\}/);
+  });
+
+  it("carries no stray control characters", () => {
+    // A NUL byte lived in this file from the day the Master menu
+    // shipped. Harmless at runtime, and enough to make every tool treat
+    // the source as binary.
+    const control = shellRaw.split("").filter((c) => {
+      const n = c.charCodeAt(0);
+      return n < 9 || (n > 13 && n < 32);
+    });
+    expect(control).toEqual([]);
   });
 });
 
