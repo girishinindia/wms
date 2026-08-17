@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import AuthShell from "@/components/AuthShell";
 import SignUpForm from "@/components/forms/SignUpForm";
@@ -50,9 +49,9 @@ export default function SignUpPage() {
       footer={
         <>
           Already registered?{" "}
-          <Link href="/sign-in" className={authLink}>
+          <a href="/sign-in" className={authLink}>
             Sign in
-          </Link>
+          </a>
         </>
       }
     >

@@ -1,4 +1,3 @@
-import Link from "next/link";
 
 import VerdigrisField from "@/components/VerdigrisField";
 import { SiteFooter, SiteHeader } from "@/components/PageShell";
@@ -154,19 +153,19 @@ export default function Home() {
               className="mt-10 flex animate-rise flex-wrap items-center gap-4"
               style={{ animationDelay: "240ms" }}
             >
-              <Link
+              <a
                 href="/sign-up"
                 className="group inline-flex items-center gap-2 rounded-full bg-verdigris-400 px-6 py-3 text-sm font-semibold text-ink-900 shadow-lg shadow-verdigris-500/20 transition-all hover:bg-patina hover:shadow-xl hover:shadow-patina/25"
               >
                 Get started
                 <ArrowIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-              </Link>
-              <Link
+              </a>
+              <a
                 href="/sign-in"
                 className="inline-flex items-center gap-2 rounded-full border border-verdigris-300/20 px-6 py-3 text-sm font-medium text-verdigris-100 transition-colors hover:border-verdigris-300/45 hover:bg-verdigris-100/5"
               >
                 Log in
-              </Link>
+              </a>
             </div>
           </div>
         </section>
@@ -349,12 +348,12 @@ export default function Home() {
                   Get started
                   <ArrowIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                 </a>
-                <Link
+                <a
                   href="/sign-in"
                   className="inline-flex items-center rounded-full border border-verdigris-300/20 px-6 py-3 text-sm font-medium text-verdigris-100 transition-colors hover:border-verdigris-300/45 hover:bg-verdigris-100/5"
                 >
                   Sign in
-                </Link>
+                </a>
               </div>
             </div>
           </div>

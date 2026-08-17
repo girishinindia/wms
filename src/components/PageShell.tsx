@@ -105,12 +105,12 @@ export function SiteHeader({ absolute = false }: { absolute?: boolean }) {
           ))}
         </div>
 
-        <Link
+        <a
           href="/sign-in"
           className="rounded-full border border-verdigris-300/20 bg-verdigris-100/5 px-4 py-2 text-sm font-medium text-verdigris-50 backdrop-blur-sm transition-colors hover:border-verdigris-300/40 hover:bg-verdigris-100/10"
         >
           Sign in
-        </Link>
+        </a>
       </nav>
     </header>
   );

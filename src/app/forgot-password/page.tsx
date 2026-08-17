@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import AuthShell from "@/components/AuthShell";
 import ForgotPasswordForm from "@/components/forms/ForgotPasswordForm";
@@ -42,9 +41,9 @@ export default function ForgotPasswordPage() {
       footer={
         <>
           Remembered it?{" "}
-          <Link href="/sign-in" className={authLink}>
+          <a href="/sign-in" className={authLink}>
             Back to sign in
-          </Link>
+          </a>
         </>
       }
     >

@@ -7,8 +7,12 @@ import { PowerIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import type { ListState } from "@/lib/admin/listing";
 
-import { Card, Cell, Empty, IconButton, Row, StatusBadge, Table } from "./ui";
+import { ListToolbar, Pager, SortHeader } from "./ListControls";
+import { Card, Empty, IconButton, StatusBadge } from "./ui";
+
+const BASE = "/admin/master/cities";
 
 /**
  * Adding cities, in bulk, because the table starts empty.
@@ -32,11 +36,15 @@ export type CityRow = {
 export default function CityManager({
   states,
   cities,
+  list,
   canCreate,
   canUpdate,
 }: {
   states: StateRow[];
+  /** The current page only. Search, filter, sort and paging are applied
+   *  on the server, driven by `list`. */
   cities: CityRow[];
+  list: ListState;
   canCreate: boolean;
   canUpdate: boolean;
 }) {
@@ -47,7 +55,6 @@ export default function CityManager({
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [filter, setFilter] = useState("");
 
   const names = useMemo(
     () =>
@@ -59,14 +66,7 @@ export default function CityManager({
     [text],
   );
 
-  const shown = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    if (!needle) return cities;
-    return cities.filter(
-      (c) =>
-        c.name.toLowerCase().includes(needle) || c.stateName.toLowerCase().includes(needle),
-    );
-  }, [cities, filter]);
+  const filtered = list.q !== "" || list.status !== "all" || Boolean(list.extra.state);
 
   async function add() {
     if (names.length === 0) {
@@ -176,53 +176,88 @@ export default function CityManager({
       ) : null}
 
       <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-verdigris-300/10 px-5 py-4">
-          <h2 className="text-sm font-semibold text-verdigris-50">
-            {cities.length} {cities.length === 1 ? "city" : "cities"}
-          </h2>
-          <input
-            type="search"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter"
-            aria-label="Filter cities"
-            className="w-44 rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-3 py-1.5 text-sm text-verdigris-50 placeholder:text-verdigris-200/30 focus:outline-none focus:ring-2 focus:ring-patina/40"
-          />
-        </div>
+        <ListToolbar
+          base={BASE}
+          list={list}
+          label="cities"
+          extraFilters={
+            <select
+              name="state"
+              defaultValue={list.extra.state ?? ""}
+              aria-label="State"
+              className="rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-3 py-1.5 pr-7 text-sm text-verdigris-50 focus:outline-none focus:ring-2 focus:ring-patina/40"
+              onChange={(e) => e.currentTarget.form?.requestSubmit()}
+            >
+              <option value="" className="bg-ink-850">
+                All states
+              </option>
+              {states.map((s) => (
+                <option key={s.id} value={s.id} className="bg-ink-850">
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          }
+        />
 
-        {shown.length === 0 ? (
+        {cities.length === 0 ? (
           <Empty
-            title={cities.length === 0 ? "No cities yet." : "Nothing matches that filter."}
+            title={filtered ? "Nothing matches that search." : "No cities yet."}
             hint={
-              cities.length === 0
-                ? "Importer approval and warehouse creation both need a city, so this is the first master table to fill in."
-                : undefined
+              filtered
+                ? undefined
+                : "Importer approval and warehouse creation both need a city, so this is the first master table to fill in."
             }
           />
         ) : (
-          <Table head={["City", "State", "Status", ""]}>
-            {shown.map((city) => (
-              <Row key={city.id}>
-                <Cell className="font-medium">{city.name}</Cell>
-                <Cell className="text-verdigris-200/60">{city.stateName}</Cell>
-                <Cell>
-                  <StatusBadge value={city.isActive ? "ACTIVE" : "CLOSED"} />
-                </Cell>
-                <Cell className="text-right">
-                  {canUpdate ? (
-                    <IconButton
-                      label={city.isActive ? `Retire ${city.name}` : `Restore ${city.name}`}
-                      tone={city.isActive ? "default" : "danger"}
-                      busy={busyId === city.id}
-                      onClick={() => toggle(city)}
-                      icon={<PowerIcon className="h-4 w-4" />}
-                    />
-                  ) : null}
-                </Cell>
-              </Row>
-            ))}
-          </Table>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-verdigris-300/10">
+                  <SortHeader base={BASE} list={list} sortKey="city">
+                    City
+                  </SortHeader>
+                  <SortHeader base={BASE} list={list} sortKey="state">
+                    State
+                  </SortHeader>
+                  <SortHeader base={BASE} list={list} sortKey="status">
+                    Status
+                  </SortHeader>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {cities.map((city) => (
+                  <tr
+                    key={city.id}
+                    className={`border-b border-verdigris-300/[0.06] last:border-0 hover:bg-verdigris-100/[0.03] ${
+                      city.isActive ? "" : "opacity-60"
+                    }`}
+                  >
+                    <td className="px-4 py-3 font-medium text-verdigris-100">{city.name}</td>
+                    <td className="px-4 py-3 text-verdigris-200/60">{city.stateName}</td>
+                    <td className="px-4 py-3">
+                      <StatusBadge value={city.isActive ? "ACTIVE" : "CLOSED"} />
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {canUpdate ? (
+                        <IconButton
+                          label={city.isActive ? `Retire ${city.name}` : `Restore ${city.name}`}
+                          tone={city.isActive ? "default" : "danger"}
+                          busy={busyId === city.id}
+                          onClick={() => toggle(city)}
+                          icon={<PowerIcon className="h-4 w-4" />}
+                        />
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
+
+        <Pager base={BASE} list={list} />
       </Card>
     </div>
   );

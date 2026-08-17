@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import AuthShell from "@/components/AuthShell";
 import ResetPasswordForm from "@/components/forms/ResetPasswordForm";
@@ -34,9 +33,9 @@ export default function ResetPasswordPage() {
       footer={
         <>
           Changed your mind?{" "}
-          <Link href="/sign-in" className={authLink}>
+          <a href="/sign-in" className={authLink}>
             Back to sign in
-          </Link>
+          </a>
         </>
       }
     >

@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import AuthShell from "@/components/AuthShell";
@@ -63,9 +62,9 @@ export default async function SignInPage() {
       footer={
         <>
           Importer without an account?{" "}
-          <Link href="/sign-up" className={authLink}>
+          <a href="/sign-up" className={authLink}>
             Register here
-          </Link>
+          </a>
         </>
       }
     >

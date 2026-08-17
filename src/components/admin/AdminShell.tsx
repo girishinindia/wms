@@ -151,12 +151,23 @@ export default function AdminShell({
   }
 
   return (
-    <div className="flex min-h-full bg-ink-900">
+    <div className="flex min-h-screen bg-ink-900">
       <RouterRecovery />
+      {/*
+        The sidebar is the height of the SCREEN, not of the page.
+
+        As a plain flex child it grew and shrank with the content beside
+        it: a short screen (five states) gave a short sidebar with the
+        page's background showing under it, a long screen gave a sidebar
+        that scrolled away with the table. `sticky top-0 h-screen` pins
+        it to the viewport for the whole page and lets a very long menu
+        scroll on its own; `self-start` keeps the flex row from
+        stretching it back to the content's height.
+      */}
       <aside
         className={`${
           menuOpen ? "flex" : "hidden"
-        } fixed inset-y-0 left-0 z-40 w-64 shrink-0 flex-col border-r border-verdigris-300/10 bg-ink-850 lg:flex lg:static`}
+        } fixed inset-y-0 left-0 z-40 w-64 shrink-0 flex-col overflow-y-auto border-r border-verdigris-300/10 bg-ink-850 lg:sticky lg:top-0 lg:flex lg:h-screen lg:self-start`}
       >
         <a
           href="/admin"

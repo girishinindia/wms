@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import AuthShell from "@/components/AuthShell";
 import VerifyForm from "@/components/forms/VerifyForm";
@@ -46,9 +45,9 @@ export default function VerifyPage() {
       footer={
         <>
           Wrong details?{" "}
-          <Link href="/sign-up" className={authLink}>
+          <a href="/sign-up" className={authLink}>
             Start again
-          </Link>
+          </a>
         </>
       }
     >

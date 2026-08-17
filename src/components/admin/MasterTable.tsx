@@ -1,13 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { CheckIcon, PencilIcon, PowerIcon, XIcon } from "@/components/icons";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import type { ListState } from "@/lib/admin/listing";
 import type { MasterField } from "@/lib/admin/master-registry";
 
+import { ListToolbar, Pager, SortHeader } from "./ListControls";
 import { Card, Empty, IconButton, StatusBadge } from "./ui";
 
 /**
@@ -68,9 +70,15 @@ function payload(draft: Draft, fields: MasterField[]): Record<string, unknown> {
 export default function MasterTable({
   spec,
   rows,
+  list,
+  base,
 }: {
   spec: MasterSpec;
+  /** The current page only — searching, sorting and paging happen on the
+   *  server, driven by `list`. */
   rows: MasterRow[];
+  list: ListState;
+  base: string;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -82,21 +90,11 @@ export default function MasterTable({
   const [addParent, setAddParent] = useState<string>("");
   const [busy, setBusy] = useState<number | "new" | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [filter, setFilter] = useState("");
   /** A row whose deactivation the server refused because it is in use. */
   const [confirmOff, setConfirmOff] = useState<{ id: number; message: string } | null>(null);
 
-  const shown = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter((r) =>
-      Object.values(r.values)
-        .concat(r.parentLabel ?? "")
-        .some((v) => String(v ?? "").toLowerCase().includes(needle)),
-    );
-  }, [rows, filter]);
-
-  const activeCount = rows.filter((r) => r.isActive).length;
+  const shown = rows;
+  const filtered = list.q !== "" || list.status !== "all";
 
   function startEdit(row: MasterRow) {
     setConfirmOff(null);
@@ -231,21 +229,12 @@ export default function MasterTable({
 
   return (
     <Card>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-verdigris-300/10 px-5 py-4">
-        <h2 className="text-sm font-semibold text-verdigris-50">
-          {rows.length} defined
-          <span className="ml-2 font-normal text-verdigris-200/45">{activeCount} active</span>
-        </h2>
-        <div className="flex items-center gap-2">
-          <input
-            type="search"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter"
-            aria-label={`Filter ${spec.label.toLowerCase()}`}
-            className="w-40 rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-3 py-1.5 text-sm text-verdigris-50 placeholder:text-verdigris-200/30 focus:outline-none focus:ring-2 focus:ring-patina/40"
-          />
-          {spec.canCreate ? (
+      <ListToolbar
+        base={base}
+        list={list}
+        label={spec.label.toLowerCase()}
+        action={
+          spec.canCreate ? (
             <button
               type="button"
               onClick={() => {
@@ -257,36 +246,37 @@ export default function MasterTable({
             >
               {adding ? "Cancel" : `Add ${spec.singular}`}
             </button>
-          ) : null}
-        </div>
-      </div>
+          ) : null
+        }
+      />
 
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b border-verdigris-300/10">
               {spec.parent ? (
-                <th className="px-4 py-3 text-left font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-verdigris-400">
+                <SortHeader base={base} list={list} sortKey="parent">
                   {spec.parent.label}
-                </th>
+                </SortHeader>
               ) : null}
               {spec.fields.map((f) => (
-                <th
+                <SortHeader
                   key={f.key}
-                  style={f.width ? { width: `${f.width}rem` } : undefined}
-                  className={`px-4 py-3 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-verdigris-400 ${
-                    f.align === "right" ? "text-right" : "text-left"
-                  }`}
+                  base={base}
+                  list={list}
+                  sortKey={f.key}
+                  align={f.align === "right" ? "right" : "left"}
+                  width={f.width}
                 >
                   {f.label}
-                </th>
+                </SortHeader>
               ))}
               <th className="whitespace-nowrap px-4 py-3 text-left font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-verdigris-400">
                 In use
               </th>
-              <th className="px-4 py-3 text-left font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-verdigris-400">
+              <SortHeader base={base} list={list} sortKey="status">
                 Status
-              </th>
+              </SortHeader>
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -361,9 +351,9 @@ export default function MasterTable({
                 <td colSpan={spec.fields.length + (spec.parent ? 4 : 3)}>
                   <Empty
                     title={
-                      rows.length === 0
-                        ? `No ${spec.label.toLowerCase()} yet.`
-                        : "Nothing matches that filter."
+                      filtered
+                        ? "Nothing matches that search."
+                        : `No ${spec.label.toLowerCase()} yet.`
                     }
                   />
                 </td>
@@ -470,6 +460,8 @@ export default function MasterTable({
           </tbody>
         </table>
       </div>
+
+      <Pager base={base} list={list} />
 
       {confirmOff ? (
         <p
