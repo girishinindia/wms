@@ -50,8 +50,10 @@ describeE2E("/docs", () => {
     expect(spec.openapi).toBe("3.1.0");
     expect(spec.info.title).toBe("Genius WMS API");
 
-    const authPaths = Object.keys(spec.paths).filter((p) => p.includes("/auth/"));
-    expect(authPaths).toHaveLength(8);
+    // The exact path list lives in openapi.test.ts — one place, so
+    // adding an endpoint updates one assertion rather than two.
+    expect(Object.keys(spec.paths).filter((p) => p.includes("/auth/")).length)
+      .toBeGreaterThan(0);
 
     // Every operation needs a summary, or the sidebar shows bare paths.
     for (const [path, item] of Object.entries(spec.paths)) {

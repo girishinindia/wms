@@ -23,6 +23,10 @@ export const dynamic = "force-dynamic";
  * ticket is short-lived, single-use and never leaves the browser it was
  * issued to.
  *
+ * `confirmPassword` is checked by the Zod schema, server-side. The
+ * browser check is a convenience; a native client that never renders a
+ * confirm field would otherwise bypass it entirely.
+ *
  * Every other session is revoked. If the reason somebody reset their
  * password is that someone else had it, leaving that person's session
  * alive defeats the entire exercise — and this is the single most common

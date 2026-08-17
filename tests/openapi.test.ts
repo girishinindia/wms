@@ -21,6 +21,7 @@ describe("OpenAPI document", () => {
       "/api/v1/auth/login",
       "/api/v1/auth/logout",
       "/api/v1/auth/otp/send",
+      "/api/v1/auth/otp/status",
       "/api/v1/auth/otp/verify",
       "/api/v1/auth/password/forgot",
       "/api/v1/auth/password/reset",

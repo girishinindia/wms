@@ -1,6 +1,6 @@
 import { type NextRequest } from "next/server";
 
-import { findAccount } from "@/lib/auth/account";
+import { findAccountByEmailAndMobile } from "@/lib/auth/account";
 import { dispatchOtp } from "@/lib/auth/dispatch-otp";
 import { clientIp, limitOrAllow, limitOtpSend } from "@/lib/auth/ratelimit";
 import { shouldBlock, verifyRecaptcha } from "@/lib/auth/recaptcha";
@@ -14,10 +14,15 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/v1/auth/password/forgot
  *
- * Answers `{ ok: true }` for every input, always, including a malformed
- * one that passed validation. This is the classic enumeration endpoint:
- * anything that distinguishes "we sent you a code" from "no such
- * account" turns the login page into a directory of your customers.
+ * Takes the email AND the mobile, and they must belong to the SAME
+ * account. Knowing somebody's email address is therefore not enough to
+ * start a reset against them — an attacker needs the mobile number too,
+ * and the codes then go to both channels.
+ *
+ * Answers `{ ok: true }` for every input, always. This is the classic
+ * enumeration endpoint: anything that distinguishes "we sent you a code"
+ * from "no such account" turns the login page into a directory of your
+ * customers. A mismatched pair is treated exactly like a match.
  *
  * The uniform time floor matters as much as the uniform message —
  * "found, hashed, sent two messages" is otherwise hundreds of
@@ -41,7 +46,11 @@ export async function POST(request: NextRequest) {
         fields: fieldsFrom(parsed.error),
       });
     }
-    const identifier = parsed.data.identifier.trim().toLowerCase();
+    const email = parsed.data.email.trim().toLowerCase();
+    const mobile = parsed.data.mobile.trim();
+    // One rate-limit key for the pair, so trying many mobiles against one
+    // email spends the same budget as trying many emails.
+    const identifier = `${email}|${mobile}`;
 
     try {
       const captcha = await verifyRecaptcha(parsed.data.captchaToken, "forgot_password", ip);
@@ -72,7 +81,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const account = await findAccount(identifier);
+      const account = await findAccountByEmailAndMobile(email, mobile);
       if (account && account.status !== "SUSPENDED") {
         const dispatched = await dispatchOtp({
           userId: account.id,
@@ -94,8 +103,11 @@ export async function POST(request: NextRequest) {
         await auditQuietly({
           action: "auth.password.forgot", operation: "DENY", entityType: "user",
           entityId: identifier, result: "DENIED",
-          reason: account ? "account suspended" : "no such account",
+          reason: account
+            ? "account suspended"
+            : "no account with that email and mobile together",
           ip, userAgent, requestId,
+          metadata: { email, mobileGiven: true },
         });
       }
 

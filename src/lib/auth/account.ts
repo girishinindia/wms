@@ -230,15 +230,25 @@ export async function setPassword(userId: number, hash: string): Promise<void> {
 }
 
 /**
- * Create a self-registered account.
+ * Create a self-registered importer: the user AND the importer record,
+ * in one statement.
  *
- * NO ROLE IS ASSIGNED HERE, and that is deliberate. `IMPORTER` is
- * exclusive and immutable — once granted, not even a Super Admin can
- * change or revoke it. Granting it to an unverified signup means a
- * mistyped email address creates an account that can never be repaired.
- * The role goes on when the importer record is approved.
+ * Both, or neither. A user with no importer cannot be given the role;
+ * an importer with no user is an orphan nobody can sign in to. The
+ * company name lives on `importer.company_name`, where it belongs —
+ * there is no company field on `users`.
  *
- * Returns null when the email or mobile already exists, so the caller
+ * The importer starts incomplete: legal name, entity type, address,
+ * city and pincode arrive with the KYC documents. That is legal because
+ * its status is PENDING; `importer_complete_before_active` refuses to
+ * let it become anything else until those five are filled.
+ *
+ * NO ROLE IS ASSIGNED HERE. `IMPORTER` is exclusive and immutable —
+ * once granted, not even a Super Admin can change or revoke it. It goes
+ * on only after both verification codes are proven, so a mistyped email
+ * address never reaches a state nobody can repair.
+ *
+ * Returns null when the email or mobile is already taken, so the caller
  * can answer identically either way rather than confirming which
  * addresses are registered.
  */
@@ -249,20 +259,132 @@ export async function createSelfRegistration(input: {
   mobile: string;
   companyName: string;
   passwordHash: string;
-}): Promise<{ id: number } | null> {
-  const rows = await getDb().execute<{ id: number }>(sql`
-    insert into wms.users
-      (email, first_name, last_name, mobile, password_hash,
-       password_changed_at, signup_company_name, status)
-    select ${input.email}::citext, ${input.firstName}, ${input.lastName},
-           ${input.mobile}::wms.mobile_in, ${input.passwordHash}, now(),
-           ${input.companyName}, 'PENDING'
-     where not exists (
-       select 1 from wms.users
-        where deleted_at is null
-          and (email = ${input.email}::citext or mobile = ${input.mobile}::wms.mobile_in)
-     )
-    returning id
+}): Promise<{ userId: number; importerId: number; importerCode: string } | null> {
+  const rows = await getDb().execute<{
+    user_id: number;
+    importer_id: number;
+    code: string;
+  }>(sql`
+    with new_user as (
+      insert into wms.users
+        (email, first_name, last_name, mobile, password_hash,
+         password_changed_at, status)
+      select ${input.email}::citext, ${input.firstName}, ${input.lastName},
+             ${input.mobile}::wms.mobile_in, ${input.passwordHash}, now(), 'PENDING'
+       where not exists (
+         select 1 from wms.users
+          where deleted_at is null
+            and (email = ${input.email}::citext
+                 or mobile = ${input.mobile}::wms.mobile_in)
+       )
+      returning id
+    ),
+    new_importer as (
+      -- code defaults from wms.importer_code_seq, so there is nothing to
+      -- collide on and no read-then-write to race.
+      insert into wms.importer
+        (company_name, contact_person, contact_email, contact_mobile,
+         origin, status, kyc_status)
+      select ${input.companyName},
+             ${input.firstName} || ' ' || ${input.lastName},
+             ${input.email}::citext, ${input.mobile}::wms.mobile_in,
+             'SELF_REGISTERED', 'PENDING', 'NOT_STARTED'
+        from new_user
+      returning id, code
+    )
+    select new_user.id as user_id, new_importer.id as importer_id, new_importer.code
+      from new_user, new_importer
+  `);
+
+  const row = rows[0];
+  if (!row) return null;
+  return { userId: row.user_id, importerId: row.importer_id, importerCode: row.code };
+}
+
+/**
+ * Find the importer created by a user's own registration.
+ *
+ * Matched on contact_email, because at this point the two are not linked
+ * by anything else — the role assignment is what will link them, and it
+ * does not exist yet.
+ */
+export async function pendingImporterFor(
+  email: string,
+): Promise<{ id: number; code: string } | null> {
+  const rows = await getDb().execute<{ id: number; code: string }>(sql`
+    select id, code from wms.importer
+     where contact_email = ${email}::citext
+       and origin = 'SELF_REGISTERED'
+       and deleted_at is null
+     order by id desc
+     limit 1
   `);
   return rows[0] ?? null;
+}
+
+/**
+ * Activate a verified registration: ACTIVE, plus the IMPORTER role.
+ *
+ * One statement, because the two must not come apart. An account that is
+ * ACTIVE with no role can sign in and see nothing; a role attached to an
+ * account still PENDING is a permission granted to something unverified.
+ *
+ * Idempotent — a replayed verify finds the assignment already there and
+ * changes nothing, rather than tripping the exclusivity trigger.
+ */
+export async function activateSelfRegistration(params: {
+  userId: number;
+  importerId: number;
+}): Promise<{ activated: boolean; roleAssigned: boolean }> {
+  const rows = await getDb().execute<{ activated: boolean; role_assigned: boolean }>(sql`
+    with activated as (
+      update wms.users
+         set status = 'ACTIVE'
+       where id = ${params.userId} and status = 'PENDING'
+      returning id
+    ),
+    assigned as (
+      insert into wms.user_role_assignment
+        (user_id, role, role_domain, importer_id, assigned_by, note)
+      select ${params.userId}, 'IMPORTER', 'IMPORTER', ${params.importerId},
+             ${params.userId}, 'self-registration, both channels verified'
+       where not exists (
+         select 1 from wms.user_role_assignment
+          where user_id = ${params.userId} and revoked_at is null
+       )
+      returning id
+    )
+    select exists (select 1 from activated) as activated,
+           exists (select 1 from assigned)  as role_assigned
+  `);
+  const row = rows[0];
+  return {
+    activated: row?.activated ?? false,
+    roleAssigned: row?.role_assigned ?? false,
+  };
+}
+
+/**
+ * Find an account by email AND mobile together.
+ *
+ * Used by password reset. Requiring both means knowing somebody's email
+ * address is not enough to start a reset against their account — the
+ * attacker needs the mobile number too, and the codes then go to both.
+ */
+export async function findAccountByEmailAndMobile(
+  email: string,
+  mobile: string,
+): Promise<AccountRow | null> {
+  const normalised = normalizeMobile(mobile);
+  if (!/^[6-9]\d{9}$/.test(normalised)) return null;
+
+  const rows = await getDb().execute<{ id: number }>(sql`
+    select id from wms.users
+     where deleted_at is null
+       and email = ${email.trim()}::citext
+       and mobile = ${normalised}::wms.mobile_in
+     limit 1
+  `);
+  if (!rows[0]) return null;
+  return findAccount(email);
 }

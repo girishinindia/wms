@@ -1,0 +1,1 @@
+ALTER TABLE "wms"."importer" ALTER COLUMN "code" SET DEFAULT ('IMP-'::text || lpad((nextval('wms.importer_code_seq'::regclass))::text, 4, '0'::text));

@@ -1,25 +1,38 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import Field from "@/components/Field";
 import { normalizeMobile } from "@/lib/normalize";
 import { ArrowIcon } from "@/components/icons";
+import { api, applyFieldErrors } from "@/lib/api/client";
 import {
   authLink,
   formNote,
-  formSuccess,
   submitButton,
 } from "@/components/authStyles";
 import { signUpSchema, type SignUpValues } from "@/lib/validation/auth";
 
+type RegisterResponse = {
+  userId: number;
+  channels: Array<"EMAIL" | "SMS">;
+  expiresInSeconds: number;
+  resendAfterSeconds: number;
+};
+
 export default function SignUpForm() {
+  const router = useRouter();
+  const [formError, setFormError] = useState<string | null>(null);
+
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting, isSubmitSuccessful },
+    setError,
+    formState: { errors, isSubmitting },
   } = useForm<SignUpValues>({
     resolver: zodResolver(signUpSchema),
     mode: "onTouched",
@@ -38,11 +51,37 @@ export default function SignUpForm() {
   const mobileField = register("mobile");
 
   const onSubmit = async (values: SignUpValues) => {
-    // Phase 1: POST to the registration action. It MUST re-validate with
-    // signUpSchema AND hardcode role = IMPORTER — never trust a
-    // client-supplied role, especially with RLS off.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    console.info("[sign-up] validated payload", values);
+    setFormError(null);
+
+    // `confirmPassword` and `terms` are browser concerns — the API does
+    // not model them, and a native client never collects them. The
+    // server re-validates everything it does model.
+    const result = await api<RegisterResponse>("/auth/register", {
+      body: {
+        firstName: values.firstName,
+        lastName: values.lastName,
+        companyName: values.companyName,
+        email: values.email,
+        mobile: values.mobile,
+        password: values.password,
+      },
+    });
+
+    if (!result.ok) {
+      if (applyFieldErrors(result.error.fields, setError)) return;
+      setFormError(result.error.message);
+      return;
+    }
+
+    // Straight to the codes. The identifier travels in the URL so a
+    // reload does not lose it; nothing secret is in there, and the
+    // endpoint answers the same for an address that does not exist.
+    const query = new URLSearchParams({
+      purpose: "registration",
+      identifier: values.email,
+      mobile: values.mobile,
+    });
+    router.push(`/verify?${query.toString()}`);
   };
 
   return (
@@ -172,10 +211,12 @@ export default function SignUpForm() {
         )}
       </div>
 
-      {isSubmitSuccessful && (
-        <p className={formSuccess}>
-          Validation passed. Your account is created once registration is
-          connected.
+      {formError && (
+        <p
+          role="alert"
+          className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
+        >
+          {formError}
         </p>
       )}
 
@@ -191,7 +232,8 @@ export default function SignUpForm() {
       </button>
 
       <p className={formNote}>
-        Front-end only — authentication is wired up in Phase 1.
+        We send one code to your email and a different code to your mobile.
+        Both are needed.
       </p>
     </form>
   );

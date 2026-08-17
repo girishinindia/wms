@@ -1,22 +1,28 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 
 import Field from "@/components/Field";
 import { normalizeMobile } from "@/lib/normalize";
 import { ArrowIcon } from "@/components/icons";
-import { formNote, formSuccess, submitButton } from "@/components/authStyles";
+import { api } from "@/lib/api/client";
+import { formNote, submitButton } from "@/components/authStyles";
 import {
   forgotPasswordSchema,
   type ForgotPasswordValues,
 } from "@/lib/validation/auth";
 
 export default function ForgotPasswordForm() {
+  const router = useRouter();
+  const [formError, setFormError] = useState<string | null>(null);
+
   const {
     register,
     handleSubmit,
-    formState: { errors, isSubmitting, isSubmitSuccessful },
+    formState: { errors, isSubmitting },
   } = useForm<ForgotPasswordValues>({
     resolver: zodResolver(forgotPasswordSchema),
     mode: "onTouched",
@@ -26,11 +32,27 @@ export default function ForgotPasswordForm() {
   const mobileField = register("mobile");
 
   const onSubmit = async (values: ForgotPasswordValues) => {
-    // Phase 1: issue the two challenges. The response must be identical
-    // whether or not the account exists — otherwise this endpoint turns
-    // into a way to enumerate registered importers.
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    console.info("[forgot-password] validated payload", values);
+    setFormError(null);
+
+    // The email and the mobile must belong to the SAME account. The
+    // server answers `ok: true` either way and in the same time, so this
+    // screen cannot be used to discover who is registered — which is why
+    // it moves on to the code step regardless.
+    const result = await api<{ ok: true }>("/auth/password/forgot", {
+      body: { email: values.email, mobile: values.mobile },
+    });
+
+    if (!result.ok) {
+      setFormError(result.error.message);
+      return;
+    }
+
+    const query = new URLSearchParams({
+      purpose: "passwordRecovery",
+      identifier: values.email,
+      mobile: values.mobile,
+    });
+    router.push(`/verify?${query.toString()}`);
   };
 
   return (
@@ -64,10 +86,12 @@ export default function ForgotPasswordForm() {
         }}
       />
 
-      {isSubmitSuccessful && (
-        <p className={formSuccess}>
-          Validation passed. Reset codes are sent once authentication is
-          connected.
+      {formError && (
+        <p
+          role="alert"
+          className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
+        >
+          {formError}
         </p>
       )}
 
@@ -83,7 +107,7 @@ export default function ForgotPasswordForm() {
       </button>
 
       <p className={formNote}>
-        Front-end only — authentication is wired up in Phase 1.
+        Both must match the same account. We send a code to each.
       </p>
     </form>
   );

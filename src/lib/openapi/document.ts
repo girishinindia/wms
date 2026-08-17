@@ -16,6 +16,7 @@ import {
   okResponseSchema,
   otpSendRequestSchema,
   otpSendResponseSchema,
+  otpStatusResponseSchema,
   otpVerifyRequestSchema,
   otpVerifyResponseSchema,
   registerRequestSchema,
@@ -237,13 +238,19 @@ authPath({
   summary: "Register a new importer account",
   status: 201,
   description:
-    "Creates the account and sends a separate code to the email address " +
-    "and the mobile number.\n\n**Answers identically whether or not the " +
-    "address is already registered.** A signup form that says \"this email " +
-    "is taken\" is a free account enumerator.\n\n**No role is assigned " +
-    "here.** `IMPORTER` is exclusive and immutable — once granted, not " +
-    "even a Super Admin can change it — so it is not attached until the " +
-    "account is verified and an importer record is approved.",
+    "Creates the `users` row **and** the `importer` row together, then " +
+    "sends a separate code to the email address and to the mobile " +
+    "number.\n\nThe company name lives on `importer.company_name` — " +
+    "there is no company field on `users`. The importer starts " +
+    "incomplete: legal name, entity type and registered address arrive " +
+    "with the KYC documents, and `importer_complete_before_active` " +
+    "refuses to let the record leave PENDING until they do.\n\n" +
+    "**Answers identically whether or not the address is already " +
+    "registered.** A signup form that says \"this email is taken\" is a " +
+    "free account enumerator.\n\n**No role is assigned here.** `IMPORTER` " +
+    "is exclusive and immutable — once granted, not even a Super Admin " +
+    "can change it — so it is attached in `/otp/verify`, after both " +
+    "codes are proven.",
   request: registerRequestSchema,
   response: registerResponseSchema,
   responses: { 400: errorResponse("reCAPTCHA rejected the request.") },
@@ -271,16 +278,35 @@ authPath({
   description:
     "Codes are single-use and consumed in the same statement that " +
     "validates them, so a replay cannot succeed and two concurrent " +
-    "requests cannot both win.\n\nOn a completed `passwordRecovery` the " +
-    "response carries a short-lived `resetToken`. That, not the OTP, is " +
-    "what `/password/reset` consumes — the OTP is still sitting in the " +
-    "user's inbox and text messages.",
+    "requests cannot both win.\n\nOn a completed **registration** this is " +
+    "where the account becomes real: the user goes ACTIVE and the " +
+    "`IMPORTER` role is attached to their importer record, in one " +
+    "statement. It is also the point of no return — that role is " +
+    "immutable — which is exactly why it waits for both codes.\n\nOn a " +
+    "completed **passwordRecovery** the response carries a short-lived " +
+    "`resetToken`. That, not the OTP, is what `/password/reset` " +
+    "consumes — the OTP is still sitting in the user's inbox and text " +
+    "messages.",
   request: otpVerifyRequestSchema,
   response: otpVerifyResponseSchema,
   responses: {
     400: errorResponse("The code was wrong."),
     410: errorResponse("The code expired. Request a new one."),
   },
+});
+
+authPath({
+  path: "/api/v1/auth/otp/status",
+  operationId: "getOtpStatus",
+  method: "get",
+  summary: "Remaining resend cooldown",
+  description:
+    "What the verify screen needs to draw its countdown after a reload. " +
+    "Without it the timer restarts at zero on refresh and the user " +
+    "presses resend into a cooldown they cannot see.\n\nLeaks nothing: " +
+    "an unknown identifier returns the configured defaults, which is " +
+    "what a real account with no live code returns too.",
+  response: otpStatusResponseSchema,
 });
 
 authPath({
@@ -337,8 +363,12 @@ authPath({
   operationId: "forgotPassword",
   summary: "Begin a password reset",
   description:
-    "Answers `ok: true` for every input, always, and takes the same time " +
-    "either way. This is the classic enumeration endpoint: anything that " +
+    "Takes the email **and** the mobile, and they must belong to the " +
+    "**same account**. Knowing somebody's email address is therefore not " +
+    "enough to start a reset against them, and the codes go to two " +
+    "channels an attacker would have to hold both of.\n\nAnswers " +
+    "`ok: true` for every input, always, and takes the same time either " +
+    "way. This is the classic enumeration endpoint: anything that " +
     "distinguishes \"we sent you a code\" from \"no such account\" turns " +
     "the login page into a directory of your customers.",
   request: forgotPasswordRequestSchema,

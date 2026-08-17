@@ -210,3 +210,99 @@ export async function resendCooldownRemaining(params: {
   `);
   return rows[0]?.wait ?? 0;
 }
+
+/**
+ * Verify SEVERAL codes as one unit: all correct, or none consumed.
+ *
+ * The reason this exists is a real failure found by driving the UI. With
+ * per-channel verification, a user who typed the email code correctly
+ * and fat-fingered one digit of the SMS code had their EMAIL code
+ * consumed and marked verified — then sat in front of a form still
+ * demanding an email code that no longer worked. One wrong digit, and
+ * the only way out was a resend.
+ *
+ * So: match every submitted code first, and only consume if all of them
+ * matched. A wrong guess still costs an attempt on the channel that was
+ * wrong — the brute-force budget has to be spent, or `max_attempts`
+ * limits nothing — but a correct code is never burned by someone else's
+ * typo.
+ *
+ * The check-then-consume gap is safe: the consuming UPDATE still carries
+ * `consumed_at is null`, so a concurrent request cannot double-verify.
+ * The worst case is this call reporting a failure it did not cause,
+ * which is the right way round.
+ */
+export async function verifyOtpPair(params: {
+  userId: number;
+  entries: Array<{ purpose: OtpPurpose; channel: "EMAIL" | "SMS"; code: string }>;
+}): Promise<
+  | { ok: true; verified: Array<"EMAIL" | "SMS"> }
+  | {
+      ok: false;
+      failures: Array<{
+        channel: "EMAIL" | "SMS";
+        reason: "NOT_FOUND" | "EXPIRED" | "CONSUMED" | "TOO_MANY_ATTEMPTS";
+      }>;
+    }
+> {
+  const db = getDb();
+
+  // 1. Does a live token match, for every channel submitted?
+  const matches = await Promise.all(
+    params.entries.map(async (entry) => {
+      const rows = await db.execute<{ id: number }>(sql`
+        select id from wms.user_verification_token
+         where token_hash = ${hashToken(entry.code)}
+           and user_id = ${params.userId}
+           and purpose = ${entry.purpose}
+           and channel = ${entry.channel}
+           and consumed_at is null
+           and expires_at > now()
+           and attempts < max_attempts
+         limit 1
+      `);
+      return { entry, tokenId: rows[0]?.id };
+    }),
+  );
+
+  const missed = matches.filter((m) => m.tokenId === undefined);
+
+  if (missed.length > 0) {
+    // 2a. Charge an attempt only against the channels that were wrong,
+    //     and report why for each.
+    const failures = await Promise.all(
+      missed.map(async ({ entry }) => {
+        const result = await verifyOtp({
+          userId: params.userId,
+          purpose: entry.purpose,
+          channel: entry.channel,
+          code: entry.code,
+        });
+        return {
+          channel: entry.channel,
+          reason: result.ok ? ("NOT_FOUND" as const) : result.reason,
+        };
+      }),
+    );
+    return { ok: false, failures };
+  }
+
+  // 2b. All matched: consume them.
+  const consumed = await db.execute<{ id: number }>(sql`
+    update wms.user_verification_token
+       set consumed_at = now(), attempts = attempts + 1
+     where id in ${sql.raw(`(${matches.map((m) => m.tokenId).join(",")})`)}
+       and consumed_at is null
+    returning id
+  `);
+
+  if (consumed.length !== matches.length) {
+    // Somebody else consumed one between the check and the update.
+    return {
+      ok: false,
+      failures: [{ channel: params.entries[0].channel, reason: "CONSUMED" }],
+    };
+  }
+
+  return { ok: true, verified: params.entries.map((e) => e.channel) };
+}

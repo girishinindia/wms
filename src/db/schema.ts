@@ -55,19 +55,6 @@ export const usersInWms = wms.table("users", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	deletedBy: bigint("deleted_by", { mode: "number" }),
 	deletedAt: timestamp("deleted_at", { withTimezone: true, mode: 'string' }),
-	/**
-	 * What a self-registering user typed as their company, before an
-	 * `importer` row exists.
-	 *
-	 * It cannot go on `importer` at signup: that table needs an address,
-	 * a city and a pincode, none of which a signup form collects. And it
-	 * must not be discarded, because the IMPORTER role is exclusive and
-	 * IMMUTABLE — assigning it before the account is verified would
-	 * permanently lock a user who mistyped their email.
-	 *
-	 * So the name is parked here until approval creates the importer.
-	 */
-	signupCompanyName: text("signup_company_name"),
 }, (table) => [
 	index("users_created_by_idx").using("btree", table.createdBy.asc().nullsLast().op("int8_ops")),
 	uniqueIndex("users_email_uk").using("btree", table.email.asc().nullsLast().op("citext_ops")).where(sql`(deleted_at IS NULL)`),
@@ -643,17 +630,32 @@ export const notificationDeliveryInWms = wms.table("notification_delivery", {
 export const importerInWms = wms.table("importer", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "wms.importer_id_seq", startWith: 1, increment: 1 }),
-	code: text().notNull(),
+	/** Customer-facing id: IMP-0001. Defaulted from its own sequence so
+	 *  registration never has to invent one and never collides. */
+	code: text().notNull().default(sql`('IMP-'::text || lpad((nextval('wms.importer_code_seq'::regclass))::text, 4, '0'::text))`),
 	companyName: text("company_name").notNull(),
-	legalName: text("legal_name").notNull(),
+	/**
+	 * The five columns below are NULLABLE while `status = 'PENDING'` and
+	 * required after that — enforced by `importer_complete_before_active`.
+	 *
+	 * A self-registering importer supplies a company name, a contact and
+	 * a mobile number; the legal name, entity type and registered address
+	 * arrive with the KYC documents, days later. Demanding them at signup
+	 * means either a form nobody finishes or five placeholder values that
+	 * are indistinguishable from real ones.
+	 *
+	 * The CHECK is what makes this safe: a half-built importer can exist,
+	 * an ACTIVE one cannot.
+	 */
+	legalName: text("legal_name"),
 	tradeName: text("trade_name"),
-	entityType: text("entity_type").notNull(),
-	address: text().notNull(),
+	entityType: text("entity_type"),
+	address: text(),
 	landmark: text(),
 	area: text(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
-	cityId: bigint("city_id", { mode: "number" }).notNull(),
-	pincode: pincodeIn("pincode").notNull(),
+	cityId: bigint("city_id", { mode: "number" }),
+	pincode: pincodeIn("pincode"),
 	gstin: gstin("gstin"),
 	pan: panNo("pan"),
 	contactPerson: text("contact_person").notNull(),
@@ -738,6 +740,16 @@ export const importerInWms = wms.table("importer", {
 	check("importer_check", sql`((origin = 'SELF_REGISTERED'::text) AND (created_by IS NULL)) OR ((origin = 'CREATED_BY_ADMIN'::text) AND (created_by IS NOT NULL))`),
 	check("importer_check1", sql`(status <> 'REJECTED'::wms.record_status) OR (rejection_reason IS NOT NULL)`),
 	check("importer_check2", sql`(NOT is_credit_blocked) OR (credit_block_reason IS NOT NULL)`),
+	/**
+	 * A PENDING importer may be incomplete; anything else may not.
+	 *
+	 * This is the constraint that makes the five nullable columns safe.
+	 * Without it, "we will collect the address at KYC" is a promise in a
+	 * code path, and the first handler that forgets leaves an ACTIVE
+	 * importer with no registered address — which is the record an
+	 * invoice and an e-way bill are both generated from.
+	 */
+	check("importer_complete_before_active", sql`(status = 'PENDING'::wms.record_status) OR (legal_name IS NOT NULL AND entity_type IS NOT NULL AND address IS NOT NULL AND city_id IS NOT NULL AND pincode IS NOT NULL)`),
 ]);
 
 export const userDeviceInWms = wms.table("user_device", {

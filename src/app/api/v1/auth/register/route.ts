@@ -28,9 +28,15 @@ export const dynamic = "force-dynamic";
  * leaks: a real returning user is told the same thing by the email they
  * receive, which for an existing account says "you already have one".
  *
- * NO ROLE IS ASSIGNED. `IMPORTER` is exclusive and immutable, so
- * granting it to an unverified signup makes a mistyped email permanent.
- * See account.ts.
+ * Creates the user AND the importer record together. The company name
+ * belongs on `importer.company_name` — there is no company field on
+ * `users`. The importer starts incomplete (no legal name, entity type or
+ * address) and PENDING, which is exactly what
+ * `importer_complete_before_active` permits.
+ *
+ * NO ROLE IS ASSIGNED. `IMPORTER` is exclusive and immutable, so granting
+ * it to an unverified signup makes a mistyped email permanent. It goes on
+ * in /otp/verify, once both codes are proven.
  */
 export async function POST(request: NextRequest) {
   return handler(async ({ requestId }) => {
@@ -112,7 +118,7 @@ export async function POST(request: NextRequest) {
       }
 
       const dispatched = await dispatchOtp({
-        userId: created.id,
+        userId: created.userId,
         purpose: "registration",
         firstName: input.firstName,
         email: input.email,
@@ -123,20 +129,26 @@ export async function POST(request: NextRequest) {
 
       await auditQuietly({
         action: "auth.register", operation: "INSERT", entityType: "user",
-        entityId: String(created.id), entityLabel: input.email,
-        actorUserId: created.id, actorName: `${input.firstName} ${input.lastName}`,
+        entityId: String(created.userId), entityLabel: input.email,
+        actorUserId: created.userId, actorName: `${input.firstName} ${input.lastName}`,
         actorEmail: input.email,
         after: {
-          email: input.email, mobile: input.mobile,
-          signup_company_name: input.companyName, status: "PENDING",
+          email: input.email, mobile: input.mobile, status: "PENDING",
+          importer_id: created.importerId, importer_code: created.importerCode,
         },
         ip, userAgent, requestId, correlationId: requestId,
-        metadata: { delivery: dispatched.delivery, captcha: captcha.ok ? "ok" : captcha.reason },
+        metadata: {
+          delivery: dispatched.delivery,
+          captcha: captcha.ok ? "ok" : captcha.reason,
+          // The company name lands on importer.company_name; there is no
+          // company field on users.
+          importerCode: created.importerCode,
+        },
       });
 
       return ok(
         {
-          userId: created.id,
+          userId: created.userId,
           verificationRequired: true as const,
           channels: dispatched.channels,
           expiresInSeconds: dispatched.expiresInSeconds,

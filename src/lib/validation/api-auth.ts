@@ -100,6 +100,22 @@ export const otpSendRequestSchema = z
   })
   .openapi("OtpSendRequest");
 
+// ── GET /api/v1/auth/otp/status ───────────────────────────────────
+/**
+ * What the verify screen needs to render its countdown after a refresh.
+ * Without it the timer resets to zero on reload and the user hammers
+ * "resend" into a cooldown they cannot see.
+ */
+export const otpStatusResponseSchema = z
+  .object({
+    resendAfterSeconds: z.number().int(),
+    expiresInSeconds: z.number().int(),
+    codeLength: z.number().int(),
+    /** Same answer whether or not the account exists. */
+    channels: z.array(otpChannelSchema),
+  })
+  .openapi("OtpStatusResponse");
+
 export const otpSendResponseSchema = z
   .object({
     /** Always true, whether or not the account exists. See the handler. */
@@ -130,7 +146,11 @@ export const otpVerifyResponseSchema = z
     mobileVerified: z.boolean(),
     /** True once every channel this flow requires has been verified. */
     complete: z.boolean(),
-    /** Present on a completed PASSWORD_RESET: pass it to /password/reset. */
+    /** Registration only: the IMPORTER role was attached. */
+    roleAssigned: z.boolean().optional(),
+    /** Registration only: the new importer's customer-facing code. */
+    importerCode: z.string().optional().openapi({ example: "IMP-0001" }),
+    /** Present on a completed passwordRecovery: pass it to /password/reset. */
     resetToken: z.string().optional(),
   })
   .openapi("OtpVerifyResponse");
@@ -192,9 +212,18 @@ export const sessionResponseSchema = z
   .openapi("SessionResponse");
 
 // ── POST /api/v1/auth/password/forgot ─────────────────────────────
+/**
+ * Both, not either.
+ *
+ * Requiring the email AND the mobile to belong to the SAME account means
+ * knowing somebody's email address is not enough to start a reset
+ * against them — and the codes then go to two channels an attacker would
+ * have to hold both of.
+ */
 export const forgotPasswordRequestSchema = z
   .object({
-    identifier: z.string().trim().min(1),
+    email,
+    mobile,
     captchaToken: captcha,
   })
   .openapi("ForgotPasswordRequest");
@@ -205,6 +234,11 @@ export const resetPasswordRequestSchema = z
     /** From a completed /otp/verify with purpose passwordRecovery. */
     resetToken: z.string().min(1),
     newPassword: password,
+    confirmPassword: z.string().min(1, "Please confirm your password"),
+  })
+  .refine((v) => v.newPassword === v.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
   })
   .openapi("ResetPasswordRequest");
 

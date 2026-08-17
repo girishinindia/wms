@@ -29,6 +29,20 @@
       "when": 1786942407438,
       "tag": "0003_majestic_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786944613423,
+      "tag": "0004_curved_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786944642872,
+      "tag": "0005_mixed_lilandra",
+      "breakpoints": true
     }
   ]
 }

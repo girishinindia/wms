@@ -3,9 +3,14 @@ import { randomBytes, createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
-import { findAccount, markVerified } from "@/lib/auth/account";
+import {
+  activateSelfRegistration,
+  findAccount,
+  markVerified,
+  pendingImporterFor,
+} from "@/lib/auth/account";
 import { purposeFor } from "@/lib/auth/dispatch-otp";
-import { verifyOtp } from "@/lib/auth/otp";
+import { verifyOtpPair } from "@/lib/auth/otp";
 import { clientIp, limitAuthAttempt, limitOrAllow } from "@/lib/auth/ratelimit";
 import { auditQuietly } from "@/lib/audit";
 import { otpEnv } from "@/lib/env";
@@ -70,37 +75,32 @@ export async function POST(request: NextRequest) {
         throw new HandledError("OTP_INVALID", INVALID);
       }
 
-      const results: Array<{ channel: "EMAIL" | "SMS"; ok: boolean; reason?: string }> = [];
-
-      for (const [channel, code] of [
+      const entries = ([
         ["EMAIL", input.emailCode],
         ["SMS", input.smsCode],
-      ] as const) {
-        if (!code) continue;
-        const result = await verifyOtp({
-          userId: account.id,
+      ] as const)
+        .filter(([, code]) => Boolean(code))
+        .map(([channel, code]) => ({
+          channel,
+          code: code!,
           purpose: purposeFor(input.purpose, channel),
-          channel,
-          code,
-        });
-        results.push({
-          channel,
-          ok: result.ok,
-          reason: result.ok ? undefined : result.reason,
-        });
-        if (result.ok) await markVerified(account.id, channel);
-      }
+        }));
 
-      const failed = results.filter((r) => !r.ok);
-      if (failed.length > 0) {
+      // All or nothing. One correct code must not be burned because the
+      // other one had a typo in it — see verifyOtpPair.
+      const outcome = await verifyOtpPair({ userId: account.id, entries });
+
+      if (!outcome.ok) {
         await auditQuietly({
           action: "auth.otp.verify", operation: "DENY", entityType: "user",
           entityId: String(account.id), entityLabel: account.email,
           actorUserId: account.id, result: "DENIED",
-          reason: `code rejected: ${failed.map((f) => `${f.channel}=${f.reason}`).join(", ")}`,
+          reason:
+            "code rejected: " +
+            outcome.failures.map((f) => `${f.channel}=${f.reason}`).join(", "),
           ip, userAgent, requestId, metadata: { purpose: input.purpose },
         });
-        const worst = failed[0].reason;
+        const worst = outcome.failures[0].reason;
         if (worst === "EXPIRED") {
           throw new HandledError("OTP_EXPIRED", "That code has expired. Request a new one.");
         }
@@ -110,8 +110,16 @@ export async function POST(request: NextRequest) {
             "Too many incorrect attempts. Request a new code.",
           );
         }
-        throw new HandledError("OTP_INVALID", INVALID);
+        throw new HandledError(
+          "OTP_INVALID",
+          outcome.failures.length === 1
+            ? `The ${outcome.failures[0].channel === "EMAIL" ? "email" : "mobile"} code is not valid. Check it and try again.`
+            : INVALID,
+        );
       }
+
+      const results = outcome.verified.map((channel) => ({ channel, ok: true }));
+      for (const channel of outcome.verified) await markVerified(account.id, channel);
 
       // Re-read: markVerified may have set one or both timestamps.
       const after = await findAccount(identifier);
@@ -127,12 +135,31 @@ export async function POST(request: NextRequest) {
             : emailVerified || mobileVerified
           : results.length > 0;
 
-      // A registration that verified both channels activates the account.
+      // Both channels proven: this is the point the account becomes real.
+      //
+      // Activation and the role go on together, in one statement. An
+      // ACTIVE account with no role can sign in and see nothing; a role
+      // on a still-PENDING account is a permission granted to something
+      // unverified. Neither half is worth having alone.
+      //
+      // It is also the point of no return: IMPORTER is immutable, so
+      // after this nobody — Super Admin included — can change or revoke
+      // it. That is precisely why it waits until both codes are proven.
+      let activation: { activated: boolean; roleAssigned: boolean } | undefined;
+      let importerCode: string | undefined;
       if (input.purpose === "registration" && complete) {
-        await getDb().execute(sql`
-          update wms.users set status = 'ACTIVE'
-           where id = ${account.id} and status = 'PENDING'
-        `);
+        const importer = await pendingImporterFor(account.email);
+        if (!importer) {
+          throw new HandledError(
+            "INTERNAL",
+            "This registration has no importer record. Please start again.",
+          );
+        }
+        importerCode = importer.code;
+        activation = await activateSelfRegistration({
+          userId: account.id,
+          importerId: importer.id,
+        });
       }
 
       let resetToken: string | undefined;
@@ -154,11 +181,26 @@ export async function POST(request: NextRequest) {
           purpose: input.purpose,
           channels: results.map((r) => r.channel),
           issuedResetToken: resetToken !== undefined,
+          ...(activation
+            ? {
+                activated: activation.activated,
+                importerRoleAssigned: activation.roleAssigned,
+                importerCode,
+              }
+            : {}),
         },
       });
 
       return ok(
-        { emailVerified, mobileVerified, complete, ...(resetToken ? { resetToken } : {}) },
+        {
+          emailVerified,
+          mobileVerified,
+          complete,
+          ...(activation
+            ? { roleAssigned: activation.roleAssigned, importerCode }
+            : {}),
+          ...(resetToken ? { resetToken } : {}),
+        },
         requestId,
       );
     } catch (error) {
