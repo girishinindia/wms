@@ -163,3 +163,28 @@ export const GridIcon = (p: P) => (
     <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
   </svg>
 );
+
+/** View — an eye. Read-only look at a row, nothing changes. */
+export const EyeIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+    <circle cx="12" cy="12" r="2.75" />
+  </svg>
+);
+
+/** Delete — a bin. Only ever offered for a row nothing points at. */
+export const TrashIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M4 7h16" />
+    <path d="M9.5 7V4.5h5V7" />
+    <path d="M6.5 7l1 12.5h9l1-12.5" />
+    <path d="M10 11v5.5M14 11v5.5" />
+  </svg>
+);
+
+/** A chevron for sort indicators and disclosure. */
+export const ChevronIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+);

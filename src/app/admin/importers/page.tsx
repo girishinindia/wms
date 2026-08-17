@@ -1,6 +1,5 @@
-import Link from "next/link";
-
-import { Card, Cell, Denied, Empty, PageHeader, Row, StatusBadge, Table } from "@/components/admin/ui";
+import ImportersTable from "@/components/admin/ImportersTable";
+import { Card, Denied, PageHeader } from "@/components/admin/ui";
 import { getDb } from "@/db";
 import { pageGuard } from "@/lib/auth/guard";
 import { sql } from "drizzle-orm";
@@ -67,7 +66,7 @@ export default async function ImportersPage({
         {tabs.map((tab) => {
           const isOn = active === tab.value;
           return (
-            <Link
+            <a
               key={tab.label}
               href={tab.value ? `/admin/importers?status=${tab.value}` : "/admin/importers"}
               className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
@@ -77,54 +76,25 @@ export default async function ImportersPage({
               }`}
             >
               {tab.label}
-            </Link>
+            </a>
           );
         })}
       </div>
 
       <Card>
-        {rows.length === 0 ? (
-          <Empty
-            title="No importers here."
-            hint="A registration appears once the applicant has verified both their email address and their mobile number."
-          />
-        ) : (
-          <Table head={["Code", "Company", "Contact", "Status", "KYC", "Registered"]}>
-            {rows.map((row) => (
-              <Row key={row.id}>
-                <Cell className="font-mono text-xs text-verdigris-300">
-                  <Link href={`/admin/importers/${row.id}`} className="hover:text-patina">
-                    {row.code}
-                  </Link>
-                </Cell>
-                <Cell className="font-medium">
-                  <Link href={`/admin/importers/${row.id}`} className="hover:text-patina">
-                    {row.company_name}
-                  </Link>
-                </Cell>
-                <Cell className="text-verdigris-200/60">
-                  <span className="block">{row.contact_person}</span>
-                  <span className="block text-xs text-verdigris-200/40">
-                    {row.contact_email}
-                  </span>
-                </Cell>
-                <Cell>
-                  <StatusBadge value={row.status} />
-                </Cell>
-                <Cell>
-                  <StatusBadge value={row.kyc_status} />
-                </Cell>
-                <Cell className="whitespace-nowrap text-xs text-verdigris-200/50">
-                  {new Date(row.created_at).toLocaleDateString("en-IN", {
-                    day: "2-digit",
-                    month: "short",
-                    year: "numeric",
-                  })}
-                </Cell>
-              </Row>
-            ))}
-          </Table>
-        )}
+        <ImportersTable
+          rows={rows.map((r) => ({
+            id: r.id,
+            code: r.code,
+            companyName: r.company_name,
+            contactPerson: r.contact_person,
+            contactEmail: r.contact_email,
+            contactMobile: r.contact_mobile,
+            status: r.status,
+            kycStatus: r.kyc_status,
+            createdAt: String(r.created_at),
+          }))}
+        />
       </Card>
     </>
   );

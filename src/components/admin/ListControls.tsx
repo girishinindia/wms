@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { listHref, PAGE_SIZES, type ListState } from "@/lib/admin/listing";
+import { DEFAULT_PAGE_SIZE, listHref, PAGE_SIZES, type ListState } from "@/lib/admin/listing";
 
 /**
  * The controls every paginated admin list shares.
@@ -27,7 +27,7 @@ function Carry({ list, except }: { list: ListState; except: string[] }) {
   if (!except.includes("status") && list.status !== "all") pairs.push(["status", list.status]);
   if (!except.includes("sort")) pairs.push(["sort", list.sort]);
   if (!except.includes("dir") && list.dir !== "asc") pairs.push(["dir", list.dir]);
-  if (!except.includes("size") && list.size !== 25) pairs.push(["size", String(list.size)]);
+  if (!except.includes("size") && list.size !== DEFAULT_PAGE_SIZE) pairs.push(["size", String(list.size)]);
   for (const [k, v] of Object.entries(list.extra)) {
     if (!except.includes(k) && v) pairs.push([k, v]);
   }
@@ -71,7 +71,17 @@ export function ListToolbar({
         ) : null}
       </h2>
 
-      <form method="get" action={base} className="flex flex-wrap items-center gap-2">
+      <form
+        method="get"
+        action={base}
+        className="flex flex-wrap items-center gap-2"
+        // Any select in here — including ones a server component passed
+        // in as `extraFilters`, which cannot carry handlers of their own
+        // — submits the form the moment it changes.
+        onChange={(e) => {
+          if (e.target instanceof HTMLSelectElement) e.currentTarget.requestSubmit();
+        }}
+      >
         <Carry list={list} except={["q", "status", "size", ...Object.keys(list.extra)]} />
         <input
           type="search"
@@ -86,7 +96,6 @@ export function ListToolbar({
           defaultValue={list.status}
           aria-label="Status"
           className={selectClass}
-          onChange={(e) => e.currentTarget.form?.requestSubmit()}
         >
           <option value="all" className="bg-ink-850">All</option>
           <option value="active" className="bg-ink-850">Active</option>
@@ -98,7 +107,6 @@ export function ListToolbar({
           defaultValue={String(list.size)}
           aria-label="Rows per page"
           className={selectClass}
-          onChange={(e) => e.currentTarget.form?.requestSubmit()}
         >
           {PAGE_SIZES.map((n) => (
             <option key={n} value={n} className="bg-ink-850">

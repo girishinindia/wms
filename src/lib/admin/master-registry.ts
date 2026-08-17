@@ -5,7 +5,9 @@ import { z } from "@/lib/openapi/zod";
  *
  * Five tables with the same shape would otherwise be five copies of the
  * same route handler differing only in a table name and a schema, and
- * five copies drift. So the shape lives here and the handler reads it.
+ * five copies drift. So the shape lives here and the handler, the page
+ * and the table component all read it — columns, filters, parent
+ * pickers, in-use counts, validation, the lot.
  *
  * The important property is that NOTHING in this file ever comes from a
  * request. A URL segment selects an entry by key from a frozen record;
@@ -33,6 +35,9 @@ export type MasterField = {
   /** Column width hint for the table, in rem. */
   width?: number;
   hint?: string;
+  /** Offer this field as a dropdown filter above the table. Only
+   *  meaningful for `select` fields. */
+  filterable?: boolean;
 };
 
 export type MasterDependent = {
@@ -47,7 +52,8 @@ export type MasterResource = {
   table: string;
   label: string;
   singular: string;
-  /** `master.vehicle_type`; the handler appends `.create` / `.update`. */
+  /** `master.vehicle_type`; the handler appends `.create` / `.update` /
+   *  `.delete`. */
   permission: string;
   fields: MasterField[];
   /**
@@ -77,6 +83,11 @@ export type MasterResource = {
   createSchema: z.ZodTypeAny;
   updateSchema: z.ZodTypeAny;
   intro: string;
+  /**
+   * The audit columns every master table carries. Listed so the view
+   * drawer can show them without the page guessing.
+   */
+  hasAudit: true;
 };
 
 /** Fixed-width `char` columns pad on write. Trim and upper, or you store
@@ -112,8 +123,7 @@ export const VEHICLE_CATEGORIES = [
   "CONTAINER",
 ] as const;
 
-/** Every update may also flip the row's availability. There is no delete
- *  anywhere in here — see the note on `deactivation` below. */
+/** Every update may also flip the row's availability. */
 const withActive = <T extends z.ZodRawShape>(shape: T) =>
   z.object({ ...shape, isActive: z.boolean().optional() });
 
@@ -126,6 +136,7 @@ const country: MasterResource = {
   permission: "master.country",
   intro:
     "The root of every address in the system. States hang off this, and cities off those.",
+  hasAudit: true,
   fields: [
     { key: "iso2", column: "iso2", label: "ISO2", type: "text", required: true, mono: true, width: 5 },
     { key: "iso3", column: "iso3", label: "ISO3", type: "text", required: true, mono: true, width: 5 },
@@ -161,6 +172,7 @@ const state: MasterResource = {
   permission: "master.state",
   intro:
     "The code is the GST state code, and it is what appears in a GSTIN — 27 is Maharashtra, 24 is Gujarat.",
+  hasAudit: true,
   fields: [
     { key: "code", column: "code", label: "Code", type: "text", required: true, mono: true, width: 6 },
     { key: "name", column: "name", label: "Name", type: "text", required: true },
@@ -195,6 +207,7 @@ const warehouseType: MasterResource = {
   permission: "master.warehouse_type",
   intro:
     "Bonded, CFS and FTWZ carry customs obligations a general warehouse does not, so the type is not cosmetic.",
+  hasAudit: true,
   fields: [
     { key: "code", column: "code", label: "Code", type: "text", required: true, mono: true, width: 9 },
     { key: "name", column: "name", label: "Name", type: "text", required: true },
@@ -235,6 +248,7 @@ const vehicleType: MasterResource = {
   permission: "master.vehicle_type",
   intro:
     "Capacity here is what a dispatch is planned against, so a wrong number becomes a vehicle that cannot take the load.",
+  hasAudit: true,
   fields: [
     { key: "code", column: "code", label: "Code", type: "text", required: true, mono: true, width: 11 },
     { key: "name", column: "name", label: "Name", type: "text", required: true },
@@ -248,6 +262,7 @@ const vehicleType: MasterResource = {
       options: VEHICLE_CATEGORIES,
       required: true,
       width: 9,
+      filterable: true,
     },
     { key: "axleCount", column: "axle_count", label: "Axles", type: "number", align: "right", width: 4 },
     { key: "capacityKg", column: "capacity_kg", label: "Kg", type: "number", align: "right", width: 6 },
@@ -283,6 +298,53 @@ const vehicleType: MasterResource = {
   }),
 };
 
+
+// ── city ──────────────────────────────────────────────────────────
+/**
+ * Cities used to have a screen of their own outside this registry, with
+ * a bulk-paste form and its own route. The bulk paste is worth keeping
+ * — a state's cities arrive as a pasted column, not one at a time — and
+ * still lives at /api/v1/admin/cities. Everything else about the table
+ * is the same shape as the other four, so it lives here now: one table
+ * component, one route, one set of filters.
+ *
+ * Four tables point at a city, which is why deleting one is refused far
+ * more often than for the others.
+ */
+const city: MasterResource = {
+  slug: "cities",
+  table: "city",
+  label: "Cities",
+  singular: "city",
+  permission: "master.city",
+  intro: "Addresses on importers, warehouses and transporters all resolve to this list.",
+  hasAudit: true,
+  fields: [{ key: "name", column: "name", label: "Name", type: "text", required: true }],
+  parent: {
+    key: "stateId",
+    column: "state_id",
+    label: "State",
+    table: "state",
+    labelColumn: "name",
+  },
+  dependents: [
+    { table: "warehouse", column: "city_id", noun: "warehouses" },
+    { table: "importer", column: "city_id", noun: "importers" },
+    { table: "importer_client", column: "city_id", noun: "importer clients" },
+    { table: "transporter", column: "city_id", noun: "transporters" },
+  ],
+  conflict: "That state already has a city with this name",
+  orderBy: "name",
+  createSchema: withActive({
+    stateId: z.number().int().positive(),
+    name: name(80),
+  }),
+  updateSchema: withActive({
+    stateId: z.number().int().positive().optional(),
+    name: name(80).optional(),
+  }),
+};
+
 /**
  * The whitelist.
  *
@@ -292,6 +354,7 @@ const vehicleType: MasterResource = {
 export const MASTER_RESOURCES = Object.freeze({
   countries: country,
   states: state,
+  cities: city,
   "warehouse-types": warehouseType,
   "vehicle-types": vehicleType,
 } as const);
@@ -305,21 +368,20 @@ export function resolveResource(slug: string): MasterResource | null {
 }
 
 /**
- * Why none of these screens deletes anything.
+ * What delete means here.
  *
- * Two independent reasons, and either alone would be enough.
+ * Every foreign key into these tables is `NO ACTION`, so a row something
+ * points at cannot be removed — the database refuses, and so does the
+ * handler, before the database has to (409, naming what points at it).
+ * A row nothing points at is deleted outright. Not soft-deleted: the
+ * unique keys — `country.iso2`, `state (country_id, code)`,
+ * `city (state_id, name)`, `*_type.code` — are plain, not partial on
+ * `deleted_at`, so a soft-deleted row would keep its code for good and
+ * re-adding it would fail against a row nobody can see. The audit row
+ * carries the deleted values, which is where the history lives.
  *
- * Every foreign key into these tables is `NO ACTION`, so removing a row
- * something points at raises rather than cascading — correct, and not a
- * useful button.
- *
- * And the unique keys — `country.iso2`, `country.iso3`,
- * `state (country_id, code)`, `city (state_id, name)`,
- * `warehouse_type.code`, `vehicle_type.code` — are plain, not partial on
- * `deleted_at` the way the ones on `users` are. So a soft-deleted row
- * keeps its code for good, and re-adding that code fails on a conflict
- * against a row the user cannot see. Deactivation has none of that: the
- * row leaves every picker, every existing reference still resolves, and
- * it can be switched back on.
+ * Deactivation remains for the common case: a row that IS in use but
+ * should not be offered any more. It leaves every picker; every existing
+ * reference still resolves; and it can be switched back on.
  */
-export const DEACTIVATION_ONLY = true;
+export const HARD_DELETE_WHEN_UNUSED = true;

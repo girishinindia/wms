@@ -600,7 +600,7 @@ adminPath({
 
 const masterResourceParam = z.object({
   resource: z
-    .enum(["countries", "states", "warehouse-types", "vehicle-types"])
+    .enum(["countries", "states", "cities", "warehouse-types", "vehicle-types"])
     .openapi({ example: "vehicle-types" }),
 });
 
@@ -611,8 +611,8 @@ adminPath({
   permission: "master.<resource>.create",
   status: 201,
   description:
-    "One endpoint for four tables — countries, states, warehouse types " +
-    "and vehicle types. The `resource` segment selects an entry from a " +
+    "One endpoint for five tables — countries, states, cities, warehouse " +
+    "types and vehicle types. The `resource` segment selects an entry from a " +
     "frozen whitelist in `master-registry.ts`; anything not a key in it " +
     "is a 404 before any SQL is composed, so the table and column names " +
     "are always literals from that file and never from the request.\n\n" +
@@ -620,9 +620,9 @@ adminPath({
     "the table's own constraints: `vehicle_type.category` accepts " +
     "exactly the six values its CHECK allows, and the fixed-width `char` " +
     "columns on `country` are trimmed and upper-cased, because a padded " +
-    "`\"IN \"` never matches an `\"IN\"` again.\n\nCities are not here. " +
-    "That screen takes a pasted list rather than one row, and has its " +
-    "own endpoint.",
+    "`\"IN \"` never matches an `\"IN\"` again.\n\nCities also have a " +
+    "bulk-paste endpoint at `/admin/cities` for adding many at once; " +
+    "this one adds one.",
   params: masterResourceParam,
   request: z.record(z.unknown()).openapi("MasterRowRequest"),
   response: z.object({ id: z.number().int() }).openapi("MasterRowResponse"),
@@ -639,14 +639,9 @@ adminPath({
   summary: "Edit a master row, or switch it off",
   permission: "master.<resource>.update",
   description:
-    "Takes `?id=`. A partial body: only the fields present are written.\n\n" +
-    "There is no DELETE, and that is a decision the schema makes rather " +
-    "than a gap. Every foreign key into these tables is `NO ACTION`, so " +
-    "removing a referenced row raises; and the unique keys are plain, " +
-    "not partial on `deleted_at` the way the ones on `users` are, so a " +
-    "soft delete would hold that code for good and make re-adding it " +
-    "fail against a row nobody can see. `isActive: false` has none of " +
-    "that.\n\nSwitching a row off is refused with a 409 the first time " +
+    "Takes `?id=`. A partial body: only the fields present are written; " +
+    "the parent key (`countryId`, `stateId`) may be included to move a " +
+    "row.\n\nSwitching a row off is refused with a 409 the first time " +
     "if anything still points at it, naming the count. Repeat with " +
     "`?force=true` to go ahead — the existing references keep resolving; " +
     "what changes is that the row leaves every picker.",
@@ -657,6 +652,59 @@ adminPath({
     404: errorResponse("No such master table, or no such row."),
     409: errorResponse("Still in use, or the new code is taken."),
   },
+});
+
+adminPath({
+  path: "/api/v1/admin/master/{resource}",
+  operationId: "deleteMasterRow",
+  method: "delete",
+  summary: "Delete a master row that nothing points at",
+  permission: "master.<resource>.delete",
+  description:
+    "Takes `?id=`. Removes the row outright — not a soft delete, because " +
+    "the unique keys on these tables are plain rather than partial on " +
+    "`deleted_at`, so a soft-deleted row would keep its code for good " +
+    "and re-adding it would fail against a row nobody can see. The audit " +
+    "row carries the deleted values.\n\nRefused with a 409 while anything " +
+    "still references the row, naming what does (\"3 cities, 1 " +
+    "warehouse\"). Every foreign key into these tables is `NO ACTION`, so " +
+    "the database would refuse too; this answers first, in words. Switch " +
+    "the row off instead when it is in use.",
+  params: masterResourceParam,
+  response: okAdminResponseSchema,
+  responses: {
+    404: errorResponse("No such master table, or no such row."),
+    409: errorResponse("Still in use."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/master/{resource}/bulk",
+  operationId: "bulkMasterRows",
+  summary: "Activate, deactivate or delete many rows at once",
+  permission: "master.<resource>.update, or .delete for action=delete",
+  description:
+    "`{ action: 'activate' | 'deactivate' | 'delete', ids: number[] }`, " +
+    "up to 200 ids. Handled row by row so one refusal does not fail the " +
+    "rest: the response lists `done`, `skipped` (with a reason — not " +
+    "found, or in use by what) and `notes` (deactivated rows that are " +
+    "still referenced). Each row is audited individually.",
+  params: masterResourceParam,
+  request: z
+    .object({
+      action: z.enum(["activate", "deactivate", "delete"]),
+      ids: z.array(z.number().int().positive()).min(1).max(200),
+    })
+    .openapi("MasterBulkRequest"),
+  response: z
+    .object({
+      action: z.string(),
+      done: z.array(z.number().int()),
+      skipped: z.array(z.object({ id: z.number().int(), reason: z.string() })),
+      notes: z.array(z.object({ id: z.number().int(), note: z.string() })),
+    })
+    .openapi("MasterBulkResponse"),
+  responses: { 404: errorResponse("No such master table.") },
 });
 
 adminPath({

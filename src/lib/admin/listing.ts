@@ -15,8 +15,8 @@
  * the menu is snapped to the nearest allowed value.
  */
 
-export const PAGE_SIZES = [25, 50, 100] as const;
-export const DEFAULT_PAGE_SIZE = 25;
+export const PAGE_SIZES = [20, 50, 100] as const;
+export const DEFAULT_PAGE_SIZE = 20;
 
 export type Direction = "asc" | "desc";
 export type StatusFilter = "all" | "active" | "inactive";

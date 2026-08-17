@@ -13,7 +13,7 @@ const opts = { sortable: ["name", "code", "status"], defaultSort: "name" } as co
 describe("parseListQuery", () => {
   it("defaults everything", () => {
     expect(parseListQuery({}, opts)).toEqual({
-      q: "", status: "all", sort: "name", dir: "asc", page: 1, size: 25, extra: {},
+      q: "", status: "all", sort: "name", dir: "asc", page: 1, size: 20, extra: {},
     });
   });
 
@@ -25,9 +25,9 @@ describe("parseListQuery", () => {
   });
 
   it("snaps the page size to the menu", () => {
-    expect(parseListQuery({ size: "100000" }, opts).size).toBe(25);
+    expect(parseListQuery({ size: "100000" }, opts).size).toBe(20);
     expect(parseListQuery({ size: "50" }, opts).size).toBe(50);
-    expect(parseListQuery({ size: "-1" }, opts).size).toBe(25);
+    expect(parseListQuery({ size: "-1" }, opts).size).toBe(20);
   });
 
   it("ignores a nonsense page and direction", () => {
@@ -49,7 +49,7 @@ describe("parseListQuery", () => {
 describe("finishList", () => {
   it("clamps a page past the end to the last page", () => {
     const q = parseListQuery({ page: "99" }, opts);
-    expect(finishList(q, 60, opts.sortable).page).toBe(3);
+    expect(finishList(q, 60, opts.sortable).page).toBe(3); // 60 / 20
     expect(finishList(q, 0, opts.sortable)).toMatchObject({ page: 1, pages: 1 });
   });
 });
@@ -62,7 +62,7 @@ describe("likePattern", () => {
 });
 
 describe("listHref", () => {
-  const cur = { q: "", status: "all" as const, sort: "name", dir: "asc" as const, page: 3, size: 25, extra: {} };
+  const cur = { q: "", status: "all" as const, sort: "name", dir: "asc" as const, page: 3, size: 20, extra: {} };
 
   it("resets the page when the search changes", () => {
     expect(listHref("/x", cur, { q: "mum" })).toBe("/x?q=mum&sort=name");
@@ -89,8 +89,11 @@ describe("the admin lists navigate with the browser", () => {
     "utf8",
   );
   it("uses GET forms and anchors, never the router", () => {
-    expect(controls).toMatch(/<form method="get"/);
-    expect(controls).not.toMatch(/useRouter|next\/link|router\.(push|replace)/);
+    // Comments explain the decision at length; strip them before
+    // asserting the code keeps it.
+    const code = controls.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(code).toMatch(/<form\s+method="get"/);
+    expect(code).not.toMatch(/useRouter|next\/link|router\.(push|replace)/);
   });
 });
 

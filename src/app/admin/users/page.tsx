@@ -1,6 +1,6 @@
-import Link from "next/link";
 
-import { Card, Cell, Denied, Empty, PageHeader, Row, StatusBadge, Table } from "@/components/admin/ui";
+import UsersTable from "@/components/admin/UsersTable";
+import { Card, Denied, PageHeader } from "@/components/admin/ui";
 import { getDb } from "@/db";
 import { pageGuard } from "@/lib/auth/guard";
 import { sql } from "drizzle-orm";
@@ -54,55 +54,19 @@ export default async function UsersPage() {
       />
 
       <Card>
-        {rows.length === 0 ? (
-          <Empty title="No users yet." />
-        ) : (
-          <Table head={["Name", "Contact", "Roles", "Status", "Last seen"]}>
-            {rows.map((row) => (
-              <Row key={row.id}>
-                <Cell className="font-medium">
-                  <Link href={`/admin/users/${row.id}`} className="hover:text-patina">
-                    {row.first_name} {row.last_name}
-                  </Link>
-                </Cell>
-                <Cell className="text-verdigris-200/60">
-                  <span className="block text-xs">
-                    {row.email}{" "}
-                    {row.email_verified ? null : (
-                      <span className="text-amber-300">unverified</span>
-                    )}
-                  </span>
-                  <span className="block text-xs text-verdigris-200/40">
-                    {row.mobile}{" "}
-                    {row.mobile_verified ? null : (
-                      <span className="text-amber-300">unverified</span>
-                    )}
-                  </span>
-                </Cell>
-                <Cell>
-                  {row.roles && row.roles.length > 0 ? (
-                    <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-verdigris-300">
-                      {row.roles.join(" · ")}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-amber-300">none</span>
-                  )}
-                </Cell>
-                <Cell>
-                  <StatusBadge value={row.status} />
-                </Cell>
-                <Cell className="whitespace-nowrap text-xs text-verdigris-200/50">
-                  {row.last_login_at
-                    ? new Date(row.last_login_at).toLocaleDateString("en-IN", {
-                        day: "2-digit",
-                        month: "short",
-                      })
-                    : "never"}
-                </Cell>
-              </Row>
-            ))}
-          </Table>
-        )}
+        <UsersTable
+          rows={rows.map((r) => ({
+            id: r.id,
+            name: `${r.first_name} ${r.last_name}`.trim(),
+            email: r.email,
+            mobile: r.mobile,
+            status: r.status,
+            emailVerified: r.email_verified,
+            mobileVerified: r.mobile_verified,
+            roles: r.roles ?? [],
+            lastLoginAt: r.last_login_at ? String(r.last_login_at) : null,
+          }))}
+        />
       </Card>
     </>
   );

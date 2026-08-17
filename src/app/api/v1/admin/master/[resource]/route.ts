@@ -6,7 +6,8 @@ import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { auditQuietly } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
-import { resolveResource, type MasterResource } from "@/lib/admin/master-registry";
+import { deleteOne, dependentCounts, identifier } from "@/lib/admin/master-ops";
+import { resolveResource } from "@/lib/admin/master-registry";
 import { isUniqueViolation } from "@/lib/db-errors";
 
 export const runtime = "nodejs";
@@ -25,28 +26,11 @@ export const dynamic = "force-dynamic";
  * from that file. Column names come from the same place. A request never
  * reaches an identifier position — only a bound parameter.
  *
- * There is no DELETE. See the note at the bottom of the registry: the
- * foreign keys are RESTRICT and the unique keys are not partial on
- * `deleted_at`, so a soft delete would burn the code forever.
+ * DELETE removes a row outright, and only when nothing points at it —
+ * see `HARD_DELETE_WHEN_UNUSED` in the registry for why it is not a soft
+ * delete. The bulk variant lives in ./bulk/route.ts and shares
+ * `deleteOne` / `setActive` below.
  */
-
-/** `code`, `sort_order` … always from the registry, never from a body. */
-function identifier(value: string): SQL {
-  if (!/^[a-z_][a-z0-9_]*$/.test(value)) {
-    // Unreachable from a request; a guard against a future typo in the
-    // registry becoming an injection rather than a crash.
-    throw new Error(`Refusing to use '${value}' as an identifier`);
-  }
-  return sql.raw(value);
-}
-
-/** `select count(*) …` per dependent, as one scalar subquery each. */
-function dependentCounts(resource: MasterResource, idColumn: SQL): SQL[] {
-  return resource.dependents.map(
-    (d) => sql`(select count(*) from wms.${identifier(d.table)} dep
-                 where dep.${identifier(d.column)} = ${idColumn})`,
-  );
-}
 
 export async function POST(
   request: NextRequest,
@@ -209,6 +193,20 @@ export async function PATCH(
         const value = input[field.key];
         sets.push(sql`${identifier(field.column)} = ${value ?? null}`);
       }
+      // Moving a row to another parent (a city to another state). Same
+      // active-parent rule as create.
+      if (resource.parent && input[resource.parent.key] !== undefined) {
+        const parentRow = await getDb().execute<{ id: number; is_active: boolean }>(sql`
+          select id, is_active from wms.${identifier(resource.parent.table)}
+           where id = ${input[resource.parent.key]} and deleted_at is null
+        `);
+        if (parentRow.length === 0 || !parentRow[0]!.is_active) {
+          return fail("VALIDATION_FAILED", `Choose an active ${resource.parent.label.toLowerCase()}`, requestId, {
+            fields: { [resource.parent.key]: "Not available" },
+          });
+        }
+        sets.push(sql`${identifier(resource.parent.column)} = ${input[resource.parent.key]}`);
+      }
       if (input.isActive !== undefined) {
         sets.push(sql`${identifier("is_active")} = ${input.isActive}`);
       }
@@ -247,6 +245,9 @@ export async function PATCH(
               : String(raw).trim();
       }
       if (input.isActive !== undefined) touched.isActive = before[0]!.is_active;
+      if (resource.parent && input[resource.parent.key] !== undefined) {
+        touched[resource.parent.key] = before[0]![resource.parent.column] ?? null;
+      }
 
       await auditQuietly({
         action: `${resource.permission}.updated`,
@@ -264,6 +265,48 @@ export async function PATCH(
         requestId,
       });
 
+      return ok({ ok: true as const }, requestId);
+    } catch (error) {
+      return translate(error, requestId, await context.params.then((p) => p.resource));
+    }
+  })();
+}
+
+
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ resource: string }> },
+) {
+  return handler(async ({ requestId }) => {
+    try {
+      const { resource: slug } = await context.params;
+      const resource = resolveResource(slug);
+      if (!resource) return fail("NOT_FOUND", "No such master table", requestId);
+
+      const { actor } = await requirePermission(`${resource.permission}.delete`, {
+        entityType: resource.table,
+      });
+
+      const id = Number(request.nextUrl.searchParams.get("id"));
+      if (!Number.isInteger(id) || id <= 0) {
+        return fail("VALIDATION_FAILED", "Which row?", requestId);
+      }
+
+      const outcome = await deleteOne(resource, id, actor, {
+        requestId,
+        ip: clientIp(request.headers),
+        userAgent: request.headers.get("user-agent"),
+      });
+      if (!outcome.ok && outcome.reason === "not_found") {
+        return fail("NOT_FOUND", `No such ${resource.singular}`, requestId);
+      }
+      if (!outcome.ok) {
+        return fail(
+          "CONFLICT",
+          `${outcome.detail} still use this ${resource.singular}. Switch it off instead, or move those records first.`,
+          requestId,
+        );
+      }
       return ok({ ok: true as const }, requestId);
     } catch (error) {
       return translate(error, requestId, await context.params.then((p) => p.resource));

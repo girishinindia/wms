@@ -140,12 +140,9 @@ describe("admin navigation: grouping", () => {
 
   it("has a nav entry for every registry resource, and vice versa", () => {
     // A screen with no link is unreachable; a link with no screen is a
-    // 404. The cities screen is the one deliberate exception — it has a
-    // nav entry and its own page, not a registry entry, because its bulk
-    // paste does not fit the generic shape.
-    const navSlugs = MASTER_ITEMS.map((i) => i.href.split("/").pop()!).filter(
-      (s) => s !== "cities",
-    );
+    // 404. Cities is in the registry like the other four; its bulk-paste
+    // box is an extra on the page, not a different table.
+    const navSlugs = MASTER_ITEMS.map((i) => i.href.split("/").pop()!);
     expect(navSlugs.sort()).toEqual(Object.keys(MASTER_RESOURCES).sort());
   });
 });
@@ -258,6 +255,7 @@ describe("OpenAPI: admin endpoints", () => {
       "/api/v1/admin/importers/{id}/approve",
       "/api/v1/admin/importers/{id}/reject",
       "/api/v1/admin/master/{resource}",
+      "/api/v1/admin/master/{resource}/bulk",
       "/api/v1/admin/users/{id}/roles",
       "/api/v1/admin/users/{id}/status",
     ]);

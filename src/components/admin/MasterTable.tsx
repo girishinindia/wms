@@ -1,38 +1,49 @@
 "use client";
 
+import type { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
-import { CheckIcon, PencilIcon, PowerIcon, XIcon } from "@/components/icons";
+import { EyeIcon, PencilIcon, PowerIcon, TrashIcon, XIcon } from "@/components/icons";
+import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 import type { ListState } from "@/lib/admin/listing";
 import type { MasterField } from "@/lib/admin/master-registry";
 
-import { ListToolbar, Pager, SortHeader } from "./ListControls";
-import { Card, Empty, IconButton, StatusBadge } from "./ui";
+import DataTable, {
+  SelectAllHeader,
+  SelectRowCell,
+  Switch,
+  type ColumnMeta,
+} from "./DataTable";
+import { Card, IconButton, StatusBadge } from "./ui";
 
 /**
- * One editing surface for every master table.
- *
- * Editing happens in the row rather than in a modal. The job on these
- * screens is almost never "change this one record" — it is "make these
- * eight capacities consistent", and a modal turns that into eight rounds
- * of open, edit, save, close with the rest of the table hidden behind
- * the overlay each time.
+ * The master-data table: one component, five screens, on DataTable.
  *
  * Only the plain field metadata crosses from the server; the Zod schemas
- * in the registry stay on the server, where they are the thing that
- * actually decides what is valid. What is here is the shape of the form.
+ * in the registry stay there, where they are the thing that decides
+ * what is valid. What is here is the shape of the form and the table.
+ *
+ * Editing moved out of the row and into a drawer. Inline editing and
+ * multi-select fight over the same row — a checkbox next to an input
+ * you are typing into is a click away from a bulk action — and a
+ * drawer gives a vehicle type's nine fields room to breathe.
  */
 
 export type MasterRow = {
   id: number;
   isActive: boolean;
-  /** How many rows elsewhere point at this one. */
+  /** How many rows elsewhere point at this one, in total. */
   inUse: number;
+  /** "3 cities, 1 warehouse" — for the view drawer and delete refusal. */
+  inUseDetail: string;
+  parentId?: number | null;
   parentLabel?: string | null;
   values: Record<string, string | number | null>;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 export type ParentOption = { id: number; label: string };
@@ -46,109 +57,107 @@ export type MasterSpec = {
   dependentNoun: string;
   canCreate: boolean;
   canUpdate: boolean;
+  canDelete: boolean;
 };
 
 type Draft = Record<string, string>;
+type Drawer =
+  | { mode: "view"; row: MasterRow }
+  | { mode: "edit"; row: MasterRow }
+  | { mode: "create" }
+  | null;
+type Confirm =
+  | { kind: "delete"; ids: number[]; label: string }
+  | { kind: "deactivate-in-use"; row: MasterRow; message: string }
+  | null;
 
-const asDraft = (row: MasterRow, fields: MasterField[]): Draft =>
-  Object.fromEntries(
-    fields.map((f) => [f.key, row.values[f.key] === null || row.values[f.key] === undefined ? "" : String(row.values[f.key])]),
-  );
+const asDraft = (row: MasterRow | null, spec: MasterSpec): Draft => {
+  const d: Draft = {};
+  for (const f of spec.fields) {
+    const v = row?.values[f.key];
+    d[f.key] = v === null || v === undefined ? "" : String(v);
+  }
+  if (spec.parent) d[spec.parent.key] = row?.parentId ? String(row.parentId) : "";
+  return d;
+};
 
 /** Only send what the user actually typed; `""` means "leave it out",
  *  which is what the server's optional() preprocessing expects. */
-function payload(draft: Draft, fields: MasterField[]): Record<string, unknown> {
+function payload(draft: Draft, spec: MasterSpec): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const field of fields) {
+  for (const field of spec.fields) {
     const raw = draft[field.key] ?? "";
     if (raw === "") continue;
     out[field.key] = field.type === "number" ? Number(raw) : raw;
   }
+  if (spec.parent && draft[spec.parent.key]) out[spec.parent.key] = Number(draft[spec.parent.key]);
   return out;
 }
+
+const fmtDate = (iso: string | null) =>
+  iso
+    ? new Date(iso).toLocaleString("en-IN", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "Asia/Kolkata",
+      })
+    : "—";
 
 export default function MasterTable({
   spec,
   rows,
   list,
   base,
+  filters,
 }: {
   spec: MasterSpec;
-  /** The current page only — searching, sorting and paging happen on the
-   *  server, driven by `list`. */
   rows: MasterRow[];
   list: ListState;
   base: string;
+  filters?: React.ReactNode;
 }) {
   const router = useRouter();
   const toast = useToast();
 
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [drawer, setDrawer] = useState<Drawer>(null);
   const [draft, setDraft] = useState<Draft>({});
-  const [adding, setAdding] = useState(false);
-  const [addDraft, setAddDraft] = useState<Draft>({});
-  const [addParent, setAddParent] = useState<string>("");
-  const [busy, setBusy] = useState<number | "new" | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  /** A row whose deactivation the server refused because it is in use. */
-  const [confirmOff, setConfirmOff] = useState<{ id: number; message: string } | null>(null);
+  const [busy, setBusy] = useState<number | "drawer" | "bulk" | null>(null);
+  const [confirm, setConfirm] = useState<Confirm>(null);
 
-  const shown = rows;
-  const filtered = list.q !== "" || list.status !== "all";
+  const rowLabel = (row: MasterRow) =>
+    String(row.values[spec.fields.find((f) => f.key === "name")?.key ?? spec.fields[0]!.key] ?? spec.singular);
 
-  function startEdit(row: MasterRow) {
-    setConfirmOff(null);
+  const openView = (row: MasterRow) => { setErrors({}); setDrawer({ mode: "view", row }); };
+  const openEdit = (row: MasterRow) => { setErrors({}); setDraft(asDraft(row, spec)); setDrawer({ mode: "edit", row }); };
+  const openCreate = () => { setErrors({}); setDraft(asDraft(null, spec)); setDrawer({ mode: "create" }); };
+  const close = () => { setDrawer(null); setErrors({}); };
+
+  async function save() {
+    if (!drawer || drawer.mode === "view") return;
+    setBusy("drawer");
     setErrors({});
-    setAdding(false);
-    setEditingId(row.id);
-    setDraft(asDraft(row, spec.fields));
-  }
-
-  async function save(id: number) {
-    setBusy(id);
-    setErrors({});
-    const result = await api<{ ok: true }>(`/admin/master/${spec.slug}?id=${id}`, {
-      method: "PATCH",
-      body: payload(draft, spec.fields),
-    });
+    const body = payload(draft, spec);
+    if (spec.parent && drawer.mode === "create" && !body[spec.parent.key]) {
+      setBusy(null);
+      setErrors({ [spec.parent.key]: `Choose a ${spec.parent.label.toLowerCase()}` });
+      return;
+    }
+    const result =
+      drawer.mode === "create"
+        ? await api<{ id: number }>(`/admin/master/${spec.slug}`, { body })
+        : await api<{ ok: true }>(`/admin/master/${spec.slug}?id=${drawer.row.id}`, {
+            method: "PATCH",
+            body,
+          });
     setBusy(null);
-
     if (!result.ok) {
       if (result.error.fields) setErrors(result.error.fields);
       toast.error(result.error.message);
       return;
     }
-    toast.success("Saved.");
-    setEditingId(null);
-    router.refresh();
-  }
-
-  async function create() {
-    setBusy("new");
-    setErrors({});
-    const body = payload(addDraft, spec.fields);
-    if (spec.parent) {
-      if (!addParent) {
-        setBusy(null);
-        setErrors({ [spec.parent.key]: `Choose a ${spec.parent.label.toLowerCase()}` });
-        toast.error(`Choose a ${spec.parent.label.toLowerCase()}.`);
-        return;
-      }
-      body[spec.parent.key] = Number(addParent);
-    }
-
-    const result = await api<{ id: number }>(`/admin/master/${spec.slug}`, { body });
-    setBusy(null);
-
-    if (!result.ok) {
-      if (result.error.fields) setErrors(result.error.fields);
-      toast.error(result.error.message);
-      return;
-    }
-    toast.success(`${spec.singular[0]!.toUpperCase()}${spec.singular.slice(1)} added.`);
-    setAdding(false);
-    setAddDraft({});
-    setAddParent("");
+    toast.success(drawer.mode === "create" ? `${cap(spec.singular)} added.` : "Saved.");
+    close();
     router.refresh();
   }
 
@@ -159,329 +168,439 @@ export default function MasterTable({
       { method: "PATCH", body: { isActive: !row.isActive } },
     );
     setBusy(null);
-
     if (!result.ok) {
       // The server counts what depends on the row and refuses the first
       // time. Not an error to shout about — a question to ask.
       if (result.error.code === "CONFLICT") {
-        setConfirmOff({ id: row.id, message: result.error.message });
+        setConfirm({ kind: "deactivate-in-use", row, message: result.error.message });
         return;
       }
       toast.error(result.error.message);
       return;
     }
     toast.success(row.isActive ? "Switched off." : "Switched back on.");
-    setConfirmOff(null);
+    setConfirm(null);
     router.refresh();
   }
 
-  const input = (
-    field: MasterField,
-    value: string,
-    onChange: (v: string) => void,
-    idPrefix: string,
-  ) => {
-    const shared =
-      "w-full rounded-lg border bg-ink-900/60 px-2.5 py-1.5 text-[13px] text-verdigris-50 placeholder:text-verdigris-200/30 focus:outline-none focus:ring-2 focus:ring-patina/40";
-    const tone = errors[field.key]
-      ? "border-rose-400/50"
-      : "border-verdigris-300/15";
-
-    if (field.type === "select") {
-      return (
-        <select
-          id={`${idPrefix}-${field.key}`}
-          aria-label={field.label}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className={`${shared} ${tone}`}
-        >
-          <option value="" className="bg-ink-850">
-            Choose
-          </option>
-          {(field.options ?? []).map((o) => (
-            <option key={o} value={o} className="bg-ink-850">
-              {o.toLowerCase().replace(/_/g, " ")}
-            </option>
-          ))}
-        </select>
-      );
+  async function remove(ids: number[]) {
+    setBusy("bulk");
+    if (ids.length === 1) {
+      const result = await api<{ ok: true }>(`/admin/master/${spec.slug}?id=${ids[0]}`, {
+        method: "DELETE",
+      });
+      setBusy(null);
+      setConfirm(null);
+      if (!result.ok) { toast.error(result.error.message); return; }
+      toast.success(`${cap(spec.singular)} deleted.`);
+      close();
+      router.refresh();
+      return;
     }
-    return (
-      <input
-        id={`${idPrefix}-${field.key}`}
-        aria-label={field.label}
-        type={field.type === "number" ? "text" : "text"}
-        inputMode={field.type === "number" ? "decimal" : undefined}
-        value={value}
-        placeholder={field.hint}
-        onChange={(e) =>
-          onChange(
-            field.type === "number" ? e.target.value.replace(/[^\d.]/g, "") : e.target.value,
-          )
-        }
-        className={`${shared} ${tone} ${field.mono ? "font-mono" : ""} ${
-          field.align === "right" ? "text-right" : ""
-        }`}
-      />
-    );
-  };
+    await bulk("delete", ids);
+    setConfirm(null);
+  }
+
+  async function bulk(action: "activate" | "deactivate" | "delete", ids: number[]) {
+    setBusy("bulk");
+    const result = await api<{
+      done: number[];
+      skipped: { id: number; reason: string }[];
+      notes: { id: number; note: string }[];
+    }>(`/admin/master/${spec.slug}/bulk`, { body: { action, ids } });
+    setBusy(null);
+    if (!result.ok) { toast.error(result.error.message); return; }
+    const { done, skipped, notes } = result.data;
+    const verb = action === "delete" ? "Deleted" : action === "activate" ? "Switched on" : "Switched off";
+    const parts = [`${verb} ${done.length}.`];
+    if (skipped.length) parts.push(`Skipped ${skipped.length} — ${skipped[0]!.reason}${skipped.length > 1 ? " and more" : ""}.`);
+    if (notes.length) parts.push(`${notes.length} still in use elsewhere.`);
+    (skipped.length && !done.length ? toast.error : toast.success)(parts.join(" "));
+    router.refresh();
+  }
+
+  const columns = useMemo<ColumnDef<MasterRow, unknown>[]>(() => {
+    const cols: ColumnDef<MasterRow, unknown>[] = [];
+
+    if (spec.canUpdate || spec.canDelete) {
+      cols.push({
+        id: "select",
+        enableSorting: false,
+        header: ({ table }) => <SelectAllHeader table={table} />,
+        cell: ({ row }) => <SelectRowCell row={row} label={rowLabel(row.original)} />,
+        meta: { width: 2.5 } satisfies ColumnMeta,
+      });
+    }
+
+    if (spec.parent) {
+      cols.push({
+        id: "parent",
+        accessorFn: (r) => r.parentLabel ?? "",
+        header: spec.parent.label,
+        cell: ({ row }) => (
+          <span className="text-verdigris-200/60">{row.original.parentLabel ?? "—"}</span>
+        ),
+      });
+    }
+
+    for (const f of spec.fields) {
+      cols.push({
+        id: f.key,
+        accessorFn: (r) => r.values[f.key],
+        header: f.label,
+        meta: { align: f.align, mono: f.mono, width: f.width } satisfies ColumnMeta,
+        cell: ({ row }) => {
+          const v = row.original.values[f.key];
+          if (f.type === "select" && v !== null && v !== undefined) {
+            return (
+              <span className="rounded-full border border-verdigris-300/20 px-2.5 py-0.5 text-[11px] text-verdigris-200">
+                {String(v).toLowerCase().replace(/_/g, " ")}
+              </span>
+            );
+          }
+          return v === null || v === undefined || v === "" ? "—" : String(v);
+        },
+      });
+    }
+
+    cols.push({
+      id: "inUse",
+      accessorFn: (r) => r.inUse,
+      header: "In use",
+      enableSorting: false,
+      meta: { className: "whitespace-nowrap text-xs text-verdigris-200/50" } satisfies ColumnMeta,
+      cell: ({ row }) =>
+        row.original.inUse > 0 ? row.original.inUseDetail || `${row.original.inUse} ${spec.dependentNoun}` : "—",
+    });
+
+    cols.push({
+      id: "status",
+      accessorFn: (r) => r.isActive,
+      header: "Active",
+      cell: ({ row }) =>
+        spec.canUpdate ? (
+          <Switch
+            checked={row.original.isActive}
+            busy={busy === row.original.id}
+            label={row.original.isActive ? `Switch off ${rowLabel(row.original)}` : `Switch on ${rowLabel(row.original)}`}
+            onChange={() => toggle(row.original)}
+          />
+        ) : (
+          <StatusBadge value={row.original.isActive ? "ACTIVE" : "CLOSED"} />
+        ),
+    });
+
+    cols.push({
+      id: "actions",
+      header: "",
+      enableSorting: false,
+      meta: { className: "whitespace-nowrap text-right" } satisfies ColumnMeta,
+      cell: ({ row }) => {
+        const r = row.original;
+        return (
+          <span className="inline-flex items-center gap-1.5">
+            <IconButton label={`View ${rowLabel(r)}`} onClick={() => openView(r)} icon={<EyeIcon className="h-4 w-4" />} />
+            {spec.canUpdate ? (
+              <IconButton label={`Edit ${rowLabel(r)}`} onClick={() => openEdit(r)} icon={<PencilIcon className="h-4 w-4" />} />
+            ) : null}
+            {spec.canDelete ? (
+              <IconButton
+                label={r.inUse > 0 ? `Cannot delete — ${r.inUseDetail} still use it` : `Delete ${rowLabel(r)}`}
+                tone="danger"
+                disabled={r.inUse > 0}
+                onClick={() => setConfirm({ kind: "delete", ids: [r.id], label: rowLabel(r) })}
+                icon={<TrashIcon className="h-4 w-4" />}
+              />
+            ) : null}
+          </span>
+        );
+      },
+    });
+
+    return cols;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spec, busy]);
+
+  const filtered = list.q !== "" || list.status !== "all" || Object.keys(list.extra).length > 0;
 
   return (
-    <Card>
-      <ListToolbar
-        base={base}
-        list={list}
-        label={spec.label.toLowerCase()}
-        action={
-          spec.canCreate ? (
-            <button
-              type="button"
-              onClick={() => {
-                setAdding((v) => !v);
-                setEditingId(null);
-                setErrors({});
-              }}
-              className="rounded-lg bg-verdigris-400 px-4 py-1.5 text-sm font-semibold text-ink-900 transition-colors hover:bg-patina"
-            >
-              {adding ? "Cancel" : `Add ${spec.singular}`}
-            </button>
-          ) : null
-        }
-      />
-
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-verdigris-300/10">
-              {spec.parent ? (
-                <SortHeader base={base} list={list} sortKey="parent">
-                  {spec.parent.label}
-                </SortHeader>
-              ) : null}
-              {spec.fields.map((f) => (
-                <SortHeader
-                  key={f.key}
-                  base={base}
-                  list={list}
-                  sortKey={f.key}
-                  align={f.align === "right" ? "right" : "left"}
-                  width={f.width}
-                >
-                  {f.label}
-                </SortHeader>
-              ))}
-              <th className="whitespace-nowrap px-4 py-3 text-left font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-verdigris-400">
-                In use
-              </th>
-              <SortHeader base={base} list={list} sortKey="status">
-                Status
-              </SortHeader>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-
-          <tbody>
-            {adding ? (
-              <tr className="border-b border-verdigris-300/10 bg-verdigris-500/[0.06]">
-                {spec.parent ? (
-                  <td className="px-4 py-3">
-                    <select
-                      aria-label={spec.parent.label}
-                      value={addParent}
-                      onChange={(e) => setAddParent(e.target.value)}
-                      className="w-full rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-2.5 py-1.5 text-[13px] text-verdigris-50 focus:outline-none focus:ring-2 focus:ring-patina/40"
-                    >
-                      <option value="" className="bg-ink-850">
-                        Choose
-                      </option>
-                      {spec.parent.options.map((o) => (
-                        <option key={o.id} value={o.id} className="bg-ink-850">
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
+    <>
+      <Card>
+        <DataTable<MasterRow>
+          columns={columns}
+          data={rows}
+          list={list}
+          base={base}
+          label={spec.label.toLowerCase()}
+          filters={filters}
+          enableSelection={spec.canUpdate || spec.canDelete}
+          emptyTitle={filtered ? "Nothing matches that search." : `No ${spec.label.toLowerCase()} yet.`}
+          rowClassName={(row) => (row.original.isActive ? "" : "opacity-60")}
+          action={
+            spec.canCreate ? (
+              <button
+                type="button"
+                onClick={openCreate}
+                className="rounded-lg bg-verdigris-400 px-4 py-1.5 text-sm font-semibold text-ink-900 transition-colors hover:bg-patina"
+              >
+                Add {spec.singular}
+              </button>
+            ) : null
+          }
+          bulk={(selected, clear) => {
+            const ids = selected.map((r) => r.id);
+            const deletable = selected.filter((r) => r.inUse === 0).map((r) => r.id);
+            const b = "rounded-lg border px-3 py-1 text-xs transition-colors disabled:opacity-40";
+            return (
+              <>
+                {spec.canUpdate ? (
+                  <>
+                    <button type="button" disabled={busy === "bulk"} onClick={() => bulk("activate", ids).then(clear)}
+                      className={`${b} border-verdigris-300/25 text-verdigris-100 hover:border-verdigris-300/50`}>
+                      Switch on
+                    </button>
+                    <button type="button" disabled={busy === "bulk"} onClick={() => bulk("deactivate", ids).then(clear)}
+                      className={`${b} border-verdigris-300/25 text-verdigris-100 hover:border-verdigris-300/50`}>
+                      Switch off
+                    </button>
+                  </>
                 ) : null}
-                {spec.fields.map((f) => (
-                  <td key={f.key} className="px-4 py-3">
-                    {input(
-                      f,
-                      addDraft[f.key] ?? "",
-                      (v) => setAddDraft((d) => ({ ...d, [f.key]: v })),
-                      "new",
-                    )}
-                  </td>
-                ))}
-                <td className="px-4 py-3 text-xs text-verdigris-200/40">—</td>
-                <td className="px-4 py-3">
-                  <StatusBadge value="ACTIVE" />
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-right">
-                  <span className="inline-flex items-center gap-1.5">
-                    <IconButton
-                      label={`Save this ${spec.singular}`}
-                      tone="primary"
-                      busy={busy === "new"}
-                      onClick={create}
-                      icon={<CheckIcon className="h-4 w-4" />}
-                    />
-                    {/* Cancel belongs next to Save. It was only in the
-                        header, which is the wrong end of a wide row —
-                        by the time you have filled the last field the
-                        way out is off the side of the screen. */}
-                    <IconButton
-                      label="Discard this row"
-                      onClick={() => {
-                        setAdding(false);
-                        setAddDraft({});
-                        setAddParent("");
-                        setErrors({});
-                      }}
-                      disabled={busy === "new"}
-                      icon={<XIcon className="h-4 w-4" />}
-                    />
-                  </span>
-                </td>
-              </tr>
+                {spec.canDelete ? (
+                  <button type="button" disabled={busy === "bulk" || deletable.length === 0}
+                    title={deletable.length < ids.length ? `${ids.length - deletable.length} of these are in use and will be skipped` : undefined}
+                    onClick={() => setConfirm({ kind: "delete", ids: deletable, label: `${deletable.length} ${deletable.length === 1 ? spec.singular : spec.label.toLowerCase()}` })}
+                    className={`${b} border-rose-400/30 text-rose-200 hover:border-rose-400/60`}>
+                    Delete{deletable.length < ids.length ? ` ${deletable.length} of ${ids.length}` : ""}
+                  </button>
+                ) : null}
+                {busy === "bulk" ? <Spinner className="h-3.5 w-3.5" /> : null}
+              </>
+            );
+          }}
+        />
+
+        {confirm?.kind === "deactivate-in-use" ? (
+          <div role="alert" className="flex flex-wrap items-center gap-3 border-t border-amber-400/25 bg-amber-500/[0.07] px-5 py-3 text-[13px] text-amber-100">
+            <span className="flex-1">{confirm.message}</span>
+            <IconButton label="Switch off anyway" tone="danger" busy={busy === confirm.row.id}
+              onClick={() => toggle(confirm.row, true)} icon={<PowerIcon className="h-4 w-4" />} />
+            <IconButton label="Keep it on" onClick={() => setConfirm(null)} icon={<XIcon className="h-4 w-4" />} />
+          </div>
+        ) : null}
+
+        {confirm?.kind === "delete" ? (
+          <div role="alertdialog" aria-label="Confirm delete"
+            className="flex flex-wrap items-center gap-3 border-t border-rose-400/25 bg-rose-500/[0.07] px-5 py-3 text-[13px] text-rose-100">
+            <span className="flex-1">
+              Delete {confirm.label}? This cannot be undone; the audit log keeps a copy of the values.
+            </span>
+            <button type="button" disabled={busy === "bulk"} onClick={() => remove(confirm.ids)}
+              className="rounded-lg bg-rose-500/80 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500">
+              {busy === "bulk" ? "Deleting…" : "Delete"}
+            </button>
+            <button type="button" onClick={() => setConfirm(null)}
+              className="rounded-lg border border-verdigris-300/20 px-3 py-1 text-xs text-verdigris-100 hover:border-verdigris-300/45">
+              Cancel
+            </button>
+          </div>
+        ) : null}
+      </Card>
+
+      {drawer ? (
+        <MasterDrawer
+          spec={spec}
+          drawer={drawer}
+          draft={draft}
+          setDraft={setDraft}
+          errors={errors}
+          busy={busy === "drawer"}
+          onClose={close}
+          onSave={save}
+          onEdit={(row) => openEdit(row)}
+          onDelete={(row) => setConfirm({ kind: "delete", ids: [row.id], label: rowLabel(row) })}
+        />
+      ) : null}
+    </>
+  );
+}
+
+const cap = (s: string) => `${s[0]!.toUpperCase()}${s.slice(1)}`;
+
+// ── drawer ────────────────────────────────────────────────────────
+
+function MasterDrawer({
+  spec, drawer, draft, setDraft, errors, busy, onClose, onSave, onEdit, onDelete,
+}: {
+  spec: MasterSpec;
+  drawer: NonNullable<Drawer>;
+  draft: Draft;
+  setDraft: (d: Draft) => void;
+  errors: Record<string, string>;
+  busy: boolean;
+  onClose: () => void;
+  onSave: () => void;
+  onEdit: (row: MasterRow) => void;
+  onDelete: (row: MasterRow) => void;
+}) {
+  const view = drawer.mode === "view";
+  const row = drawer.mode === "create" ? null : drawer.row;
+  const title =
+    drawer.mode === "create"
+      ? `Add ${spec.singular}`
+      : drawer.mode === "edit"
+        ? `Edit ${spec.singular}`
+        : cap(spec.singular);
+
+  const input =
+    "mt-1 w-full rounded-lg border bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50 placeholder:text-verdigris-200/30 focus:outline-none focus:ring-2 focus:ring-patina/40";
+  const tone = (k: string) => (errors[k] ? "border-rose-400/50" : "border-verdigris-300/15");
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <button type="button" aria-label="Close" onClick={onClose} className="flex-1 bg-ink-900/70" />
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="flex h-full w-full max-w-md flex-col border-l border-verdigris-300/10 bg-ink-850 shadow-2xl"
+      >
+        <header className="flex items-center justify-between border-b border-verdigris-300/10 px-6 py-4">
+          <div>
+            <h2 className="text-base font-semibold text-verdigris-50">{title}</h2>
+            {row ? (
+              <p className="mt-0.5 font-mono text-[11px] text-verdigris-200/45">id {row.id}</p>
+            ) : null}
+          </div>
+          <IconButton label="Close" onClick={onClose} icon={<XIcon className="h-4 w-4" />} />
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <form
+            id="master-drawer-form"
+            onSubmit={(e) => { e.preventDefault(); if (!view) onSave(); }}
+            className="space-y-4"
+          >
+            {spec.parent ? (
+              <div>
+                <label htmlFor="f-parent" className="text-[12px] font-medium text-verdigris-200/70">
+                  {spec.parent.label}
+                </label>
+                {view ? (
+                  <p className="mt-1 text-sm text-verdigris-50">{row?.parentLabel ?? "—"}</p>
+                ) : (
+                  <select
+                    id="f-parent"
+                    value={draft[spec.parent.key] ?? ""}
+                    onChange={(e) => setDraft({ ...draft, [spec.parent!.key]: e.target.value })}
+                    className={`${input} ${tone(spec.parent.key)}`}
+                  >
+                    <option value="" className="bg-ink-850">Choose</option>
+                    {spec.parent.options.map((o) => (
+                      <option key={o.id} value={o.id} className="bg-ink-850">{o.label}</option>
+                    ))}
+                  </select>
+                )}
+                {errors[spec.parent.key] ? <p className="mt-1 text-xs text-rose-300">{errors[spec.parent.key]}</p> : null}
+              </div>
             ) : null}
 
-            {shown.length === 0 && !adding ? (
-              <tr>
-                <td colSpan={spec.fields.length + (spec.parent ? 4 : 3)}>
-                  <Empty
-                    title={
-                      filtered
-                        ? "Nothing matches that search."
-                        : `No ${spec.label.toLowerCase()} yet.`
+            {spec.fields.map((f) => (
+              <div key={f.key}>
+                <label htmlFor={`f-${f.key}`} className="text-[12px] font-medium text-verdigris-200/70">
+                  {f.label}{f.required && !view ? " *" : ""}
+                </label>
+                {view ? (
+                  <p className={`mt-1 text-sm text-verdigris-50 ${f.mono ? "font-mono" : ""}`}>
+                    {row?.values[f.key] === null || row?.values[f.key] === undefined || row?.values[f.key] === ""
+                      ? "—"
+                      : f.type === "select"
+                        ? String(row.values[f.key]).toLowerCase().replace(/_/g, " ")
+                        : String(row!.values[f.key])}
+                  </p>
+                ) : f.type === "select" ? (
+                  <select
+                    id={`f-${f.key}`}
+                    value={draft[f.key] ?? ""}
+                    onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
+                    className={`${input} ${tone(f.key)}`}
+                  >
+                    <option value="" className="bg-ink-850">Choose</option>
+                    {(f.options ?? []).map((o) => (
+                      <option key={o} value={o} className="bg-ink-850">{o.toLowerCase().replace(/_/g, " ")}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id={`f-${f.key}`}
+                    type="text"
+                    inputMode={f.type === "number" ? "decimal" : undefined}
+                    value={draft[f.key] ?? ""}
+                    placeholder={f.hint}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        [f.key]: f.type === "number" ? e.target.value.replace(/[^\d.]/g, "") : e.target.value,
+                      })
                     }
+                    className={`${input} ${tone(f.key)} ${f.mono ? "font-mono" : ""}`}
                   />
-                </td>
-              </tr>
-            ) : null}
+                )}
+                {errors[f.key] ? <p className="mt-1 text-xs text-rose-300">{errors[f.key]}</p> : null}
+              </div>
+            ))}
+          </form>
 
-            {shown.map((row) => {
-              const editing = editingId === row.id;
-              return (
-                <tr
-                  key={row.id}
-                  className={`border-b border-verdigris-300/[0.06] last:border-0 ${
-                    editing ? "bg-verdigris-500/[0.06]" : "hover:bg-verdigris-100/[0.03]"
-                  } ${row.isActive ? "" : "opacity-60"}`}
-                >
-                  {spec.parent ? (
-                    <td className="px-4 py-3 text-verdigris-200/60">{row.parentLabel ?? "—"}</td>
-                  ) : null}
+          {view && row ? (
+            <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-verdigris-300/10 pt-5 text-sm">
+              <dt className="text-[12px] text-verdigris-200/60">Status</dt>
+              <dd><StatusBadge value={row.isActive ? "ACTIVE" : "CLOSED"} /></dd>
+              <dt className="text-[12px] text-verdigris-200/60">In use</dt>
+              <dd className="text-verdigris-100">{row.inUse > 0 ? row.inUseDetail : "Not referenced anywhere"}</dd>
+              <dt className="text-[12px] text-verdigris-200/60">Created</dt>
+              <dd className="text-verdigris-100">{fmtDate(row.createdAt)}</dd>
+              <dt className="text-[12px] text-verdigris-200/60">Updated</dt>
+              <dd className="text-verdigris-100">{fmtDate(row.updatedAt)}</dd>
+            </dl>
+          ) : null}
+        </div>
 
-                  {spec.fields.map((f) => (
-                    <td
-                      key={f.key}
-                      className={`px-4 py-3 text-verdigris-100 ${
-                        f.align === "right" ? "text-right" : ""
-                      } ${f.mono && !editing ? "whitespace-nowrap font-mono text-xs text-verdigris-300" : ""}`}
-                    >
-                      {editing ? (
-                        input(
-                          f,
-                          draft[f.key] ?? "",
-                          (v) => setDraft((d) => ({ ...d, [f.key]: v })),
-                          String(row.id),
-                        )
-                      ) : f.type === "select" ? (
-                        <span className="rounded-full border border-verdigris-300/20 px-2.5 py-0.5 text-[11px] text-verdigris-200">
-                          {String(row.values[f.key] ?? "").toLowerCase().replace(/_/g, " ")}
-                        </span>
-                      ) : (
-                        (row.values[f.key] ?? "—")
-                      )}
-                    </td>
-                  ))}
-
-                  <td className="whitespace-nowrap px-4 py-3 text-xs text-verdigris-200/50">
-                    {row.inUse > 0 ? `${row.inUse} ${spec.dependentNoun}` : "—"}
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <StatusBadge value={row.isActive ? "ACTIVE" : "CLOSED"} />
-                  </td>
-
-                  <td className="whitespace-nowrap px-4 py-3 text-right">
-                    {!spec.canUpdate ? null : editing ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <IconButton
-                          label="Save changes"
-                          tone="primary"
-                          busy={busy === row.id}
-                          onClick={() => save(row.id)}
-                          icon={<CheckIcon className="h-4 w-4" />}
-                        />
-                        <IconButton
-                          label="Discard changes"
-                          disabled={busy === row.id}
-                          onClick={() => setEditingId(null)}
-                          icon={<XIcon className="h-4 w-4" />}
-                        />
-                      </span>
-                    ) : confirmOff?.id === row.id ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <IconButton
-                          label={`Switch off anyway — ${row.inUse} ${spec.dependentNoun} still use it`}
-                          tone="danger"
-                          busy={busy === row.id}
-                          onClick={() => toggle(row, true)}
-                          icon={<PowerIcon className="h-4 w-4" />}
-                        />
-                        <IconButton
-                          label="Keep it switched on"
-                          onClick={() => setConfirmOff(null)}
-                          icon={<XIcon className="h-4 w-4" />}
-                        />
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5">
-                        <IconButton
-                          label={`Edit ${String(row.values[spec.fields[0]!.key] ?? spec.singular)}`}
-                          onClick={() => startEdit(row)}
-                          icon={<PencilIcon className="h-4 w-4" />}
-                        />
-                        <IconButton
-                          label={row.isActive ? "Switch off" : "Switch on"}
-                          tone={row.isActive ? "default" : "danger"}
-                          busy={busy === row.id}
-                          onClick={() => toggle(row)}
-                          icon={<PowerIcon className="h-4 w-4" />}
-                        />
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <Pager base={base} list={list} />
-
-      {confirmOff ? (
-        <p
-          role="alert"
-          className="border-t border-amber-400/25 bg-amber-500/[0.07] px-5 py-3 text-[13px] text-amber-100"
-        >
-          {confirmOff.message}
-        </p>
-      ) : null}
-
-      {Object.keys(errors).length > 0 ? (
-        <p
-          role="alert"
-          className="border-t border-rose-400/25 bg-rose-500/[0.07] px-5 py-3 text-[13px] text-rose-100"
-        >
-          {Object.entries(errors)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(" · ")}
-        </p>
-      ) : null}
-    </Card>
+        <footer className="flex items-center justify-end gap-2 border-t border-verdigris-300/10 px-6 py-4">
+          {view && row ? (
+            <>
+              {spec.canDelete ? (
+                <button type="button" disabled={row.inUse > 0}
+                  title={row.inUse > 0 ? `${row.inUseDetail} still use it` : undefined}
+                  onClick={() => onDelete(row)}
+                  className="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-rose-400/30 px-3 py-2 text-sm text-rose-200 hover:border-rose-400/60 disabled:opacity-40">
+                  <TrashIcon className="h-4 w-4" /> Delete
+                </button>
+              ) : null}
+              <button type="button" onClick={onClose}
+                className="rounded-lg border border-verdigris-300/20 px-4 py-2 text-sm text-verdigris-100 hover:border-verdigris-300/45">
+                Close
+              </button>
+              {spec.canUpdate ? (
+                <button type="button" onClick={() => onEdit(row)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-verdigris-400 px-4 py-2 text-sm font-semibold text-ink-900 hover:bg-patina">
+                  <PencilIcon className="h-4 w-4" /> Edit
+                </button>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={onClose} disabled={busy}
+                className="rounded-lg border border-verdigris-300/20 px-4 py-2 text-sm text-verdigris-100 hover:border-verdigris-300/45">
+                Cancel
+              </button>
+              <button type="submit" form="master-drawer-form" disabled={busy}
+                className="inline-flex items-center gap-2 rounded-lg bg-verdigris-400 px-4 py-2 text-sm font-semibold text-ink-900 hover:bg-patina disabled:opacity-60">
+                {busy ? <Spinner className="h-3.5 w-3.5" /> : null}
+                {drawer.mode === "create" ? `Add ${spec.singular}` : "Save changes"}
+              </button>
+            </>
+          )}
+        </footer>
+      </aside>
+    </div>
   );
 }
