@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -52,18 +52,29 @@ async function destination(next: string | null): Promise<string> {
   const wanted = safeNext(next);
   if (wanted) return wanted;
 
+  /**
+   * Bounded, because the alternative is being stuck forever.
+   *
+   * `fetch` has no timeout of its own. A request that stalls — a
+   * sleeping serverless instance, a flaky connection at the warehouse —
+   * leaves this promise unresolved, and the button sits on its pending
+   * label with nothing to click and no way out. Six seconds is far
+   * longer than this ever legitimately takes.
+   */
+  const cutoff = AbortSignal.timeout(6000);
+
   const session = await api<{
     permissions: { permission: string; scope: "OWN" | "WAREHOUSE" | "ALL" }[];
-  }>("/auth/session", { method: "GET" });
+  }>("/auth/session", { method: "GET", signal: cutoff });
 
-  // A failed lookup is not a reason to block the sign-in that just
-  // succeeded — the home page is always a valid place to be.
+  // A failed or slow lookup is not a reason to block the sign-in that
+  // just succeeded — the home page is always a valid place to be, and
+  // the header's "Sign in" will bring an admin straight to the panel.
   if (!session.ok) return "/";
   return visibleNav(session.data.permissions).length > 0 ? "/admin" : "/";
 }
 
 export default function SignInForm() {
-  const router = useRouter();
   const toast = useToast();
   const params = useSearchParams();
   const [formError, setFormError] = useState<string | null>(null);
@@ -142,9 +153,29 @@ export default function SignInForm() {
      */
     setRedirecting(true);
 
-    // `replace`, not `push`: going Back to a sign-in form you have
-    // already completed is a dead end that re-submits nothing.
-    router.replace(await destination(params.get("next")));
+    /**
+     * A full page load, deliberately, not `router.replace`.
+     *
+     * A client navigation here asks the router for the destination's
+     * chunks — and if this tab was served by a previous deployment,
+     * those filenames are gone. The navigation then fails silently and
+     * the button sits on "Taking you in…" forever, which is exactly how
+     * this was reported. The sign-in page is outside the admin layout,
+     * so the recovery that handles this inside the panel never runs.
+     *
+     * A hard navigation cannot hit that: the browser asks the server,
+     * which answers with the current build. Three other things make it
+     * the right call rather than a workaround — a session cookie was
+     * just set and every server component needs to re-read it; the
+     * destination is `force-dynamic`, so client routing saves no round
+     * trip; and the fresh document replaces this tab's stale bundle,
+     * which cures the skew for the rest of the session.
+     *
+     * `assign`, not `replace`, keeps the browser's own history sane
+     * while the guard on /sign-in stops Back landing on a filled-in
+     * form.
+     */
+    window.location.assign(await destination(params.get("next")));
   };
 
   return (

@@ -56,7 +56,32 @@ describe("post-sign-in redirect", () => {
   it("no longer navigates to a hardcoded destination", () => {
     // The original regression: `router.push("/")` with nothing else.
     expect(source).not.toMatch(/router\.(push|replace)\(\s*["']\/["']\s*\)/);
-    expect(source).toMatch(/router\.replace\(await destination\(/);
+    expect(source).toMatch(/window\.location\.assign\(await destination\(/);
+  });
+
+  /**
+   * The third and last way this screen could strand somebody.
+   *
+   * A client navigation asks the router for the destination's chunks,
+   * and a tab served by a previous deployment is asking for filenames
+   * that no longer exist. It fails silently and the button sits on
+   * "Taking you in…" with no way out — reported twice, once per page.
+   * The sign-in page sits outside the admin layout, so the recovery
+   * that handles this inside the panel never runs here.
+   */
+  it("leaves the sign-in page with a real page load, not the client router", () => {
+    expect(source).toMatch(/window\.location\.assign\(/);
+    expect(source).not.toMatch(/useRouter/);
+  });
+
+  /**
+   * And the session lookup cannot hang forever. `fetch` has no timeout
+   * of its own, so a stalled request left the promise unresolved and the
+   * button pending with nothing to click.
+   */
+  it("bounds the session lookup", () => {
+    expect(source).toMatch(/AbortSignal\.timeout\(\d+\)/);
+    expect(source).toMatch(/signal:\s*cutoff/);
   });
 
   it("still guards the parameter it now honours", () => {
