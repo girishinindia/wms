@@ -84,11 +84,16 @@ html[data-theme="light"] {
   --color-ink-800: #f6faf8;
   --color-ink-700: #e3efe9;
 
-  --color-verdigris-50: #0d2322;
-  --color-verdigris-100: #1b3b3a;
-  --color-verdigris-200: #2b625f;
-  --color-verdigris-300: #317873;
-  --color-verdigris-400: #3f8f84;
+  /* Text tokens run DARKER than a naive inversion. Most secondary text
+     in the panel is written with an opacity modifier (text-verdigris-
+     200/60 and the like) that was tuned for a dark page; on white the
+     same alpha reads as fog unless the base underneath it is nearly
+     black-teal. */
+  --color-verdigris-50: #071a19;
+  --color-verdigris-100: #0f2f2d;
+  --color-verdigris-200: #17403d;
+  --color-verdigris-300: #1f5552;
+  --color-verdigris-400: #2a6b64;
   --color-verdigris-500: #4b9e91;
   --color-verdigris-600: #6bb3a6;
   --color-verdigris-700: #96c8bb;
@@ -96,7 +101,7 @@ html[data-theme="light"] {
   --color-verdigris-900: #dff0e8;
   --color-verdigris-950: #f2f9f6;
 
-  --color-patina: #2f8f7f;
+  --color-patina: #257a6c;
 }
 
 /* Shadows tuned for dark surfaces read as dirt on light ones. */
