@@ -598,6 +598,67 @@ adminPath({
   },
 });
 
+const masterResourceParam = z.object({
+  resource: z
+    .enum(["countries", "states", "warehouse-types", "vehicle-types"])
+    .openapi({ example: "vehicle-types" }),
+});
+
+adminPath({
+  path: "/api/v1/admin/master/{resource}",
+  operationId: "createMasterRow",
+  summary: "Add a row to a master table",
+  permission: "master.<resource>.create",
+  status: 201,
+  description:
+    "One endpoint for four tables — countries, states, warehouse types " +
+    "and vehicle types. The `resource` segment selects an entry from a " +
+    "frozen whitelist in `master-registry.ts`; anything not a key in it " +
+    "is a 404 before any SQL is composed, so the table and column names " +
+    "are always literals from that file and never from the request.\n\n" +
+    "The body is validated against that entry's schema, which mirrors " +
+    "the table's own constraints: `vehicle_type.category` accepts " +
+    "exactly the six values its CHECK allows, and the fixed-width `char` " +
+    "columns on `country` are trimmed and upper-cased, because a padded " +
+    "`\"IN \"` never matches an `\"IN\"` again.\n\nCities are not here. " +
+    "That screen takes a pasted list rather than one row, and has its " +
+    "own endpoint.",
+  params: masterResourceParam,
+  request: z.record(z.unknown()).openapi("MasterRowRequest"),
+  response: z.object({ id: z.number().int() }).openapi("MasterRowResponse"),
+  responses: {
+    404: errorResponse("No such master table."),
+    409: errorResponse("A row with that code already exists."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/master/{resource}",
+  operationId: "updateMasterRow",
+  method: "patch",
+  summary: "Edit a master row, or switch it off",
+  permission: "master.<resource>.update",
+  description:
+    "Takes `?id=`. A partial body: only the fields present are written.\n\n" +
+    "There is no DELETE, and that is a decision the schema makes rather " +
+    "than a gap. Every foreign key into these tables is `NO ACTION`, so " +
+    "removing a referenced row raises; and the unique keys are plain, " +
+    "not partial on `deleted_at` the way the ones on `users` are, so a " +
+    "soft delete would hold that code for good and make re-adding it " +
+    "fail against a row nobody can see. `isActive: false` has none of " +
+    "that.\n\nSwitching a row off is refused with a 409 the first time " +
+    "if anything still points at it, naming the count. Repeat with " +
+    "`?force=true` to go ahead — the existing references keep resolving; " +
+    "what changes is that the row leaves every picker.",
+  params: masterResourceParam,
+  request: z.record(z.unknown()).openapi("MasterRowUpdateRequest"),
+  response: okAdminResponseSchema,
+  responses: {
+    404: errorResponse("No such master table, or no such row."),
+    409: errorResponse("Still in use, or the new code is taken."),
+  },
+});
+
 adminPath({
   path: "/api/v1/admin/importers/{id}/approve",
   operationId: "approveImporter",

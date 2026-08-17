@@ -6,6 +6,7 @@ import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { auditQuietly } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
+import { isUniqueViolation } from "@/lib/db-errors";
 import { updateCityRequestSchema } from "@/lib/validation/api-admin";
 
 export const runtime = "nodejs";
@@ -92,8 +93,11 @@ export async function PATCH(
     } catch (error) {
       // A rename onto an existing name in the same state hits the unique
       // index. Reported on the field rather than as a 500, which is what
-      // a bare constraint violation would surface as.
-      if (error instanceof Error && /city.*unique|unique.*city/i.test(error.message)) {
+      // a bare constraint violation would surface as — and it did, until
+      // this stopped matching on the outer message. Drizzle wraps the
+      // driver error, so the SQLSTATE is on `cause` and the outer text is
+      // always just `Failed query: …`.
+      if (isUniqueViolation(error)) {
         return fail("CONFLICT", "That state already has a city with this name", requestId, {
           fields: { name: "Already exists in this state" },
         });

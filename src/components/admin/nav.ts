@@ -19,35 +19,110 @@ export type AdminNavItem = {
    * touches the same table.
    *
    * This distinction is the whole design of this file, and getting it
-   * wrong let a customer into the admin area. The obvious key for the
-   * cities screen is `master.city.read` — and every role in the matrix
-   * holds that at ALL scope, because everyone filling in an address
-   * needs to see the list. Keyed on read, the sidebar admitted an
-   * IMPORTER. The screen exists to ADD cities, so it is keyed on
-   * `master.city.create`, which only a super admin holds.
+   * wrong let a customer into the admin area. The obvious key for a
+   * master screen is `master.<thing>.read` — and every role in the
+   * matrix holds those at ALL scope, because anyone filling in an
+   * address needs the list. Keyed on read, the sidebar admitted an
+   * IMPORTER. Every master entry is therefore keyed on `.create`, which
+   * only a super admin holds.
    *
    * `null` means the entry has no permission of its own and is shown
    * whenever anything else is — the dashboard, which is a summary of the
    * other screens and grants nothing by itself.
    */
   permission: string | null;
-  icon: "chart" | "box" | "shield" | "pin";
+  icon: AdminNavIcon;
 };
 
-export const ADMIN_NAV: AdminNavItem[] = [
+export type AdminNavIcon =
+  | "chart"
+  | "box"
+  | "shield"
+  | "pin"
+  | "database"
+  | "globe"
+  | "map"
+  | "grid"
+  | "truck";
+
+/** A collapsible section. Its children are ordinary items and are what
+ *  `visibleNav` returns — the group itself grants nothing. */
+export type AdminNavGroup = {
+  label: string;
+  icon: AdminNavIcon;
+  /** Prefix used to decide whether the group is the current section. */
+  match: string;
+  children: AdminNavItem[];
+};
+
+export type AdminNavNode = AdminNavItem | AdminNavGroup;
+
+export function isGroup(node: AdminNavNode): node is AdminNavGroup {
+  return (node as AdminNavGroup).children !== undefined;
+}
+
+export const MASTER_ITEMS: AdminNavItem[] = [
+  {
+    href: "/admin/master/countries",
+    label: "Countries",
+    permission: "master.country.create",
+    icon: "globe",
+  },
+  {
+    href: "/admin/master/states",
+    label: "States",
+    permission: "master.state.create",
+    icon: "map",
+  },
+  {
+    href: "/admin/master/cities",
+    label: "Cities",
+    permission: "master.city.create",
+    icon: "pin",
+  },
+  {
+    href: "/admin/master/warehouse-types",
+    label: "Warehouse types",
+    permission: "master.warehouse_type.create",
+    icon: "grid",
+  },
+  {
+    href: "/admin/master/vehicle-types",
+    label: "Vehicle types",
+    permission: "master.vehicle_type.create",
+    icon: "truck",
+  },
+];
+
+export const ADMIN_NAV: AdminNavNode[] = [
   { href: "/admin", label: "Dashboard", permission: null, icon: "chart" },
   { href: "/admin/importers", label: "Importers", permission: "importer.read", icon: "box" },
   { href: "/admin/users", label: "Users", permission: "user.read", icon: "shield" },
-  { href: "/admin/master/cities", label: "Cities", permission: "master.city.create", icon: "pin" },
+  {
+    label: "Master",
+    icon: "database",
+    match: "/admin/master",
+    children: MASTER_ITEMS,
+  },
 ];
 
+/** Every leaf, groups flattened. The order the sidebar renders in. */
+export const ADMIN_NAV_ITEMS: AdminNavItem[] = ADMIN_NAV.flatMap((node) =>
+  isGroup(node) ? node.children : [node],
+);
+
 /**
- * The entries this permission set can see.
+ * The entries this permission set can see, flat.
+ *
+ * Returns leaves and not groups on purpose. Three callers outside the
+ * sidebar — `admin/layout.tsx`, `sign-in/page.tsx` and `SignInForm` —
+ * only ask whether the result is empty, to decide admission and where
+ * signing in lands you. Changing the return type to a tree would quietly
+ * change all three. Grouping is a rendering concern; see `groupNav`.
  *
  * OWN scope never counts. An IMPORTER genuinely holds `importer.read`
  * and `user.read` — over their own record and their own account — and
- * that is not what these screens are. The admin area is for people
- * acting across a warehouse or the whole platform.
+ * that is not what these screens are.
  */
 export function visibleNav(
   permissions: { permission: string; scope: "OWN" | "WAREHOUSE" | "ALL" }[],
@@ -56,9 +131,35 @@ export function visibleNav(
     permissions.filter((p) => p.scope !== "OWN").map((p) => p.permission),
   );
 
-  const earned = ADMIN_NAV.filter((item) => item.permission !== null && wide.has(item.permission));
+  const earned = ADMIN_NAV_ITEMS.filter(
+    (item) => item.permission !== null && wide.has(item.permission),
+  );
   if (earned.length === 0) return [];
 
   // The dashboard rides along, but never on its own.
-  return ADMIN_NAV.filter((item) => item.permission === null || earned.includes(item));
+  return ADMIN_NAV_ITEMS.filter(
+    (item) => item.permission === null || earned.includes(item),
+  );
+}
+
+/**
+ * The same set, re-nested for the sidebar.
+ *
+ * A group with no visible children disappears entirely rather than
+ * rendering as an empty expander — a section header that opens onto
+ * nothing reads as a broken page, not as a permission boundary.
+ */
+export function groupNav(visible: AdminNavItem[]): AdminNavNode[] {
+  const allowed = new Set(visible.map((i) => i.href));
+  const out: AdminNavNode[] = [];
+
+  for (const node of ADMIN_NAV) {
+    if (!isGroup(node)) {
+      if (allowed.has(node.href)) out.push(node);
+      continue;
+    }
+    const children = node.children.filter((c) => allowed.has(c.href));
+    if (children.length > 0) out.push({ ...node, children });
+  }
+  return out;
 }
