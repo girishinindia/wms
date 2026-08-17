@@ -75,15 +75,24 @@ function createClient(): Client {
    * prepared statement created on one is missing on the next — which
    * surfaces later as a random "prepared statement does not exist".
    *
-   * `max` stays at 1 on serverless: every function instance is its own
-   * process, so a larger pool per instance only burns pooler slots.
+   * `max` was 1, on the reasoning that a serverless instance handles one
+   * request at a time so a bigger pool only burns pooler slots. The first
+   * half of that is true; the conclusion was not. A single request is not
+   * a single query — Next renders the layout and the page CONCURRENTLY,
+   * and each one authorises independently, so an admin screen opens with
+   * several queries genuinely in flight at once. At `max: 1` they take
+   * turns, and the tab sits there loading for as long as the queue is.
+   *
+   * Three is chosen to cover that fan-out and nothing more. It is not a
+   * throughput knob: raise it and the cost lands on Supavisor's slots,
+   * which are shared with everything else on this project.
    */
   // Supabase always needs TLS. The only reason to turn it off is a
   // plaintext Postgres running on your own machine.
   const ssl = process.env.DATABASE_SSL === "disable" ? false : "require";
 
   return postgres(url, {
-    max: Number(process.env.DATABASE_MAX_CONNECTIONS ?? 1),
+    max: Number(process.env.DATABASE_MAX_CONNECTIONS ?? 3),
     prepare: false,
     ssl,
     connect_timeout: 10,

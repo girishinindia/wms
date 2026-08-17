@@ -1,6 +1,7 @@
 import "server-only";
 
 import { cookies, headers } from "next/headers";
+import { cache } from "react";
 
 import { HandledError } from "@/lib/api/respond";
 import { auditQuietly } from "@/lib/audit";
@@ -52,8 +53,10 @@ export type Grant = EffectivePermission;
  *
  * Bearer first, matching `/api/v1/devices`: a native client holds a
  * token and has no cookie jar, and a browser never sends the header.
+ *
+ * Wrapped in React's `cache()` below, so read the export, not this.
  */
-export async function currentActor(): Promise<Actor | null> {
+async function resolveActor(): Promise<Actor | null> {
   const env = authEnv();
   const [cookieStore, headerList] = await Promise.all([cookies(), headers()]);
 
@@ -73,6 +76,31 @@ export async function currentActor(): Promise<Actor | null> {
     isSuperAdmin: roles.some((r) => r.role === "SUPER_ADMIN"),
   };
 }
+
+/**
+ * Once per request, however many times it is asked.
+ *
+ * Every admin page resolved the actor twice: the layout calls this to
+ * decide which nav entries to render, and the page calls `pageGuard`,
+ * which calls it again. Each resolution is three round trips — session,
+ * roles, permissions — so a single screen opened with six auth queries
+ * before it ran a query of its own, and Next renders the layout and the
+ * page *concurrently*, so all six were in flight against a connection
+ * pool sized at one. They queued behind each other, and the tab sat
+ * there loading. That is the "keeps processing" report.
+ *
+ * `cache()` is per-request memoisation, not a cache in the ordinary
+ * sense: the entry lives and dies with the request, and two users can
+ * never see each other's actor. That property is what makes this safe to
+ * apply to an authorisation lookup — anything with a longer life would
+ * mean a signed-out session still resolving, or a revoked role still
+ * granting.
+ *
+ * Deduplication is by argument, and this takes none, so the second call
+ * anywhere in the request — layout, page, nested guard — gets the first
+ * call's promise.
+ */
+export const currentActor = cache(resolveActor);
 
 /** Signed in, or a 401. */
 export async function requireActor(): Promise<Actor> {
