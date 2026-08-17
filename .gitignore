@@ -45,3 +45,9 @@ next-env.d.ts
 # third-party bundle does not belong in git — the version is pinned by
 # package.json, which is what should be reviewed.
 /public/scalar/
+
+# ── Mount artefacts ───────────────────────────────────────────
+# The Cowork device mount refuses unlink, so a file replaced while
+# something still holds it open reappears under this name. Never
+# content, always a stale copy of whatever was just rewritten.
+.fuse_hidden*
