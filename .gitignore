@@ -1,7 +1,6 @@
-# Next.js portal + API.
-# https://help.github.com/articles/ignoring-files/
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# ── Dependencies ──────────────────────────────────────────────
+# dependencies
 /node_modules
 /.pnp
 .pnp.*
@@ -11,60 +10,38 @@
 !.yarn/releases
 !.yarn/versions
 
-# ── Build output ──────────────────────────────────────────────
+# testing
+/coverage
+
+# next.js
 /.next/
 /out/
+
+# production
 /build
-*.tsbuildinfo
-next-env.d.ts
 
-# ── Environment ───────────────────────────────────────────────
-# .env holds the live Supabase password and the Better Auth secret.
-# .env.example is the annotated template and is the ONLY one committed.
-.env
-.env.*
-!.env.example
-
-# ── Testing ───────────────────────────────────────────────────
-/coverage
-/playwright-report
-/test-results
-/.nyc_output
-
-# ── Hosting ───────────────────────────────────────────────────
-.vercel
-.netlify
-
-# ── Misc ──────────────────────────────────────────────────────
+# misc
 .DS_Store
 *.pem
+
+# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# ── OS ────────────────────────────────────────────────────────
-# This repo stands alone — there is no parent .gitignore covering
-# these, so every rule the project needs lives in this file.
-.AppleDouble
-.LSOverride
-Icon?
-._*
-.Spotlight-V100
-.Trashes
-Thumbs.db
+# env files (can opt-in for committing if needed)
+.env*
 
-# ── Editors ───────────────────────────────────────────────────
-.idea/
-.vscode/*
-!.vscode/extensions.json
-!.vscode/settings.json
-*.swp
-*.swo
-*~
+# vercel
+.vercel
 
-# ── Scratch ───────────────────────────────────────────────────
-*.log
-tmp/
-.cache/
-.turbo/
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+!.env.example
+
+# Vendored by scripts/vendor-scalar.mjs during prebuild. 3.6 MB of
+# third-party bundle does not belong in git — the version is pinned by
+# package.json, which is what should be reviewed.
+/public/scalar/

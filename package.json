@@ -11,7 +11,9 @@
     "db:generate": "drizzle-kit generate && node scripts/check-migration.mjs",
     "db:migrate": "drizzle-kit migrate",
     "db:baseline": "node scripts/mark-baseline-applied.mjs",
-    "db:check": "node scripts/check-migration.mjs"
+    "db:check": "node scripts/check-migration.mjs",
+    "vendor:scalar": "node scripts/vendor-scalar.mjs",
+    "prebuild": "node scripts/vendor-scalar.mjs"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",
@@ -32,6 +34,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
+    "@scalar/api-reference": "^1.65.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -40,6 +43,7 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "15.5.23",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.7"
