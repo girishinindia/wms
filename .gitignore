@@ -51,3 +51,6 @@ next-env.d.ts
 # something still holds it open reappears under this name. Never
 # content, always a stale copy of whatever was just rewritten.
 .fuse_hidden*
+
+# Files Cowork moved aside instead of deleting; safe to remove.
+_to_delete/
