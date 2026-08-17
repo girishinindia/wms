@@ -188,3 +188,18 @@ export const ChevronIcon = (p: P) => (
     <path d="m6 9 6 6 6-6" />
   </svg>
 );
+
+/** Three lines — the menu, on small screens. */
+export const MenuIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M4 7h16M4 12h16M4 17h16" />
+  </svg>
+);
+
+/** A panel with a divider — hide or show the sidebar. */
+export const SidebarIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="4.5" width="18" height="15" rx="2" />
+    <path d="M9 4.5v15" />
+  </svg>
+);

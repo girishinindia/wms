@@ -163,13 +163,30 @@ export default async function MasterPage({
 
   const parentOptions: ParentOption[] = resource.parent
     ? (
-        await getDb().execute<{ id: number; label: string }>(sql`
-          select id, ${identifier(resource.parent.labelColumn)}::text as label
-            from wms.${identifier(resource.parent.table)}
-           where is_active and deleted_at is null
-           order by ${identifier(resource.parent.labelColumn)}
+        await getDb().execute<{ id: number; label: string; group_id: number | null; group_label: string | null }>(sql`
+          select o.id, o.${identifier(resource.parent.labelColumn)}::text as label
+                 ${
+                   resource.parent.groupBy
+                     ? sql`, g.id as group_id, g.${identifier(resource.parent.groupBy.labelColumn)}::text as group_label`
+                     : sql`, null::bigint as group_id, null::text as group_label`
+                 }
+            from wms.${identifier(resource.parent.table)} o
+            ${
+              resource.parent.groupBy
+                ? sql`left join wms.${identifier(resource.parent.groupBy.table)} g
+                        on g.id = o.${identifier(resource.parent.groupBy.column)}`
+                : sql``
+            }
+           where o.is_active and o.deleted_at is null
+           order by ${resource.parent.groupBy ? sql`g.${identifier(resource.parent.groupBy.labelColumn)}, ` : sql``}
+                    o.${identifier(resource.parent.labelColumn)}
         `)
-      ).map((r) => ({ id: r.id, label: r.label }))
+      ).map((r) => ({
+        id: r.id,
+        label: r.label,
+        groupId: r.group_id === null ? undefined : Number(r.group_id),
+        groupLabel: r.group_label ?? undefined,
+      }))
     : [];
 
   const data: MasterRow[] = rows.map((r) => ({
@@ -206,7 +223,12 @@ export default async function MasterPage({
     singular: resource.singular,
     fields: resource.fields,
     parent: resource.parent
-      ? { key: resource.parent.key, label: resource.parent.label, options: parentOptions }
+      ? {
+          key: resource.parent.key,
+          label: resource.parent.label,
+          options: parentOptions,
+          groupLabel: resource.parent.groupBy?.label,
+        }
       : null,
     dependentNoun: resource.dependents[0]?.noun ?? "records",
     canCreate: grantFor(guard.actor, `${resource.permission}.create`) !== null,
@@ -229,11 +251,25 @@ export default async function MasterPage({
           <option value="" className="bg-ink-850">
             All {resource.parent.label.toLowerCase() === "country" ? "countries" : `${resource.parent.label.toLowerCase()}s`}
           </option>
-          {parentOptions.map((o) => (
-            <option key={o.id} value={o.id} className="bg-ink-850">
-              {o.label}
-            </option>
-          ))}
+          {resource.parent.groupBy
+            ? [...new Map(parentOptions.map((o) => [o.groupId, o.groupLabel])).entries()].map(
+                ([gid, glabel]) => (
+                  <optgroup key={String(gid)} label={glabel ?? "—"} className="bg-ink-850">
+                    {parentOptions
+                      .filter((o) => o.groupId === gid)
+                      .map((o) => (
+                        <option key={o.id} value={o.id} className="bg-ink-850">
+                          {o.label}
+                        </option>
+                      ))}
+                  </optgroup>
+                ),
+              )
+            : parentOptions.map((o) => (
+                <option key={o.id} value={o.id} className="bg-ink-850">
+                  {o.label}
+                </option>
+              ))}
         </select>
       ) : null}
       {selectFilters.map((f) => (

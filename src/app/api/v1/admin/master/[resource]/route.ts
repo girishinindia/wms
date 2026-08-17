@@ -181,7 +181,7 @@ export async function PATCH(
             .join(", ");
           return fail(
             "CONFLICT",
-            `${detail} still use this ${resource.singular}. Switching it off hides it from every picker; the existing records keep working.`,
+            `${detail} still use this ${resource.singular}. Deactivating it hides it from every picker; the existing records keep working.`,
             requestId,
           );
         }

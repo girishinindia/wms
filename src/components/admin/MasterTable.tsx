@@ -46,14 +46,20 @@ export type MasterRow = {
   updatedAt: string | null;
 };
 
-export type ParentOption = { id: number; label: string };
+export type ParentOption = { id: number; label: string; groupId?: number; groupLabel?: string };
 
 export type MasterSpec = {
   slug: string;
   label: string;
   singular: string;
   fields: MasterField[];
-  parent?: { key: string; label: string; options: ParentOption[] } | null;
+  parent?: {
+    key: string;
+    label: string;
+    options: ParentOption[];
+    /** "Country" when the options are grouped one level up. */
+    groupLabel?: string;
+  } | null;
   dependentNoun: string;
   canCreate: boolean;
   canUpdate: boolean;
@@ -178,7 +184,7 @@ export default function MasterTable({
       toast.error(result.error.message);
       return;
     }
-    toast.success(row.isActive ? "Switched off." : "Switched back on.");
+    toast.success(row.isActive ? "Deactivated." : "Activated.");
     setConfirm(null);
     router.refresh();
   }
@@ -211,7 +217,7 @@ export default function MasterTable({
     setBusy(null);
     if (!result.ok) { toast.error(result.error.message); return; }
     const { done, skipped, notes } = result.data;
-    const verb = action === "delete" ? "Deleted" : action === "activate" ? "Switched on" : "Switched off";
+    const verb = action === "delete" ? "Deleted" : action === "activate" ? "Activated" : "Deactivated";
     const parts = [`${verb} ${done.length}.`];
     if (skipped.length) parts.push(`Skipped ${skipped.length} — ${skipped[0]!.reason}${skipped.length > 1 ? " and more" : ""}.`);
     if (notes.length) parts.push(`${notes.length} still in use elsewhere.`);
@@ -282,7 +288,7 @@ export default function MasterTable({
           <Switch
             checked={row.original.isActive}
             busy={busy === row.original.id}
-            label={row.original.isActive ? `Switch off ${rowLabel(row.original)}` : `Switch on ${rowLabel(row.original)}`}
+            label={row.original.isActive ? `Deactivate ${rowLabel(row.original)}` : `Activate ${rowLabel(row.original)}`}
             onChange={() => toggle(row.original)}
           />
         ) : (
@@ -357,11 +363,11 @@ export default function MasterTable({
                   <>
                     <button type="button" disabled={busy === "bulk"} onClick={() => bulk("activate", ids).then(clear)}
                       className={`${b} border-verdigris-300/25 text-verdigris-100 hover:border-verdigris-300/50`}>
-                      Switch on
+                      Activate
                     </button>
                     <button type="button" disabled={busy === "bulk"} onClick={() => bulk("deactivate", ids).then(clear)}
                       className={`${b} border-verdigris-300/25 text-verdigris-100 hover:border-verdigris-300/50`}>
-                      Switch off
+                      Deactivate
                     </button>
                   </>
                 ) : null}
@@ -382,9 +388,9 @@ export default function MasterTable({
         {confirm?.kind === "deactivate-in-use" ? (
           <div role="alert" className="flex flex-wrap items-center gap-3 border-t border-amber-400/25 bg-amber-500/[0.07] px-5 py-3 text-[13px] text-amber-100">
             <span className="flex-1">{confirm.message}</span>
-            <IconButton label="Switch off anyway" tone="danger" busy={busy === confirm.row.id}
+            <IconButton label="Deactivate anyway" tone="danger" busy={busy === confirm.row.id}
               onClick={() => toggle(confirm.row, true)} icon={<PowerIcon className="h-4 w-4" />} />
-            <IconButton label="Keep it on" onClick={() => setConfirm(null)} icon={<XIcon className="h-4 w-4" />} />
+            <IconButton label="Keep it active" onClick={() => setConfirm(null)} icon={<XIcon className="h-4 w-4" />} />
           </div>
         ) : null}
 
@@ -444,6 +450,31 @@ function MasterDrawer({
 }) {
   const view = drawer.mode === "view";
   const row = drawer.mode === "create" ? null : drawer.row;
+
+  /**
+   * The parent picker narrowed one level up — a city's state chosen from
+   * a country first. Local state only: which group is showing. The
+   * value that is saved is still the parent id.
+   */
+  const grouped = Boolean(spec.parent?.groupLabel);
+  const groups = grouped
+    ? [...new Map((spec.parent?.options ?? []).map((o) => [o.groupId, o.groupLabel])).entries()]
+    : [];
+  const currentParent = spec.parent
+    ? spec.parent.options.find((o) =>
+        view ? o.id === row?.parentId : String(o.id) === (draft[spec.parent!.key] ?? ""),
+      )
+    : undefined;
+  const [group, setGroup] = useState<string>(
+    currentParent?.groupId !== undefined
+      ? String(currentParent.groupId)
+      : groups.length === 1
+        ? String(groups[0]![0])
+        : "",
+  );
+  const parentChoices = grouped
+    ? (spec.parent?.options ?? []).filter((o) => String(o.groupId) === group)
+    : (spec.parent?.options ?? []);
   const title =
     drawer.mode === "create"
       ? `Add ${spec.singular}`
@@ -480,22 +511,53 @@ function MasterDrawer({
             onSubmit={(e) => { e.preventDefault(); if (!view) onSave(); }}
             className="space-y-4"
           >
+            {spec.parent && grouped && !view ? (
+              <div>
+                <label htmlFor="f-group" className="text-[12px] font-medium text-verdigris-200/70">
+                  {spec.parent.groupLabel}
+                </label>
+                <select
+                  id="f-group"
+                  value={group}
+                  onChange={(e) => {
+                    setGroup(e.target.value);
+                    // A different country means the chosen state no longer applies.
+                    setDraft({ ...draft, [spec.parent!.key]: "" });
+                  }}
+                  className={`${input} border-verdigris-300/15`}
+                >
+                  <option value="" className="bg-ink-850">Choose</option>
+                  {groups.map(([gid, glabel]) => (
+                    <option key={String(gid)} value={String(gid)} className="bg-ink-850">{glabel}</option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+
             {spec.parent ? (
               <div>
                 <label htmlFor="f-parent" className="text-[12px] font-medium text-verdigris-200/70">
                   {spec.parent.label}
                 </label>
                 {view ? (
-                  <p className="mt-1 text-sm text-verdigris-50">{row?.parentLabel ?? "—"}</p>
+                  <p className="mt-1 text-sm text-verdigris-50">
+                    {row?.parentLabel ?? "—"}
+                    {grouped && currentParent?.groupLabel ? (
+                      <span className="text-verdigris-200/50">, {currentParent.groupLabel}</span>
+                    ) : null}
+                  </p>
                 ) : (
                   <select
                     id="f-parent"
                     value={draft[spec.parent.key] ?? ""}
+                    disabled={grouped && !group}
                     onChange={(e) => setDraft({ ...draft, [spec.parent!.key]: e.target.value })}
-                    className={`${input} ${tone(spec.parent.key)}`}
+                    className={`${input} ${tone(spec.parent.key)} disabled:opacity-50`}
                   >
-                    <option value="" className="bg-ink-850">Choose</option>
-                    {spec.parent.options.map((o) => (
+                    <option value="" className="bg-ink-850">
+                      {grouped && !group ? `Choose a ${spec.parent.groupLabel?.toLowerCase()} first` : "Choose"}
+                    </option>
+                    {parentChoices.map((o) => (
                       <option key={o.id} value={o.id} className="bg-ink-850">{o.label}</option>
                     ))}
                   </select>

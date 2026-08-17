@@ -73,8 +73,12 @@ export type DataTableProps<T> = {
   rowClassName?: (row: Row<T>) => string;
 };
 
+/**
+ * Header cells: a distinct band above the rows, white and bold, so the
+ * column names read at a glance rather than as a faint rule.
+ */
 const HEADER =
-  "px-4 py-3 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-verdigris-400";
+  "bg-ink-900/70 px-4 py-3 text-[12px] font-bold uppercase tracking-[0.08em] text-white";
 
 export default function DataTable<T>({
   columns,
@@ -189,7 +193,7 @@ export default function DataTable<T>({
         <table className="w-full border-collapse text-sm">
           <thead>
             {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id} className="border-b border-verdigris-300/10">
+              <tr key={hg.id} className="border-b-2 border-verdigris-300/25">
                 {hg.headers.map((header) => {
                   const canSort = header.column.getCanSort();
                   const sorted = header.column.getIsSorted();
@@ -206,7 +210,7 @@ export default function DataTable<T>({
                         <ChevronIcon
                           aria-hidden
                           className={`h-3 w-3 transition-transform ${
-                            sorted ? "opacity-100" : "opacity-30"
+                            sorted ? "opacity-100" : "opacity-40"
                           } ${sorted === "asc" ? "rotate-180" : ""}`}
                         />
                       ) : null}
@@ -221,7 +225,7 @@ export default function DataTable<T>({
                         sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none"
                       }
                       className={`${HEADER} ${align === "right" ? "text-right" : "text-left"} ${
-                        sorted ? "text-verdigris-100" : ""
+                        sorted ? "text-verdigris-200" : ""
                       }`}
                     >
                       {!canSort ? (

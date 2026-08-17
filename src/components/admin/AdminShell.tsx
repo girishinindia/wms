@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import {
   BoxIcon,
@@ -12,7 +12,9 @@ import {
   GridIcon,
   LayersIcon,
   MapIcon,
+  MenuIcon,
   PinIcon,
+  SidebarIcon,
   TruckIcon,
 } from "@/components/icons";
 import Spinner from "@/components/Spinner";
@@ -64,6 +66,28 @@ export default function AdminShell({
   const toast = useToast();
   const [signingOut, setSigningOut] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  /**
+   * Desktop: the sidebar can be hidden to give a wide table the whole
+   * screen. Remembered per browser so it stays the way it was left.
+   */
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setCollapsed(window.localStorage.getItem("wms.admin.sidebar") === "hidden");
+    } catch {
+      /* private mode: forget between loads, nothing else */
+    }
+  }, []);
+  const toggleSidebar = () => {
+    setCollapsed((c) => {
+      try {
+        window.localStorage.setItem("wms.admin.sidebar", c ? "shown" : "hidden");
+      } catch {
+        /* ignore */
+      }
+      return !c;
+    });
+  };
   /**
    * Which groups the user has explicitly opened or closed.
    *
@@ -167,7 +191,9 @@ export default function AdminShell({
       <aside
         className={`${
           menuOpen ? "flex" : "hidden"
-        } fixed inset-y-0 left-0 z-40 w-64 shrink-0 flex-col overflow-y-auto border-r border-verdigris-300/10 bg-ink-850 lg:sticky lg:top-0 lg:flex lg:h-screen lg:self-start`}
+        } fixed inset-y-0 left-0 z-40 w-64 shrink-0 flex-col overflow-y-auto border-r border-verdigris-300/10 bg-ink-850 lg:sticky lg:top-0 lg:h-screen lg:self-start ${
+          collapsed ? "lg:hidden" : "lg:flex"
+        }`}
       >
         <a
           href="/admin"
@@ -254,16 +280,30 @@ export default function AdminShell({
       ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-verdigris-300/10 px-4 py-3 lg:hidden">
+        <header className="flex items-center gap-3 border-b border-verdigris-300/10 px-4 py-2.5">
+          {/* Small screens: opens the drawer. Large screens: hides or
+              shows the sidebar, and remembers. */}
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
             aria-label="Open menu"
-            className="rounded-lg border border-verdigris-300/15 px-3 py-1.5 text-sm text-verdigris-200"
+            className="rounded-lg border border-verdigris-300/15 p-2 text-verdigris-200 hover:border-verdigris-300/40 hover:text-verdigris-50 lg:hidden"
           >
-            Menu
+            <MenuIcon className="h-4 w-4" />
           </button>
-          <span className="text-sm font-semibold text-verdigris-50">Genius WMS</span>
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={collapsed ? "Show sidebar" : "Hide sidebar"}
+            aria-pressed={collapsed}
+            title={collapsed ? "Show sidebar" : "Hide sidebar"}
+            className="hidden rounded-lg border border-verdigris-300/15 p-2 text-verdigris-200 hover:border-verdigris-300/40 hover:text-verdigris-50 lg:inline-grid"
+          >
+            <SidebarIcon className="h-4 w-4" />
+          </button>
+          <span className={`text-sm font-semibold text-verdigris-50 ${collapsed ? "" : "lg:hidden"}`}>
+            Genius WMS
+          </span>
         </header>
 
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>

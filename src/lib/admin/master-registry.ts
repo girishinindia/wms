@@ -69,6 +69,17 @@ export type MasterResource = {
     table: string;
     /** Column to show in the option. */
     labelColumn: string;
+    /**
+     * One level up, for narrowing the parent picker: a city's state is
+     * chosen from a country first. Options come back grouped by it.
+     */
+    groupBy?: {
+      /** Column on the parent table pointing at the group table. */
+      column: string;
+      table: string;
+      labelColumn: string;
+      label: string;
+    };
   };
   /** Rows elsewhere that point at this one, for the in-use count. */
   dependents: MasterDependent[];
@@ -212,30 +223,19 @@ const warehouseType: MasterResource = {
     { key: "code", column: "code", label: "Code", type: "text", required: true, mono: true, width: 9 },
     { key: "name", column: "name", label: "Name", type: "text", required: true },
     { key: "description", column: "description", label: "Description", type: "text" },
-    {
-      key: "sortOrder",
-      column: "sort_order",
-      label: "Order",
-      type: "number",
-      align: "right",
-      width: 5,
-      hint: "lowest first",
-    },
   ],
   dependents: [{ table: "warehouse", column: "warehouse_type_id", noun: "warehouses" }],
   conflict: "A warehouse type with that code already exists",
-  orderBy: "sort_order, name",
+  orderBy: "name",
   createSchema: withActive({
     code: z.string().trim().toUpperCase().min(2).max(24),
     name: name(80),
     description: optionalText(300),
-    sortOrder: optionalNumber(999),
   }),
   updateSchema: withActive({
     code: z.string().trim().toUpperCase().min(2).max(24).optional(),
     name: name(80).optional(),
     description: optionalText(300),
-    sortOrder: optionalNumber(999),
   }),
 };
 
@@ -326,6 +326,7 @@ const city: MasterResource = {
     label: "State",
     table: "state",
     labelColumn: "name",
+    groupBy: { column: "country_id", table: "country", labelColumn: "name", label: "Country" },
   },
   dependents: [
     { table: "warehouse", column: "city_id", noun: "warehouses" },
