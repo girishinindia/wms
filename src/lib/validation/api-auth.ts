@@ -192,6 +192,15 @@ export const loginResponseSchema = z
   .object({
     user: sessionUserSchema,
     expiresAt: z.string().datetime(),
+    /**
+     * Present ONLY when `platform` is ANDROID or IOS. A browser gets the
+     * httpOnly cookie and nothing else — returning the same value in JSON
+     * would defeat the cookie entirely.
+     */
+    sessionToken: z.string().optional().openapi({
+      description:
+        "Bearer token for native clients. Absent for platform WEB by design.",
+    }),
   })
   .openapi("LoginResponse");
 
@@ -255,3 +264,23 @@ export const okResponseSchema = z.object({ ok: z.literal(true) }).openapi("OkRes
 export function looksLikeEmail(value: string): boolean {
   return z.string().email().safeParse(value).success;
 }
+
+// ── POST /api/v1/devices ──────────────────────────────────────────
+/**
+ * A push token is a capability to interrupt somebody's phone, so it is
+ * only ever attached to the authenticated caller — never taken from a
+ * body field naming a user.
+ */
+export const registerDeviceRequestSchema = z
+  .object({
+    platform: z.enum(["ANDROID", "IOS", "WEB"]),
+    pushToken: z.string().trim().min(20).max(4096),
+    deviceModel: z.string().trim().max(80).optional(),
+    osVersion: z.string().trim().max(40).optional(),
+    appVersion: z.string().trim().max(40).optional(),
+  })
+  .openapi("RegisterDeviceRequest");
+
+export const registerDeviceResponseSchema = z
+  .object({ registered: z.literal(true), deviceId: z.number().int() })
+  .openapi("RegisterDeviceResponse");

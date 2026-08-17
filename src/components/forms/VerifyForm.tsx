@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import Field from "@/components/Field";
 import { ArrowIcon } from "@/components/icons";
+import Spinner from "@/components/Spinner";
+import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 import { formNote, submitButton } from "@/components/authStyles";
 
@@ -41,6 +43,7 @@ type Purpose = (typeof PURPOSES)[number];
  */
 export default function VerifyForm() {
   const router = useRouter();
+  const toast = useToast();
   const params = useSearchParams();
 
   const rawPurpose = params.get("purpose") ?? "registration";
@@ -104,6 +107,7 @@ export default function VerifyForm() {
 
     if (!result.ok) {
       setError(result.error.message);
+      toast.error(result.error.message);
       // An expired or spent code needs a new one, so surface the resend
       // rather than leaving the user staring at a dead form.
       if (result.error.code === "OTP_EXPIRED") setCooldown(0);
@@ -111,12 +115,18 @@ export default function VerifyForm() {
     }
 
     if (purpose === "passwordRecovery" && result.data.resetToken) {
+      toast.success("Both codes verified. Choose a new password.");
       const query = new URLSearchParams({ token: result.data.resetToken });
       router.push(`/reset-password?${query.toString()}`);
       return;
     }
 
     if (result.data.complete) {
+      toast.success(
+        result.data.importerCode
+          ? `Verified. Your importer account ${result.data.importerCode} is active — sign in to continue.`
+          : "Verified. Your account is active — sign in to continue.",
+      );
       const query = new URLSearchParams({ registered: "1" });
       if (result.data.importerCode) query.set("code", result.data.importerCode);
       router.push(`/sign-in?${query.toString()}`);
@@ -124,6 +134,7 @@ export default function VerifyForm() {
     }
 
     setNotice("One channel is verified. Enter the other code to finish.");
+    toast.info("One channel verified. Enter the other code to finish.");
   };
 
   const resend = async () => {
@@ -138,12 +149,14 @@ export default function VerifyForm() {
 
     if (!result.ok) {
       setError(result.error.message);
+      toast.error(result.error.message);
       // The server owns the cooldown; trust its number over ours.
       if (result.error.retryAfter) setCooldown(result.error.retryAfter);
       return;
     }
     setCooldown(result.data.resendAfterSeconds);
     setNotice("New codes sent. The previous ones no longer work.");
+    toast.success("New codes sent. The previous ones no longer work.");
   };
 
   const ready = emailCode.length === codeLength && smsCode.length === codeLength;
@@ -202,6 +215,7 @@ export default function VerifyForm() {
       )}
 
       <button type="submit" disabled={busy || !ready} className={`${submitButton} mt-2`}>
+        {busy && <Spinner />}
         {busy ? "Verifying…" : "Verify and continue"}
         {!busy && <ArrowIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />}
       </button>

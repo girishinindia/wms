@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -47,7 +48,11 @@ export default function SignInPage() {
         </>
       }
     >
-      <SignInForm />
+      {/* useSearchParams needs a boundary, or the whole route opts out
+          of static rendering and the build fails. */}
+      <Suspense fallback={<div className="h-64" aria-hidden />}>
+        <SignInForm />
+      </Suspense>
     </AuthShell>
   );
 }

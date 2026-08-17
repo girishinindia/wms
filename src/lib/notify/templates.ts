@@ -34,11 +34,16 @@ export const OTP_EVENTS = {
 
 export type OtpPurpose = keyof typeof OTP_EVENTS;
 
+/** Every channel `wms.notif_channel` allows. */
+export type TemplateChannel = "IN_APP" | "EMAIL" | "SMS" | "PUSH" | "WHATSAPP";
+
 export type Template = {
   eventKey: string;
-  channel: "EMAIL" | "SMS";
+  channel: TemplateChannel;
   subject: string | null;
   body: string;
+  /** Deep link, with the same {{placeholders}} as the body. */
+  actionUrl: string | null;
   dltTemplateId: string | null;
   dltEntityId: string | null;
   senderId: string | null;
@@ -61,7 +66,7 @@ export function clearTemplateCache(): void {
 
 export async function getTemplate(
   eventKey: string,
-  channel: "EMAIL" | "SMS",
+  channel: TemplateChannel,
   locale = "en",
 ): Promise<Template> {
   const key = `${eventKey}|${channel}|${locale}`;
@@ -73,14 +78,15 @@ export async function getTemplate(
 
   const rows = await getDb().execute<{
     event_key: string;
-    channel: "EMAIL" | "SMS";
+    channel: TemplateChannel;
     subject: string | null;
     body: string;
+    action_url: string | null;
     dlt_template_id: string | null;
     dlt_entity_id: string | null;
     sender_id: string | null;
   }>(sql`
-    select event_key, channel::text as channel, subject, body,
+    select event_key, channel::text as channel, subject, body, action_url,
            dlt_template_id, dlt_entity_id, sender_id
       from wms.notification_template
      where event_key = ${eventKey}
@@ -102,6 +108,7 @@ export async function getTemplate(
     channel: row.channel,
     subject: row.subject,
     body: row.body,
+    actionUrl: row.action_url,
     dltTemplateId: row.dlt_template_id,
     dltEntityId: row.dlt_entity_id,
     senderId: row.sender_id,

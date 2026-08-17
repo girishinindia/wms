@@ -8,6 +8,8 @@ import { z } from "zod";
 
 import Field from "@/components/Field";
 import { ArrowIcon } from "@/components/icons";
+import Spinner from "@/components/Spinner";
+import { useToast } from "@/components/Toast";
 import { api, applyFieldErrors } from "@/lib/api/client";
 import { formNote, submitButton } from "@/components/authStyles";
 
@@ -25,6 +27,7 @@ type Values = z.infer<typeof schema>;
 
 function Inner() {
   const router = useRouter();
+  const toast = useToast();
   const token = useSearchParams().get("token") ?? "";
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -53,10 +56,20 @@ function Inner() {
     });
 
     if (!result.ok) {
-      if (applyFieldErrors(result.error.fields, setError)) return;
+      if (applyFieldErrors(result.error.fields, setError)) {
+        toast.error("Please fix the highlighted fields.");
+        return;
+      }
       setFormError(result.error.message);
+      toast.error(result.error.message);
       return;
     }
+
+    toast.success(
+      result.data.sessionsRevoked > 0
+        ? `Password changed. ${result.data.sessionsRevoked} other session${result.data.sessionsRevoked === 1 ? "" : "s"} signed out.`
+        : "Password changed. Sign in with your new password.",
+    );
     router.push("/sign-in?reset=1");
   };
 
@@ -106,6 +119,7 @@ function Inner() {
       )}
 
       <button type="submit" disabled={isSubmitting} className={`${submitButton} mt-2`}>
+        {isSubmitting && <Spinner />}
         {isSubmitting ? "Saving…" : "Set new password"}
         {!isSubmitting && (
           <ArrowIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />

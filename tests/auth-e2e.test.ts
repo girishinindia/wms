@@ -87,6 +87,16 @@ describeE2E("auth endpoints", () => {
   const cleanup = async () => {
     await sql`alter table wms.user_role_assignment disable trigger ura_protect_immutable`;
     try {
+      // `notification.actor_user_id` references users with NO cascade —
+      // deliberately, because a notification is evidence that something
+      // happened and should not vanish when an account is removed. The
+      // consequence is that a hard delete has to clear it first, which
+      // production never does: users are soft-deleted.
+      await sql`
+        delete from wms.notification
+         where actor_user_id    in (select id from wms.users where email = ${EMAIL}::citext)
+            or recipient_user_id in (select id from wms.users where email = ${EMAIL}::citext)
+            or importer_id in (select id from wms.importer where contact_email = ${EMAIL}::citext)`;
       await sql`
         delete from wms.user_role_assignment
          where user_id in (select id from wms.users where email = ${EMAIL}::citext)`;
@@ -283,6 +293,44 @@ describeE2E("auth endpoints", () => {
     // Never widened to sibling hosts.
     expect(setCookie.toLowerCase()).not.toContain("domain=");
   }, 15_000);
+
+  /**
+   * The bearer token is for native clients only. A browser receiving it
+   * in JSON would make the httpOnly cookie pointless — script could read
+   * the session straight out of the login response.
+   */
+  it("returns a bearer token to native clients and never to the browser", async () => {
+    const web = await call("/api/v1/auth/login", {
+      body: { identifier: EMAIL, password: PASSWORD, platform: "WEB" },
+    });
+    expect(web.status).toBe(200);
+    expect(web.json.sessionToken).toBeUndefined();
+
+    const android = await call("/api/v1/auth/login", {
+      body: { identifier: EMAIL, password: PASSWORD, platform: "ANDROID" },
+    });
+    expect(android.status).toBe(200);
+    expect(typeof android.json.sessionToken).toBe("string");
+
+    // And it actually works as a bearer credential.
+    const session = await fetch(`${BASE}/api/v1/auth/session`, {
+      headers: { authorization: `Bearer ${android.json.sessionToken}` },
+    });
+    // /auth/session reads the cookie; /devices accepts the bearer.
+    const device = await fetch(`${BASE}/api/v1/devices`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${android.json.sessionToken}`,
+      },
+      body: JSON.stringify({
+        platform: "ANDROID",
+        pushToken: "e2e-token-" + "z".repeat(40),
+      }),
+    });
+    expect(device.status).toBe(201);
+    void session;
+  }, 25_000);
 
   it("accepts the mobile number as the identifier too", async () => {
     const r = await call("/api/v1/auth/login", {

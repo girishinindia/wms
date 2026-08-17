@@ -9,6 +9,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import Field from "@/components/Field";
 import { normalizeMobile } from "@/lib/normalize";
 import { ArrowIcon } from "@/components/icons";
+import Spinner from "@/components/Spinner";
+import { useToast } from "@/components/Toast";
 import { api, applyFieldErrors } from "@/lib/api/client";
 import {
   authLink,
@@ -26,6 +28,7 @@ type RegisterResponse = {
 
 export default function SignUpForm() {
   const router = useRouter();
+  const toast = useToast();
   const [formError, setFormError] = useState<string | null>(null);
 
   const {
@@ -68,10 +71,18 @@ export default function SignUpForm() {
     });
 
     if (!result.ok) {
-      if (applyFieldErrors(result.error.fields, setError)) return;
+      if (applyFieldErrors(result.error.fields, setError)) {
+        // The messages are already sitting on the fields; a toast on top
+        // would say "check the form" while the form is already saying it.
+        toast.error("Please fix the highlighted fields.");
+        return;
+      }
       setFormError(result.error.message);
+      toast.error(result.error.message);
       return;
     }
+
+    toast.success("Account created. We have sent a code to your email and your mobile.");
 
     // Straight to the codes. The identifier travels in the URL so a
     // reload does not lose it; nothing secret is in there, and the
@@ -225,6 +236,7 @@ export default function SignUpForm() {
         disabled={isSubmitting}
         className={`${submitButton} mt-2`}
       >
+        {isSubmitting && <Spinner />}
         {isSubmitting ? "Creating account…" : "Create account"}
         {!isSubmitting && (
           <ArrowIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />

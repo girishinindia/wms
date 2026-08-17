@@ -18,10 +18,10 @@ export type SendOutcome = {
   /** Maps onto wms.delivery_status. */
   status: "SENT" | "FAILED" | "SUPPRESSED";
   retryable: boolean;
-  provider: "brevo" | "smsgatewayhub";
+  provider: "brevo" | "smsgatewayhub" | "fcm";
   /** The address actually used, after normalisation. */
   address?: string;
-  /** Provider id: Brevo messageId, SmsGatewayHub JobId. */
+  /** Provider id: Brevo messageId, SmsGatewayHub JobId, FCM name. */
   providerMessageId?: string;
   /** Provider code, or a synthetic one (NETWORK, INVALID_MOBILE, ...). */
   errorCode?: string;

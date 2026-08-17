@@ -8,6 +8,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import Field from "@/components/Field";
 import { normalizeMobile } from "@/lib/normalize";
 import { ArrowIcon } from "@/components/icons";
+import Spinner from "@/components/Spinner";
+import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 import { formNote, submitButton } from "@/components/authStyles";
 import {
@@ -17,6 +19,7 @@ import {
 
 export default function ForgotPasswordForm() {
   const router = useRouter();
+  const toast = useToast();
   const [formError, setFormError] = useState<string | null>(null);
 
   const {
@@ -44,8 +47,13 @@ export default function ForgotPasswordForm() {
 
     if (!result.ok) {
       setFormError(result.error.message);
+      toast.error(result.error.message);
       return;
     }
+
+    // Deliberately does not say "we found your account" — the endpoint
+    // answers the same either way, and so must this.
+    toast.success("If those details match an account, both codes are on their way.");
 
     const query = new URLSearchParams({
       purpose: "passwordRecovery",
@@ -100,6 +108,7 @@ export default function ForgotPasswordForm() {
         disabled={isSubmitting}
         className={`${submitButton} mt-2`}
       >
+        {isSubmitting && <Spinner />}
         {isSubmitting ? "Sending codes…" : "Send reset codes"}
         {!isSubmitting && (
           <ArrowIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />

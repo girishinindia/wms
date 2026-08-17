@@ -30,6 +30,14 @@ describe("OpenAPI document", () => {
     ]);
   });
 
+  it("documents the device endpoints", async () => {
+    const { buildOpenApiDocument } = await import("@/lib/openapi/document");
+    const doc = buildOpenApiDocument();
+    expect(Object.keys(doc.paths ?? {})).toContain("/api/v1/devices");
+    const item = (doc.paths ?? {})["/api/v1/devices"] as Record<string, unknown>;
+    expect(Object.keys(item).sort()).toEqual(["delete", "post"]);
+  });
+
   it("gives every operation an id, so the generated client has method names", async () => {
     const { buildOpenApiDocument } = await import("@/lib/openapi/document");
     const doc = buildOpenApiDocument();

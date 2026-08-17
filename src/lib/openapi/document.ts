@@ -19,6 +19,8 @@ import {
   otpStatusResponseSchema,
   otpVerifyRequestSchema,
   otpVerifyResponseSchema,
+  registerDeviceRequestSchema,
+  registerDeviceResponseSchema,
   registerRequestSchema,
   registerResponseSchema,
   resetPasswordRequestSchema,
@@ -282,7 +284,11 @@ authPath({
     "where the account becomes real: the user goes ACTIVE and the " +
     "`IMPORTER` role is attached to their importer record, in one " +
     "statement. It is also the point of no return — that role is " +
-    "immutable — which is exactly why it waits for both codes.\n\nOn a " +
+    "immutable — which is exactly why it waits for both codes. Every " +
+    "Super Admin is then notified on IN_APP, EMAIL and PUSH, once per " +
+    "importer ever: the dedupe key is the importer id, so a replayed " +
+    "verify cannot produce a second alert. A failed notification never " +
+    "fails the registration.\n\nOn a " +
     "completed **passwordRecovery** the response carries a short-lived " +
     "`resetToken`. That, not the OTP, is what `/password/reset` " +
     "consumes — the OTP is still sitting in the user's inbox and text " +
@@ -320,7 +326,10 @@ authPath({
     "lockout, and per-IP **and** per-account rate limits.\n\nEvery " +
     "credential failure returns the same message in the same time, so the " +
     "endpoint cannot be used to discover which addresses are registered.\n\n" +
-    "On success an httpOnly session cookie is set.",
+    "On success an httpOnly session cookie is set.\n\nWhen `platform` " +
+    "is `ANDROID` or `IOS` the response ALSO carries `sessionToken`, for " +
+    "`Authorization: Bearer`. A browser never receives it — returning the " +
+    "session in JSON would defeat the httpOnly cookie it just set.",
   request: loginRequestSchema,
   response: loginResponseSchema,
   responses: {
@@ -356,6 +365,56 @@ authPath({
     "no permissions\" are different states.",
   response: sessionResponseSchema,
   responses: { 401: errorResponse("No valid session cookie.") },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/devices",
+  operationId: "registerDevice",
+  tags: ["Notifications"],
+  summary: "Register this device for push",
+  description:
+    "Attaches an FCM registration token to the **authenticated caller** — " +
+    "never to a user named in the body. A push token is a capability to " +
+    "interrupt somebody's phone.\n\n`push_token` is unique across the " +
+    "table, so a token always belongs to whoever signed in last. Two " +
+    "people sharing one handset must not keep receiving each other's " +
+    "notifications.\n\nWhen FCM reports `UNREGISTERED` the row is " +
+    "deactivated rather than deleted: which device was notified is worth " +
+    "keeping for the audit trail.",
+  request: {
+    body: {
+      required: true,
+      content: { "application/json": { schema: registerDeviceRequestSchema } },
+    },
+  },
+  responses: {
+    201: {
+      description: "Registered.",
+      content: { "application/json": { schema: registerDeviceResponseSchema } },
+    },
+    401: errorResponse("No valid session."),
+    422: errorResponse("The body failed validation."),
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/v1/devices",
+  operationId: "unregisterDevice",
+  tags: ["Notifications"],
+  summary: "Stop push to this device",
+  description:
+    "Deactivates the token, scoped to the caller — nobody can silence " +
+    "somebody else's device. Call it on mobile sign-out.",
+  responses: {
+    200: {
+      description: "Deactivated.",
+      content: { "application/json": { schema: okResponseSchema } },
+    },
+    401: errorResponse("No valid session."),
+    422: errorResponse("pushToken is required."),
+  },
 });
 
 authPath({
@@ -435,6 +494,14 @@ export function buildOpenApiDocument() {
     tags: [
       { name: "Health", description: "Liveness and readiness probes." },
       { name: "Meta", description: "Index and documentation." },
+      {
+        name: "Notifications",
+        description:
+          "Push device registration. Notification ROUTING is data, not " +
+          "code — `wms.notification_rule` decides who hears about an " +
+          "event and on which channels, so changing it is a row rather " +
+          "than a deploy.",
+      },
       {
         name: "Auth",
         description:

@@ -13,7 +13,8 @@
     "db:baseline": "node scripts/mark-baseline-applied.mjs",
     "db:check": "node scripts/check-migration.mjs",
     "vendor:scalar": "node scripts/vendor-scalar.mjs",
-    "prebuild": "node scripts/vendor-scalar.mjs"
+    "prebuild": "node scripts/vendor-scalar.mjs",
+    "hash:password": "node scripts/hash-password.mjs"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",

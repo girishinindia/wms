@@ -12,6 +12,7 @@ import {
 import { purposeFor } from "@/lib/auth/dispatch-otp";
 import { verifyOtpPair } from "@/lib/auth/otp";
 import { clientIp, limitAuthAttempt, limitOrAllow } from "@/lib/auth/ratelimit";
+import { announce } from "@/lib/notify/announce";
 import { auditQuietly } from "@/lib/audit";
 import { otpEnv } from "@/lib/env";
 import { fail, fieldsFrom, handler, ok, toResponse, HandledError } from "@/lib/api/respond";
@@ -147,6 +148,7 @@ export async function POST(request: NextRequest) {
       // it. That is precisely why it waits until both codes are proven.
       let activation: { activated: boolean; roleAssigned: boolean } | undefined;
       let importerCode: string | undefined;
+      let notified: { recipients: number; sent: Record<string, number> } | undefined;
       if (input.purpose === "registration" && complete) {
         const importer = await pendingImporterFor(account.email);
         if (!importer) {
@@ -160,6 +162,41 @@ export async function POST(request: NextRequest) {
           userId: account.id,
           importerId: importer.id,
         });
+
+        // Tell the super admins — but only on the transition. A replayed
+        // verify finds the role already assigned and must not notify
+        // again, or a retried request becomes a duplicate alert.
+        if (activation.roleAssigned) {
+          try {
+            const fanOut = await announce({
+              eventKey: "importer.registered",
+              values: {
+                company: importer.companyName,
+                code: importer.code,
+                contact: `${account.firstName} ${account.lastName}`,
+                email: account.email,
+                mobile: account.mobile,
+                importer_id: String(importer.id),
+              },
+              // One alert per importer, ever.
+              dedupeSuffix: `importer:${importer.id}`,
+              actorUserId: account.id,
+              entityType: "importer",
+              entityId: String(importer.id),
+              importerId: importer.id,
+              correlationId: requestId,
+            });
+            notified = fanOut;
+          } catch (error) {
+            // A failed notification must never fail the user's
+            // registration. They did their part; an admin alert that did
+            // not send is our problem, and it is recorded as one.
+            console.error("[verify] importer.registered fan-out failed", {
+              requestId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
       }
 
       let resetToken: string | undefined;
@@ -186,6 +223,8 @@ export async function POST(request: NextRequest) {
                 activated: activation.activated,
                 importerRoleAssigned: activation.roleAssigned,
                 importerCode,
+                superAdminsNotified: notified?.recipients ?? 0,
+                notificationChannels: notified?.sent ?? {},
               }
             : {}),
         },

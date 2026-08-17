@@ -174,8 +174,18 @@ export async function POST(request: NextRequest) {
         metadata: { sessionId: session.sessionId, platform: input.platform ?? "WEB" },
       });
 
+      // The token in the body is for NATIVE clients only.
+      //
+      // A browser must never receive it: the whole point of the httpOnly
+      // cookie is that script cannot read the session, and handing the
+      // same value back in JSON undoes that in one line. A native app has
+      // no XSS surface and no cookie jar worth trusting, and stores it in
+      // the Keychain / EncryptedSharedPreferences instead.
+      const isNative = input.platform === "ANDROID" || input.platform === "IOS";
+
       return ok(
         {
+          ...(isNative ? { sessionToken: session.token } : {}),
           user: {
             id: account.id,
             email: account.email,

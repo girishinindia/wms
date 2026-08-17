@@ -310,16 +310,21 @@ export async function createSelfRegistration(input: {
  */
 export async function pendingImporterFor(
   email: string,
-): Promise<{ id: number; code: string } | null> {
-  const rows = await getDb().execute<{ id: number; code: string }>(sql`
-    select id, code from wms.importer
+): Promise<{ id: number; code: string; companyName: string } | null> {
+  const rows = await getDb().execute<{
+    id: number;
+    code: string;
+    company_name: string;
+  }>(sql`
+    select id, code, company_name from wms.importer
      where contact_email = ${email}::citext
        and origin = 'SELF_REGISTERED'
        and deleted_at is null
      order by id desc
      limit 1
   `);
-  return rows[0] ?? null;
+  const row = rows[0];
+  return row ? { id: row.id, code: row.code, companyName: row.company_name } : null;
 }
 
 /**
