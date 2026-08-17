@@ -75,6 +75,10 @@ const STALE_MS = (IDLE_SECONDS + 5) * 1000;
  *  the length of the freeze. */
 let lastTouched = 0;
 
+/** See the note at `...NO_PIPELINE` inside createClient. Typed loosely
+ *  only because postgres.js does not declare this option. */
+const NO_PIPELINE = { max_pipeline: 0 } as unknown as Partial<postgres.Options<never>>;
+
 function createClient(): Client {
   const url = process.env.DATABASE_URL;
 
@@ -119,6 +123,32 @@ function createClient(): Client {
      * requests. Reconnecting through the pooler is ~50ms and rare.
      */
     max_lifetime: 5 * 60,
+    /**
+     * Never pipeline through the transaction pooler.
+     *
+     * By default postgres.js will send a second query down a socket
+     * before the first has answered, when the queries have no parameters
+     * and no other connection is free. Postgres itself handles that
+     * fine. Supabase's transaction-mode pooler does not: it leases a
+     * backend to a client per transaction, so a second query arriving on
+     * the same socket mid-lease gets executed but its reply is orphaned —
+     * the client waits for an answer that never comes.
+     *
+     * That was the Cities screen. It is the one page that fires two
+     * zero-parameter queries concurrently (states + count); with a
+     * one-connection pool the driver pipelined them, the count ran on the
+     * server (visible in pg_stat_statements), its reply was lost, and the
+     * page spun forever — reproducibly, only there, only in production.
+     *
+     * Zero here means "a connection is busy the moment it has one query
+     * outstanding", so a concurrent query waits for a free connection or
+     * opens one instead of sharing a socket. Nothing else changes.
+     *
+     * The option is real (`max_pipeline` in postgres.js's option parser,
+     * default 100) but absent from the package's type definitions, hence
+     * the spread through NO_PIPELINE below.
+     */
+    ...NO_PIPELINE,
     /**
      * int8 (bigint) arrives as a STRING by default, because 2^63 does not
      * fit a JS number. Every primary key in this schema is

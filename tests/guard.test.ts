@@ -132,3 +132,33 @@ describe("the pool does not survive a freeze", () => {
     expect(db).toMatch(/max_lifetime: 5 \* 60/);
   });
 });
+
+describe("no pipelining through the transaction pooler", () => {
+  /**
+   * The Cities screen hung, reproducibly, only in production. The count
+   * query ran on the server (pg_stat_statements counted it), its reply
+   * never reached the app, and the list query that follows was never
+   * sent. Cities was the one page firing two parameterless queries
+   * concurrently; with a one-connection pool the driver pipelined them
+   * onto a single socket, and Supabase's transaction pooler — which
+   * leases a backend per transaction — answered the first and orphaned
+   * the second.
+   */
+  it("sets max_pipeline to zero", () => {
+    expect(db).toMatch(/max_pipeline: 0 \}/);
+    expect(db).toMatch(/\.\.\.NO_PIPELINE,/);
+  });
+
+  it("keeps the cities page sequential as well", () => {
+    const cities = readFileSync(
+      new URL("../src/app/admin/master/cities/page.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(cities).not.toMatch(/Promise\.all\(/);
+  });
+
+  it("does not ship an example env that pins the pool to one", () => {
+    const example = readFileSync(new URL("../.env.example", import.meta.url), "utf8");
+    expect(example).not.toMatch(/^DATABASE_MAX_CONNECTIONS=1$/m);
+  });
+});

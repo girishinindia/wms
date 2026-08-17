@@ -64,20 +64,28 @@ export default async function CitiesPage({
         : sql`s.name`;
   const direction = query.dir === "desc" ? sql`desc` : sql`asc`;
 
-  const [states, [{ total }]] = await Promise.all([
-    getDb().execute<{ id: number; name: string; code: string }>(sql`
-      select id, name, code
-        from wms.state
-       where is_active and deleted_at is null
-       order by name
-    `),
-    getDb().execute<{ total: number }>(sql`
-      select count(*)::int as total
-        from wms.city c
-        join wms.state s on s.id = c.state_id
-       where ${where}
-    `),
-  ]);
+  /**
+   * One query at a time, on purpose — the same shape as every other
+   * master screen. These two used to run under `Promise.all`, and that
+   * made Cities the only page that sent two parameterless queries
+   * concurrently, which the driver pipelined onto one socket and the
+   * transaction pooler then answered only once. The driver no longer
+   * pipelines at all (see src/db/index.ts), so this is belt and braces:
+   * the sequential form costs a couple of milliseconds and cannot
+   * depend on pooler behaviour.
+   */
+  const states = await getDb().execute<{ id: number; name: string; code: string }>(sql`
+    select id, name, code
+      from wms.state
+     where is_active and deleted_at is null
+     order by name
+  `);
+  const [{ total }] = await getDb().execute<{ total: number }>(sql`
+    select count(*)::int as total
+      from wms.city c
+      join wms.state s on s.id = c.state_id
+     where ${where}
+  `);
   const list = finishList(query, total, SORTABLE);
 
   const cities = await getDb().execute<{
