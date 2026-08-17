@@ -67,6 +67,9 @@ export default function SignInForm() {
   const toast = useToast();
   const params = useSearchParams();
   const [formError, setFormError] = useState<string | null>(null);
+  /** True from a successful sign-in until the navigation lands. Never
+   *  cleared — see the note in onSubmit. */
+  const [redirecting, setRedirecting] = useState(false);
 
   // One-shot toasts for the states other screens redirect in with. The
   // ref stops React 18's double-invoked effects from showing each twice
@@ -121,10 +124,27 @@ export default function SignInForm() {
 
     toast.success(`Welcome back, ${result.data.user.firstName}.`);
 
-    // The session is an httpOnly cookie the server already set; refresh
-    // so any server component re-reads it rather than rendering stale.
-    router.push(await destination(params.get("next")));
-    router.refresh();
+    /**
+     * Stay in the pending state through the navigation, not just the
+     * request.
+     *
+     * This is what made sign-in look broken. `isSubmitting` goes false
+     * the moment `onSubmit` returns, so the button flipped back to an
+     * enabled "Sign in" while three round trips were still in flight —
+     * the login itself, which carries a deliberate 400ms anti-enumeration
+     * floor; the session lookup; and then a cold, dynamic /admin. The
+     * user saw a success toast, a live button, and a page that had not
+     * moved, which reads as a failure and invites a second click.
+     *
+     * `redirecting` is never cleared. The component is about to be
+     * unmounted by the navigation, and the only way out of this state is
+     * arriving somewhere.
+     */
+    setRedirecting(true);
+
+    // `replace`, not `push`: going Back to a sign-in form you have
+    // already completed is a dead end that re-submits nothing.
+    router.replace(await destination(params.get("next")));
   };
 
   return (
@@ -170,18 +190,18 @@ export default function SignInForm() {
 
       <button
         type="submit"
-        disabled={isSubmitting}
+        disabled={isSubmitting || redirecting}
         className={`${submitButton} mt-2`}
       >
-        {isSubmitting && <Spinner />}
-        {isSubmitting ? "Signing in…" : "Sign in"}
-        {!isSubmitting && (
+        {(isSubmitting || redirecting) && <Spinner />}
+        {redirecting ? "Taking you in…" : isSubmitting ? "Signing in…" : "Sign in"}
+        {!isSubmitting && !redirecting && (
           <ArrowIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         )}
       </button>
 
       <p className={formNote}>
-        Front-end only — authentication is wired up in Phase 1.
+        Sessions last 7 days of inactivity, and 30 days at most.
       </p>
     </form>
   );

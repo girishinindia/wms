@@ -127,6 +127,33 @@ export const MapIcon = (p: P) => (
   </svg>
 );
 
+/* ── Row actions ─────────────────────────────────────────────────
+   Icon buttons need a name a screen reader can read, so every use of
+   these carries an aria-label and a title — the icon replaces the
+   visible text, not the accessible one. */
+
+export const PencilIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M4 20h4l10-10a2.83 2.83 0 0 0-4-4L4 16v4Z" />
+    <path d="m13.5 6.5 4 4" />
+  </svg>
+);
+
+/** Power. Deactivate and reactivate are the same control, so they are
+ *  the same glyph with a different tint — not two different pictures. */
+export const PowerIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 4v8" />
+    <path d="M7.1 7.1a7 7 0 1 0 9.8 0" />
+  </svg>
+);
+
+export const XIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M6 6l12 12M18 6 6 18" />
+  </svg>
+);
+
 /** Four cells — a set of categories, which is what a type table is. */
 export const GridIcon = (p: P) => (
   <svg {...base} {...p}>

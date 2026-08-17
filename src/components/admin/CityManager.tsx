@@ -3,11 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { PowerIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 
-import { Card, Cell, Empty, Row, StatusBadge, Table } from "./ui";
+import { Card, Cell, Empty, IconButton, Row, StatusBadge, Table } from "./ui";
 
 /**
  * Adding cities, in bulk, because the table starts empty.
@@ -209,15 +210,13 @@ export default function CityManager({
                 </Cell>
                 <Cell className="text-right">
                   {canUpdate ? (
-                    <button
-                      type="button"
+                    <IconButton
+                      label={city.isActive ? `Retire ${city.name}` : `Restore ${city.name}`}
+                      tone={city.isActive ? "default" : "danger"}
+                      busy={busyId === city.id}
                       onClick={() => toggle(city)}
-                      disabled={busyId === city.id}
-                      className="inline-flex items-center gap-2 rounded-lg border border-verdigris-300/15 px-3 py-1.5 text-xs text-verdigris-200/80 transition-colors hover:border-verdigris-300/35 hover:text-verdigris-100 disabled:opacity-55"
-                    >
-                      {busyId === city.id ? <Spinner className="h-3 w-3" /> : null}
-                      {city.isActive ? "Retire" : "Restore"}
-                    </button>
+                      icon={<PowerIcon className="h-4 w-4" />}
+                    />
                   ) : null}
                 </Cell>
               </Row>

@@ -53,13 +53,31 @@ describe("post-sign-in redirect", () => {
     expect(safeNext("")).toBeNull();
   });
 
-  it("no longer pushes a hardcoded destination", () => {
-    // The regression itself: `router.push("/")` with nothing else.
-    expect(source).not.toMatch(/router\.push\(\s*["']\/["']\s*\)/);
-    expect(source).toMatch(/router\.push\(await destination\(/);
+  it("no longer navigates to a hardcoded destination", () => {
+    // The original regression: `router.push("/")` with nothing else.
+    expect(source).not.toMatch(/router\.(push|replace)\(\s*["']\/["']\s*\)/);
+    expect(source).toMatch(/router\.replace\(await destination\(/);
   });
 
   it("still guards the parameter it now honours", () => {
     expect(source).toMatch(/startsWith\("\/\/"\)/);
+  });
+
+  /**
+   * The second half of "it does not redirect".
+   *
+   * The destination was always right; the button was not. `isSubmitting`
+   * clears the moment onSubmit returns, so it flipped back to an enabled
+   * "Sign in" while three round trips were still in flight — a success
+   * toast, a live button and a stationary page, which reads as a failure
+   * and invites a second click.
+   */
+  it("stays in a pending state through the navigation, not just the request", () => {
+    expect(source).toMatch(/setRedirecting\(true\)/);
+    // Disabled and labelled on `redirecting`, not only on `isSubmitting`.
+    expect(source).toMatch(/disabled=\{isSubmitting \|\| redirecting\}/);
+    expect(source).toMatch(/redirecting \?\s*"[^"]+"/);
+    // And never cleared — the navigation unmounts it.
+    expect(source).not.toMatch(/setRedirecting\(false\)/);
   });
 });

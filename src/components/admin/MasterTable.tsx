@@ -3,12 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import Spinner from "@/components/Spinner";
+import { CheckIcon, PencilIcon, PowerIcon, XIcon } from "@/components/icons";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 import type { MasterField } from "@/lib/admin/master-registry";
 
-import { Card, Empty, StatusBadge } from "./ui";
+import { Card, Empty, IconButton, StatusBadge } from "./ui";
 
 /**
  * One editing surface for every master table.
@@ -327,16 +327,31 @@ export default function MasterTable({
                 <td className="px-4 py-3">
                   <StatusBadge value="ACTIVE" />
                 </td>
-                <td className="px-4 py-3 text-right">
-                  <button
-                    type="button"
-                    onClick={create}
-                    disabled={busy === "new"}
-                    className="inline-flex items-center gap-2 rounded-lg bg-verdigris-400 px-3 py-1.5 text-xs font-semibold text-ink-900 disabled:opacity-55"
-                  >
-                    {busy === "new" ? <Spinner className="h-3 w-3" /> : null}
-                    Save
-                  </button>
+                <td className="whitespace-nowrap px-4 py-3 text-right">
+                  <span className="inline-flex items-center gap-1.5">
+                    <IconButton
+                      label={`Save this ${spec.singular}`}
+                      tone="primary"
+                      busy={busy === "new"}
+                      onClick={create}
+                      icon={<CheckIcon className="h-4 w-4" />}
+                    />
+                    {/* Cancel belongs next to Save. It was only in the
+                        header, which is the wrong end of a wide row —
+                        by the time you have filled the last field the
+                        way out is off the side of the screen. */}
+                    <IconButton
+                      label="Discard this row"
+                      onClick={() => {
+                        setAdding(false);
+                        setAddDraft({});
+                        setAddParent("");
+                        setErrors({});
+                      }}
+                      disabled={busy === "new"}
+                      icon={<XIcon className="h-4 w-4" />}
+                    />
+                  </span>
                 </td>
               </tr>
             ) : null}
@@ -402,59 +417,50 @@ export default function MasterTable({
 
                   <td className="whitespace-nowrap px-4 py-3 text-right">
                     {!spec.canUpdate ? null : editing ? (
-                      <span className="inline-flex items-center gap-2">
-                        <button
-                          type="button"
+                      <span className="inline-flex items-center gap-1.5">
+                        <IconButton
+                          label="Save changes"
+                          tone="primary"
+                          busy={busy === row.id}
                           onClick={() => save(row.id)}
+                          icon={<CheckIcon className="h-4 w-4" />}
+                        />
+                        <IconButton
+                          label="Discard changes"
                           disabled={busy === row.id}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-verdigris-400 px-3 py-1.5 text-xs font-semibold text-ink-900 disabled:opacity-55"
-                        >
-                          {busy === row.id ? <Spinner className="h-3 w-3" /> : null}
-                          Save
-                        </button>
-                        <button
-                          type="button"
                           onClick={() => setEditingId(null)}
-                          className="text-xs text-verdigris-200/50 hover:text-verdigris-100"
-                        >
-                          Cancel
-                        </button>
+                          icon={<XIcon className="h-4 w-4" />}
+                        />
                       </span>
                     ) : confirmOff?.id === row.id ? (
-                      <span className="inline-flex items-center gap-2">
-                        <button
-                          type="button"
+                      <span className="inline-flex items-center gap-1.5">
+                        <IconButton
+                          label={`Switch off anyway — ${row.inUse} ${spec.dependentNoun} still use it`}
+                          tone="danger"
+                          busy={busy === row.id}
                           onClick={() => toggle(row, true)}
-                          disabled={busy === row.id}
-                          className="rounded-lg bg-rose-500/85 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-55"
-                        >
-                          Switch off anyway
-                        </button>
-                        <button
-                          type="button"
+                          icon={<PowerIcon className="h-4 w-4" />}
+                        />
+                        <IconButton
+                          label="Keep it switched on"
                           onClick={() => setConfirmOff(null)}
-                          className="text-xs text-verdigris-200/50 hover:text-verdigris-100"
-                        >
-                          Keep
-                        </button>
+                          icon={<XIcon className="h-4 w-4" />}
+                        />
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-2">
-                        <button
-                          type="button"
+                      <span className="inline-flex items-center gap-1.5">
+                        <IconButton
+                          label={`Edit ${String(row.values[spec.fields[0]!.key] ?? spec.singular)}`}
                           onClick={() => startEdit(row)}
-                          className="whitespace-nowrap rounded-lg border border-verdigris-300/15 px-3 py-1.5 text-xs text-verdigris-200/80 transition-colors hover:border-verdigris-300/35 hover:text-verdigris-100"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
+                          icon={<PencilIcon className="h-4 w-4" />}
+                        />
+                        <IconButton
+                          label={row.isActive ? "Switch off" : "Switch on"}
+                          tone={row.isActive ? "default" : "danger"}
+                          busy={busy === row.id}
                           onClick={() => toggle(row)}
-                          disabled={busy === row.id}
-                          className="whitespace-nowrap rounded-lg border border-verdigris-300/15 px-3 py-1.5 text-xs text-verdigris-200/80 transition-colors hover:border-verdigris-300/35 hover:text-verdigris-100 disabled:opacity-55"
-                        >
-                          {busy === row.id ? <Spinner className="h-3 w-3" /> : row.isActive ? "Switch off" : "Switch on"}
-                        </button>
+                          icon={<PowerIcon className="h-4 w-4" />}
+                        />
                       </span>
                     )}
                   </td>

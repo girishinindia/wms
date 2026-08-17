@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import Spinner from "@/components/Spinner";
+
 /**
  * The handful of shapes every admin screen is made of.
  *
@@ -172,6 +174,54 @@ export function Facts({ items }: { items: { label: string; value: ReactNode }[] 
         </div>
       ))}
     </dl>
+  );
+}
+
+/**
+ * A row action, as an icon.
+ *
+ * The label does not disappear — it moves. `aria-label` names the
+ * control for a screen reader and `title` gives a sighted user the
+ * tooltip, so replacing "Switch off" with a glyph costs nothing to
+ * either. Without both, an icon button is an unlabelled button, which is
+ * a genuine accessibility failure rather than a style choice.
+ *
+ * Sized at 32px square: below about 30 these stop being comfortable to
+ * hit, and these sit in dense rows where a miss edits the wrong record.
+ */
+export function IconButton({
+  label,
+  icon,
+  onClick,
+  tone = "default",
+  disabled,
+  busy,
+}: {
+  label: string;
+  icon: ReactNode;
+  onClick: () => void;
+  tone?: "default" | "danger" | "primary";
+  disabled?: boolean;
+  busy?: boolean;
+}) {
+  const tones = {
+    default:
+      "border-verdigris-300/15 text-verdigris-200/75 hover:border-verdigris-300/40 hover:text-verdigris-50",
+    danger: "border-rose-400/25 text-rose-300/85 hover:border-rose-400/55 hover:text-rose-200",
+    primary: "border-transparent bg-verdigris-400 text-ink-900 hover:bg-patina",
+  } as const;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled || busy}
+      aria-label={label}
+      title={label}
+      className={`inline-grid h-8 w-8 place-items-center rounded-lg border transition-colors disabled:opacity-45 ${tones[tone]}`}
+    >
+      {busy ? <Spinner className="h-3.5 w-3.5" /> : icon}
+    </button>
   );
 }
 
