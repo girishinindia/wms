@@ -27,6 +27,18 @@ import {
   resetPasswordResponseSchema,
   sessionResponseSchema,
 } from "@/lib/validation/api-auth";
+import {
+  approveImporterRequestSchema,
+  approveImporterResponseSchema,
+  assignRoleRequestSchema,
+  createCitiesRequestSchema,
+  createCitiesResponseSchema,
+  okAdminResponseSchema,
+  rejectImporterRequestSchema,
+  revokeRoleRequestSchema,
+  setUserStatusRequestSchema,
+  updateCityRequestSchema,
+} from "@/lib/validation/api-admin";
 import { errorSchema } from "@/lib/api/respond";
 import { appEnv } from "@/lib/env";
 
@@ -230,6 +242,97 @@ const authPath = (config: {
       },
       422: errorResponse("The body failed validation. `error.fields` is keyed by field name."),
       429: errorResponse("Rate limited. `Retry-After` gives the wait in seconds."),
+      ...(config.responses ?? {}),
+    },
+  });
+};
+
+/**
+ * How an authenticated call proves who it is.
+ *
+ * Two schemes because there are genuinely two clients. A browser holds
+ * an httpOnly cookie it cannot read, which is the point — script that
+ * cannot read the session cannot exfiltrate it. A native client has no
+ * XSS surface for that to protect against and no cookie jar worth
+ * having, so it carries a bearer token in the Keychain instead.
+ *
+ * Registered together with `security: [{cookieAuth}, {bearerAuth}]`,
+ * which in OpenAPI means "either one", not "both".
+ */
+registry.registerComponent("securitySchemes", "cookieAuth", {
+  type: "apiKey",
+  in: "cookie",
+  name: "wms_session",
+  description:
+    "Set by `/api/v1/auth/login` for `platform: WEB`. httpOnly, SameSite=Lax, " +
+    "host-only — the cookie is never widened to the parent domain, so a " +
+    "sibling subdomain cannot see it.",
+});
+
+registry.registerComponent("securitySchemes", "bearerAuth", {
+  type: "http",
+  scheme: "bearer",
+  description:
+    "The `sessionToken` returned by `/api/v1/auth/login` when `platform` " +
+    "is ANDROID or IOS. A browser never receives one.",
+});
+
+const AUTHENTICATED: Record<string, string[]>[] = [
+  { cookieAuth: [] },
+  { bearerAuth: [] },
+];
+
+/**
+ * An admin path: authenticated, permission-checked, and audited.
+ *
+ * The `permission` given here is not decoration — it is the exact key
+ * `requirePermission` looks for in `wms.user_effective_permission`, so
+ * the document says precisely what a caller needs rather than "you must
+ * be an admin", which is never quite what any of these mean.
+ */
+const adminPath = (config: {
+  path: string;
+  operationId: string;
+  summary: string;
+  description: string;
+  permission: string;
+  method?: "post" | "get" | "patch" | "delete";
+  request?: z.ZodTypeAny;
+  response: z.ZodTypeAny;
+  status?: number;
+  params?: z.AnyZodObject;
+  responses?: Record<number, ReturnType<typeof errorResponse>>;
+}) => {
+  registry.registerPath({
+    method: config.method ?? "post",
+    path: config.path,
+    operationId: config.operationId,
+    tags: ["Admin"],
+    summary: config.summary,
+    description:
+      `${config.description}\n\n**Requires** \`${config.permission}\`. ` +
+      "A refusal is a 403 and writes a `DENIED` row to `wms.audit_log` — " +
+      "the successful actions can never tell you who tried.",
+    security: AUTHENTICATED,
+    request: {
+      ...(config.params ? { params: config.params } : {}),
+      ...(config.request
+        ? {
+            body: {
+              required: true,
+              content: { "application/json": { schema: config.request } },
+            },
+          }
+        : {}),
+    },
+    responses: {
+      [config.status ?? 200]: {
+        description: "Success.",
+        content: { "application/json": { schema: config.response } },
+      },
+      401: errorResponse("No session. Sign in."),
+      403: errorResponse("Signed in, but not holding the permission at a covering scope."),
+      422: errorResponse("The body failed validation. `error.fields` is keyed by field name."),
       ...(config.responses ?? {}),
     },
   });
@@ -451,6 +554,161 @@ authPath({
   responses: { 410: errorResponse("The reset ticket expired or was already used.") },
 });
 
+// ── Admin ─────────────────────────────────────────────────────
+
+const idParam = z.object({ id: z.string().openapi({ example: "12" }) });
+
+adminPath({
+  path: "/api/v1/admin/cities",
+  operationId: "createCities",
+  summary: "Add cities to a state",
+  permission: "master.city.create",
+  status: 201,
+  description:
+    "Takes a list, not a name. `wms.city` ships empty and every address " +
+    "in the system resolves to it — an importer cannot be approved and a " +
+    "warehouse cannot be created without one — so the first call is " +
+    "always a paste of thirty, never one.\n\nDuplicates are skipped " +
+    "against the `(state_id, name)` unique index rather than failing the " +
+    "batch, and the response names what was skipped: quietly creating " +
+    "twenty-eight rows from a list of thirty is how a missing city " +
+    "becomes a mystery.",
+  request: createCitiesRequestSchema,
+  response: createCitiesResponseSchema,
+  responses: { 404: errorResponse("No such state.") },
+});
+
+adminPath({
+  path: "/api/v1/admin/cities/{id}",
+  operationId: "updateCity",
+  method: "patch",
+  summary: "Rename a city, or take it out of use",
+  permission: "master.city.update",
+  description:
+    "There is no delete. Four tables hold a foreign key to `city`, so " +
+    "removing a row either fails or orphans an address that was correct " +
+    "when it was entered. `isActive: false` takes it out of the pickers " +
+    "and leaves history intact.",
+  params: idParam,
+  request: updateCityRequestSchema,
+  response: okAdminResponseSchema,
+  responses: {
+    404: errorResponse("No such city."),
+    409: errorResponse("That state already has a city with this name."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/importers/{id}/approve",
+  operationId: "approveImporter",
+  summary: "Complete the KYC details and activate an importer",
+  permission: "importer.approve",
+  description:
+    "Approval is a form, not a button, and the database is what says so. " +
+    "`importer_complete_before_active` permits an incomplete row only " +
+    "while it is PENDING, so `legalName`, `entityType`, `address`, " +
+    "`cityId` and `pincode` all have to arrive here — sign-up " +
+    "deliberately collects none of them, because asking a stranger for a " +
+    "registered address before they have an account loses the " +
+    "registration.\n\nThe update is guarded on `status = 'PENDING'`, so a " +
+    "double submission reports a conflict instead of overwriting the " +
+    "first decision and notifying the applicant twice. On success " +
+    "`importer.approved` is announced on IN_APP and EMAIL; a failure to " +
+    "notify never rolls back the approval.",
+  params: idParam,
+  request: approveImporterRequestSchema,
+  response: approveImporterResponseSchema,
+  responses: {
+    404: errorResponse("No such importer."),
+    409: errorResponse("Already approved, rejected or suspended."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/importers/{id}/reject",
+  operationId: "rejectImporter",
+  summary: "Refuse a registration, with a reason",
+  permission: "importer.approve",
+  description:
+    "The reason is required by the request schema, by the table's own " +
+    "`status <> 'REJECTED' or rejection_reason is not null` check, and by " +
+    "the audit helper. It is also the text the applicant receives, so it " +
+    "is written for them to read.\n\nThe account is left signed-in-able " +
+    "on purpose: the IMPORTER role is immutable and cannot be revoked by " +
+    "anyone, and a rejection is usually fixable paperwork.",
+  params: idParam,
+  request: rejectImporterRequestSchema,
+  response: okAdminResponseSchema,
+  responses: {
+    404: errorResponse("No such importer."),
+    409: errorResponse("Already decided."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/users/{id}/roles",
+  operationId: "assignRole",
+  summary: "Grant a role",
+  permission: "role.assign",
+  status: 201,
+  description:
+    "What may be granted comes from `wms.role_creation_rule`, not from " +
+    "this endpoint: a SUPER_ADMIN may grant most things anywhere, a " +
+    "WAREHOUSE_ADMIN only within its own warehouses, and SALES_AGENT is " +
+    "grantable by an IMPORTER and by nobody else. A role whose domain is " +
+    "WAREHOUSE requires `warehouseId` and refuses `importerId`, and vice " +
+    "versa — enforced by a CHECK on the table.\n\nTwo triggers can still " +
+    "refuse after all that: an exclusive role cannot sit beside another, " +
+    "and a super admin's own assignment is theirs alone to change. Both " +
+    "come back as a readable message rather than a 500.",
+  params: idParam,
+  request: assignRoleRequestSchema,
+  response: okAdminResponseSchema,
+  responses: {
+    404: errorResponse("No such user."),
+    409: errorResponse("Already held, or conflicts with an exclusive role."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/users/{id}/roles",
+  operationId: "revokeRole",
+  method: "delete",
+  summary: "Revoke a role, with a reason",
+  permission: "role.assign",
+  description:
+    "A revoke, not a delete: `revoked_at` plus a reason is the record of " +
+    "who removed what and why, and the unique index is partial on " +
+    "`revoked_at is null` so the same role can be granted again " +
+    "afterwards.\n\nIMPORTER and SALES_AGENT cannot be revoked at all — " +
+    "`ura_protect_immutable` blocks UPDATE and DELETE on them for " +
+    "everyone, including a super admin at a psql prompt. Suspend the " +
+    "account instead.",
+  params: idParam,
+  request: revokeRoleRequestSchema,
+  response: okAdminResponseSchema,
+  responses: { 404: errorResponse("That assignment is not active.") },
+});
+
+adminPath({
+  path: "/api/v1/admin/users/{id}/status",
+  operationId: "setUserStatus",
+  method: "patch",
+  summary: "Suspend or reinstate an account",
+  permission: "user.update",
+  description:
+    "Suspending revokes every live session as well as setting the " +
+    "column. `resolveSession` already requires `status = 'ACTIVE'`, so " +
+    "the sessions would stop resolving anyway — revoking explicitly " +
+    "leaves a row saying when and why.\n\nA super admin cannot be " +
+    "suspended by anyone else; `protect_super_admin` enforces it in the " +
+    "database, not just here.",
+  params: idParam,
+  request: setUserStatusRequestSchema,
+  response: okAdminResponseSchema,
+  responses: { 404: errorResponse("No such user.") },
+});
+
 // ── Document ──────────────────────────────────────────────────
 
 /**
@@ -519,6 +777,16 @@ export function buildOpenApiDocument() {
           "Registration, dual-channel OTP, sign-in and password reset. " +
           "Every endpoint here is public and therefore rate-limited by IP " +
           "and by account.",
+      },
+      {
+        name: "Admin",
+        description:
+          "Master data, importer approval and role assignment. Every " +
+          "endpoint is authenticated and gated on a named permission read " +
+          "from `wms.user_effective_permission`, which has already " +
+          "collapsed the caller's roles to the widest scope per " +
+          "permission and subtracted deny overrides. Nothing here checks " +
+          "a role name.",
       },
     ],
   });

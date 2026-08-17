@@ -31,6 +31,13 @@ export type ApiErrorCode =
   | "OTP_ATTEMPTS_EXCEEDED"
   | "RESEND_TOO_SOON"
   | "UNAUTHENTICATED"
+  /**
+   * Signed in, and still not allowed. Kept separate from
+   * UNAUTHENTICATED deliberately: one means "sign in", the other means
+   * "signing in again will not help you". A client that collapses the
+   * two bounces the user to the login screen forever.
+   */
+  | "FORBIDDEN"
   | "CONFLICT"
   | "NOT_FOUND"
   | "INTERNAL";
@@ -47,6 +54,7 @@ const STATUS: Record<ApiErrorCode, number> = {
   OTP_ATTEMPTS_EXCEEDED: 429,
   RESEND_TOO_SOON: 429,
   UNAUTHENTICATED: 401,
+  FORBIDDEN: 403,
   CONFLICT: 409,
   NOT_FOUND: 404,
   INTERNAL: 500,

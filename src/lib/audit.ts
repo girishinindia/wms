@@ -80,6 +80,23 @@ function scrub(input: Record<string, unknown> | undefined): Record<string, unkno
   return out;
 }
 
+/**
+ * `actor_path` deliberately carries no cast.
+ *
+ * It used to say `::ltree`, and that one word meant every audit write in
+ * this application failed. `ltree` is installed into the `extensions`
+ * schema — Supabase's convention, and the reason 00_extensions.sql puts
+ * it there — which is not on the connection's search_path, so the cast
+ * resolved to nothing and Postgres answered `type "ltree" does not
+ * exist`. Because `auditQuietly` swallows failures by design, the only
+ * symptom was an audit table that stayed empty: sign-ins, approvals and
+ * denials all reported success and recorded nothing.
+ *
+ * Without the cast the parameter is untyped and Postgres infers it from
+ * the target column, which is the ltree it was always meant to be. That
+ * also survives the extension being moved again. `::citext` elsewhere is
+ * fine for the opposite reason — citext lives in `public`.
+ */
 const json = (value: unknown): SQL =>
   value === undefined || value === null
     ? sql`null`
@@ -118,7 +135,7 @@ export async function audit(entry: AuditEntry): Promise<void> {
        result, reason, error_code, duration_ms, metadata)
     values (
       ${entry.actorUserId ?? null}, ${entry.actorName ?? null},
-      ${entry.actorEmail ?? null}, ${entry.actorPath ?? null}::ltree,
+      ${entry.actorEmail ?? null}, ${entry.actorPath ?? null},
       ${entry.action}, ${entry.operation}::wms.audit_operation,
       ${entry.entityType}, ${entry.entityId}, ${entry.entityLabel ?? null},
       ${before}, ${after},
