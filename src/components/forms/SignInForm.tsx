@@ -17,7 +17,50 @@ import {
   
   submitButton,
 } from "@/components/authStyles";
+import { visibleNav } from "@/components/admin/nav";
 import { signInSchema, type SignInValues } from "@/lib/validation/auth";
+
+/**
+ * Only a path on this site, never a URL.
+ *
+ * `?next=` arrives in the address bar, so it is attacker-controlled.
+ * Pushing it unchecked is the textbook open redirect: a link to our own
+ * sign-in page, with our own domain in it, that lands the user on
+ * somebody else's login form once they have proved they trust us.
+ *
+ * A leading `//` is the case people miss — the browser reads
+ * `//evil.example` as protocol-relative and leaves the site.
+ */
+function safeNext(value: string | null): string | null {
+  if (!value) return null;
+  if (!value.startsWith("/") || value.startsWith("//")) return null;
+  return value;
+}
+
+/**
+ * Where to land.
+ *
+ * `next` wins, because the person was already going somewhere when the
+ * guard interrupted them. Failing that, ask the server what this account
+ * can actually see: an admin dropped on the marketing page has to know
+ * to type /admin, which nobody does. The permission set is read from
+ * `/auth/session` rather than guessed from role names, and fed to the
+ * same `visibleNav` the sidebar uses — one answer to "does this person
+ * belong in the admin area", not two that can disagree.
+ */
+async function destination(next: string | null): Promise<string> {
+  const wanted = safeNext(next);
+  if (wanted) return wanted;
+
+  const session = await api<{
+    permissions: { permission: string; scope: "OWN" | "WAREHOUSE" | "ALL" }[];
+  }>("/auth/session", { method: "GET" });
+
+  // A failed lookup is not a reason to block the sign-in that just
+  // succeeded — the home page is always a valid place to be.
+  if (!session.ok) return "/";
+  return visibleNav(session.data.permissions).length > 0 ? "/admin" : "/";
+}
 
 export default function SignInForm() {
   const router = useRouter();
@@ -77,9 +120,10 @@ export default function SignInForm() {
     }
 
     toast.success(`Welcome back, ${result.data.user.firstName}.`);
+
     // The session is an httpOnly cookie the server already set; refresh
     // so any server component re-reads it rather than rendering stale.
-    router.push("/");
+    router.push(await destination(params.get("next")));
     router.refresh();
   };
 

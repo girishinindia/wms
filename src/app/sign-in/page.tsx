@@ -1,10 +1,13 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import AuthShell from "@/components/AuthShell";
+import { visibleNav } from "@/components/admin/nav";
 import SignInForm from "@/components/forms/SignInForm";
 import { authLink } from "@/components/authStyles";
+import { currentActor } from "@/lib/auth/guard";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -12,7 +15,25 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function SignInPage() {
+/** Reads the session cookie, so it cannot be prerendered. */
+export const dynamic = "force-dynamic";
+
+export default async function SignInPage() {
+  /**
+   * Somebody already signed in does not need a login form.
+   *
+   * This is also the only route back into the admin area from the
+   * public site. The header's "Sign in" button is the one obvious thing
+   * to click, and until now it led to a form the person had already
+   * filled in — so an admin who navigated away had no way back except
+   * typing the URL. Now it takes an admin to the panel and everyone else
+   * home.
+   */
+  const actor = await currentActor();
+  if (actor) {
+    redirect(visibleNav(actor.permissions).length > 0 ? "/admin" : "/");
+  }
+
   return (
     <AuthShell
       panelTitle="Everything about your stock, in one place."

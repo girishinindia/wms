@@ -1,0 +1,350 @@
+# ═══════════════════════════════════════════════════════════════
+# Genius WMS — Web Portal + API  ·  .env.example
+# Copy to .env.local and fill in. Never commit .env.local.
+#
+# Generate the four local secrets first:
+#   openssl rand -base64 32   → BETTER_AUTH_SECRET
+#   openssl rand -base64 32   → CRON_SECRET
+#   openssl rand -base64 32   → INTERNAL_API_SECRET
+#   openssl rand -hex 32      → ENCRYPTION_KEY   (hex, not base64)
+#
+# Rule: anything that varies per warehouse, per importer, or per
+# notification event lives in the DATABASE, not here.
+#
+# ── ONLY THESE ARE NEEDED TO RUN THE CURRENT SCAFFOLD ──────────
+#   APP_ENV, NEXT_PUBLIC_APP_URL, NEXT_PUBLIC_API_URL
+# Everything else is filled in as its phase arrives.
+# ═══════════════════════════════════════════════════════════════
+
+
+# ── App ─────────────────────────────────────────────────────────
+APP_ENV=development                       # development | staging | production
+NEXT_PUBLIC_APP_URL=http://localhost:3000 # prod: https://wms.geniusitens.com
+NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
+NEXT_PUBLIC_APP_NAME=Genius WMS
+NEXT_PUBLIC_DEFAULT_LOCALE=en
+NEXT_PUBLIC_SUPPORTED_LOCALES=en,hi,gu
+# VERCEL_ENV and VERCEL_GIT_COMMIT_SHA are injected automatically.
+
+# Every date boundary here is a billing boundary — storage days, free
+# days, demurrage slabs, quiet hours, FY rollover. Postgres and Vercel
+# default to UTC; an 11 PM IST put-away lands on the previous UTC day.
+APP_TIMEZONE=Asia/Kolkata
+APP_FY_START_MONTH=4
+
+
+DATABASE_URL=postgresql://postgres.ixygmsqbpyyvjhxphpso:<DB_PASSWORD>@aws-1-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require
+DIRECT_URL=postgresql://postgres.ixygmsqbpyyvjhxphpso:<DB_PASSWORD>@aws-1-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require
+DATABASE_MAX_CONNECTIONS=5
+DATABASE_STATEMENT_TIMEOUT_MS=15000
+DATABASE_LOCK_TIMEOUT_MS=5000
+# Drizzle client MUST set `prepare: false` for the transaction pooler.
+# pg_advisory_xact_lock() works through the pooler; pg_advisory_lock()
+# (session-scoped) does NOT — use only the _xact_ variant.
+# CI: Supabase direct connections are IPv6-only without the paid IPv4
+# add-on and GitHub Actions is IPv4. If migrations fail from CI, point
+# DIRECT_URL at the SESSION POOLER on 5432.
+
+
+
+
+
+# ── Better Auth ─────────────────────────────────────────────────
+BETTER_AUTH_SECRET=
+BETTER_AUTH_URL=http://localhost:3000     # prod: https://wms.geniusitens.com
+BETTER_AUTH_BASE_PATH=/api/auth
+BETTER_AUTH_TRUSTED_ORIGINS=http://localhost:3000,https://wms.geniusitens.com,wms://
+AUTH_COOKIE_DOMAIN=                       # LEAVE BLANK — host-only cookie.
+                                          # Setting .geniusitens.com leaks the
+                                          # session to every other subdomain.
+AUTH_SESSION_MAX_AGE=604800               # 7d web cookie
+AUTH_JWT_ACCESS_TTL=900                   # 15m mobile
+AUTH_JWT_REFRESH_TTL=2592000              # 30d mobile
+AUTH_PASSWORD_MIN_LENGTH=8
+
+# Better Auth's built-in OTP plugin is single-channel; the spec's
+# dual SMS+email rule needs a custom challenge table.
+AUTH_OTP_LENGTH=6
+AUTH_OTP_TTL=600                          # 10 min per spec §0
+AUTH_OTP_MAX_ATTEMPTS=5
+AUTH_OTP_RESEND_COOLDOWN=60
+AUTH_OTP_MAX_RESENDS=3
+AUTH_OTP_LOCKOUT_MINUTES=30
+AUTH_DUAL_OTP_EVENTS=registration,agent_create,contact_change
+AUTH_LOGIN_OTP_MODE=new_device            # new_device | always | never
+AUTH_TRUSTED_DEVICE_TTL=2592000
+AUTH_DEEP_LINK_SCHEME=wms
+
+# Better Auth Infrastructure (hosted dashboard) — dash.better-auth.com
+BETTER_AUTH_API_KEY=
+BETTER_AUTH_DASH_ENABLED=false            # false in dev so local events don't
+                                          # pollute the production project
+
+
+# ── Authorization ───────────────────────────────────────────────
+# RLS is off — the app policy layer is the ONLY tenant boundary.
+POLICY_STRICT_SCOPE=true                  # repo layer throws on a query with no Scope
+POLICY_AUDIT_CROSS_TENANT_DENIALS=true
+
+
+# ── Upstash Redis ───────────────────────────────────────────────
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+REDIS_KEY_PREFIX=wms:dev:                 # wms:staging: / wms:prod:
+
+
+# ── Upstash QStash (queue + cron) ───────────────────────────────
+QSTASH_URL=https://qstash.upstash.io
+QSTASH_TOKEN=
+QSTASH_CURRENT_SIGNING_KEY=
+QSTASH_NEXT_SIGNING_KEY=
+QSTASH_CALLBACK_BASE_URL=                 # must be PUBLIC — tunnel in dev
+QSTASH_MAX_RETRIES=3
+QSTASH_DEFAULT_TIMEOUT=60s
+
+# Outbox — the domain event is written in the SAME transaction as the
+# state change, published afterwards. Never enqueue before commit.
+OUTBOX_BATCH_SIZE=50
+OUTBOX_MAX_ATTEMPTS=5
+OUTBOX_POLL_CRON=*/1 * * * *
+
+
+# ── Idempotency ─────────────────────────────────────────────────
+# Not payments-only. The real duplicate risk is an operator on warehouse
+# wifi tapping "Generate GRN" twice, or Dio retrying a 504 that worked.
+IDEMPOTENCY_ENABLED=true
+IDEMPOTENCY_KEY_TTL=86400
+IDEMPOTENCY_REQUIRED_ON=all_mutations
+
+
+# ── Rate Limiting ───────────────────────────────────────────────
+RATELIMIT_ENABLED=true
+RATELIMIT_AUTH_ATTEMPTS=5
+RATELIMIT_AUTH_WINDOW=60
+RATELIMIT_API_REQUESTS=100
+RATELIMIT_API_WINDOW=60
+RATELIMIT_OTP_PER_DAY=10
+RATELIMIT_SCAN_REQUESTS=600               # scanning bursts; don't throttle the floor
+RATELIMIT_SCAN_WINDOW=60
+
+
+# ── Bunny Storage (documents & photos) ──────────────────────────
+# bunny.net → Storage → Add Storage Zone → FTP & API Access for keys.
+# Then a Pull Zone linked to it, CNAME cdn.geniusitens.com.
+BUNNY_STORAGE_ZONE=
+BUNNY_STORAGE_ACCESS_KEY=
+BUNNY_STORAGE_READONLY_KEY=
+BUNNY_STORAGE_REGION=sg                   # no India region; SG is nearest
+BUNNY_STORAGE_HOSTNAME=sg.storage.bunnycdn.com
+NEXT_PUBLIC_BUNNY_CDN_URL=https://cdn.geniusitens.com
+BUNNY_CDN_TOKEN_KEY=                      # Pull Zone → Security → URL Token Auth Key
+BUNNY_UPLOAD_MAX_SIZE=26214400            # 25MB
+BUNNY_UPLOAD_ALLOWED_TYPES=image/jpeg,image/png,image/webp,image/heic,application/pdf
+
+# Partition tenant data in storage too, so a mis-signed URL can't walk
+# into another importer's KYC documents.
+BUNNY_PATH_KYC=kyc/{importer_id}/
+BUNNY_PATH_GRN=grn/{warehouse_id}/{grn_id}/
+BUNNY_PATH_DISPATCH=dispatch/{warehouse_id}/{order_id}/
+BUNNY_PATH_DOCUMENTS=documents/{type}/{fy}/
+
+
+# ── PDF / Document generation ───────────────────────────────────
+# ~10 templates: GRN, Booking confirmation, Packing List, Invoice,
+# Delivery Challan, Gate Pass, E-way bill, POD, Capacity report, Rate card.
+# Render inside a QStash job, store to Bunny, email a signed LINK.
+PDF_ENGINE=react-pdf
+PDF_SIGNED_URL_TTL=604800
+DOC_NUMBER_PADDING=5                      # → GRN/2026-27/00042
+DOC_SERIES_GRN=GRN
+DOC_SERIES_INVOICE=INV
+DOC_SERIES_CHALLAN=DC
+DOC_SERIES_GATEPASS=GP
+DOC_SERIES_PACKAGE=PKG
+# GST needs invoice serials gapless, unique, per FY, per series. A
+# Postgres SEQUENCE leaves gaps on rollback — use a locked counter row
+# (doc_counters) updated in the same txn as the document insert.
+
+
+# ── Company / Statutory identity ────────────────────────────────
+# Appears on every invoice, challan, gate pass and e-way bill.
+COMPANY_LEGAL_NAME=
+COMPANY_TRADE_NAME=Genius ITens
+COMPANY_GSTIN=
+COMPANY_PAN=
+COMPANY_CIN=
+COMPANY_STATE_CODE=                       # 24 = Gujarat, 27 = Maharashtra …
+COMPANY_REGISTERED_ADDRESS=
+COMPANY_SUPPORT_EMAIL=support@geniusitens.com
+COMPANY_SUPPORT_PHONE=
+COMPANY_LOGO_URL=
+# Warehouses in different states need a GSTIN PER STATE — those live in
+# the `warehouses` table. This block is the head-office default only.
+
+
+# ── GST · e-Invoice (IRN) & e-Way Bill ──────────────────────────
+# Route through a GSP, not the NIC portal. E-invoicing is mandatory
+# above ₹5 crore AATO, 30-day reporting window from invoice date.
+EINVOICE_ENABLED=false
+EWAYBILL_ENABLED=false
+GSP_PROVIDER=                             # cleartax | mastersindia | cygnet
+GSP_BASE_URL=
+GSP_CLIENT_ID=
+GSP_CLIENT_SECRET=
+GSP_USERNAME=
+GSP_PASSWORD=
+GSP_SANDBOX=true
+EWAYBILL_THRESHOLD_VALUE=50000
+EWAYBILL_DISTANCE_API_ENABLED=false
+
+
+# ── Billing engine ──────────────────────────────────────────────
+# Rate cards are DB data (versioned per warehouse, overridable per
+# importer). These are engine-level switches only.
+BILLING_DAY_BOUNDARY=calendar_ist         # calendar_ist | 24h_from_putaway
+BILLING_RUN_CRON=0 20 * * *               # = 01:30 IST, after the operating day
+BILLING_SNAPSHOT_RETENTION_DAYS=2555      # 7y statutory
+INVOICE_ROUNDING=nearest_rupee            # GST rounds per invoice
+INVOICE_DUE_DAYS=15
+PAYMENT_REMINDER_OFFSETS=0,3,7
+CURRENCY=INR
+# Money is stored as integer PAISE (bigint). No floats anywhere.
+
+
+# ── SLA / escalation timers ─────────────────────────────────────
+RESERVATION_TTL_MINUTES=2880              # 48h. The spec has NO expiry today, so
+                                          # an unapproved order freezes stock forever.
+PUTAWAY_SLA_HOURS=24                      # → N-15
+ORDER_APPROVAL_SLA_HOURS=12               # → N-19
+LR_UPLOAD_SLA_HOURS=2                     # → N-23
+POD_FOLLOWUP_DAYS=3
+BOOKING_EXPIRY_REMINDER_DAYS=2            # → N-09
+CAPACITY_ALERT_THRESHOLDS=85,95           # → N-33
+
+
+# ── Brevo (email) ───────────────────────────────────────────────
+# app.brevo.com → SMTP & API → API Keys. Verify the domain first under
+# Senders, Domains & Dedicated IPs; Brevo returns DKIM + DMARC records.
+BREVO_API_KEY=
+BREVO_SENDER_EMAIL=noreply@geniusitens.com
+BREVO_SENDER_NAME=Genius WMS
+BREVO_REPLY_TO=support@geniusitens.com
+BREVO_WEBHOOK_SECRET=                     # Brevo has no built-in secret —
+                                          # generate one and validate it yourself
+# Template IDs are NOT in env. 36 events × 2 providers ≈ 72 IDs that
+# change without a deploy. They belong in a `notification_templates`
+# table: channel matrix, recipient resolvers (role expressions, not user
+# IDs), provider template IDs, attachment rules, mandatory flag, SLA.
+
+
+# ── SMSGatewayHub (DLT) ─────────────────────────────────────────
+# Register your entity on ONE DLT portal (Jio / Airtel / Vi / BSNL) with
+# PAN + GST + incorporation cert → 19-digit entity ID. Then the 6-char
+# header, then templates as Transactional / Service Implicit.
+# START THIS FIRST — longest lead time in the project.
+SMSGATEWAY_API_KEY=
+SMSGATEWAY_SENDER_ID=                     # 6-char DLT header
+SMSGATEWAY_BASE_URL=
+SMSGATEWAY_DLT_ENTITY_ID=
+SMS_ENABLED=false                         # false in dev — saves credits
+SMS_SHORTLINK_DOMAIN=wms.geniusitens.com  # must match the DLT-whitelisted domain
+# Two traps: variable count must match the payload EXACTLY, and any URL
+# must be pre-whitelisted — a generic shortener gets rejected.
+
+
+# ── Notification delivery policy ────────────────────────────────
+NOTIFICATION_QUIET_HOURS_ENABLED=false    # verify against TRAI rules first;
+                                          # transactional SMS is generally exempt
+NOTIFICATION_QUIET_HOURS_START=22
+NOTIFICATION_QUIET_HOURS_END=7
+NOTIFICATION_QUIET_BYPASS_EVENTS=N-10,N-12,N-22,N-23,N-29,N-30
+NOTIFICATION_MANDATORY_EVENTS=N-27,N-28,N-29,N-30
+NOTIFICATION_MAX_ATTEMPTS=3
+NOTIFICATION_BACKOFF_BASE_MS=2000
+
+
+# ── Firebase (FCM push + App Check verify) ──────────────────────
+# console.firebase.google.com → Project Settings → Service Accounts →
+# Generate new private key. All three values are in that JSON.
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY=                     # keep \n escapes, wrap in double quotes
+APP_CHECK_ENABLED=true
+
+
+# ── reCAPTCHA v3 (web only — public forms) ──────────────────────
+# google.com/recaptcha/admin → v3 → add localhost + wms.geniusitens.com
+NEXT_PUBLIC_RECAPTCHA_SITE_KEY=
+RECAPTCHA_SECRET_KEY=
+RECAPTCHA_MIN_SCORE=0.5
+CAPTCHA_ENABLED=false
+# Only on registration, login, password reset. Never on operational
+# screens — it slows the floor down.
+
+
+# ── Sentry ──────────────────────────────────────────────────────
+NEXT_PUBLIC_SENTRY_DSN=
+SENTRY_ORG=
+SENTRY_PROJECT=
+SENTRY_AUTH_TOKEN=                        # sourcemap upload, build only
+SENTRY_ENVIRONMENT=development
+SENTRY_TRACES_SAMPLE_RATE=1.0             # 0.1 in prod
+
+
+# ── Logging ─────────────────────────────────────────────────────
+LOG_LEVEL=debug                           # info in prod
+LOG_PRETTY=true                           # dev only
+AXIOM_DATASET=
+AXIOM_TOKEN=
+LOG_REDACT_FIELDS=otp,password,gstin,pan,aadhaar,token,authorization
+
+
+# ── Security ────────────────────────────────────────────────────
+ENCRYPTION_KEY=                           # openssl rand -hex 32 — PII at rest
+CRON_SECRET=                              # openssl rand -base64 32
+INTERNAL_API_SECRET=                      # openssl rand -base64 32
+CORS_ALLOWED_ORIGINS=http://localhost:3000,https://wms.geniusitens.com,wms://
+SIGNED_URL_TTL=900
+AUDIT_LOG_RETENTION_DAYS=2555             # 7y
+
+
+# ── Razorpay (OPTIONAL — probably not v1) ───────────────────────
+# B2B warehousing on credit terms settles by NEFT/RTGS against an
+# invoice. A gateway may only ever be a "pay this invoice" link.
+PAYMENTS_ENABLED=false
+NEXT_PUBLIC_RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=
+RAZORPAY_CURRENCY=INR
+
+
+# ── Feature Flags ───────────────────────────────────────────────
+MAINTENANCE_MODE=false
+FEATURE_OFFLINE_SCANNING=false            # decide before the inward phase ships
+FEATURE_PART_DISPATCH=true                # spec open point 2 — assume true
+FEATURE_STOCK_TRANSFER=false              # bin-to-bin relocation
+FEATURE_CYCLE_COUNT=false                 # physical count + variance approval
+FEATURE_BONDED_WAREHOUSE=false            # Fork 3 — blocks dispatch without ex-bond BOE
+FEATURE_SKU_LEVEL_STOCK=false             # Fork 1 — false = opaque consignment model
+FEATURE_CLIENT_INVOICING=false            # Fork 2 — true means you also build AR
+FEATURE_AUTO_APPROVAL=true                # agent trust modes (spec §0)
+FEATURE_WHATSAPP=false                    # Phase 2 mirror of N-22 / N-24
+
+
+# ═══════════════════════════════════════════════════════════════
+# REMOVED from the original stack file — do not re-add
+# ═══════════════════════════════════════════════════════════════
+# BUNNY_STREAM_* (all 7)          → no video in a WMS. Storage only.
+# BREVO_TEMPLATE_* / SMSGATEWAY_TEMPLATE_*
+#                                 → template IDs belong in the DB.
+# FEATURE_VIDEO_UPLOAD / LIVE_CLASSES
+#                                 → e-learning leftovers.
+# FEATURE_MOBILE_PAYMENTS         → the "iOS compliance" note applied to
+#                                   course content, a digital good.
+#                                   Warehousing is a real-world service.
+# FCM_DEFAULT_TOPIC               → target device tokens by role.
+# GOOGLE_CLIENT_ID / SECRET       → users get credentials from Super Admin.
+# NEXT_PUBLIC_SUPABASE_URL        → the Supabase JS client is never called.
+# SUPABASE_SERVICE_ROLE_KEY       → full-bypass credential. Keep it in a
+#                                   password manager, not the app env.
+# ═══════════════════════════════════════════════════════════════
