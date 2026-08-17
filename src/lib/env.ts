@@ -182,6 +182,25 @@ const recaptchaSchema = z.object({
 const appSchema = z.object({
   APP_ENV: z.enum(["development", "staging", "production"]).default("development"),
   NEXT_PUBLIC_APP_NAME: optionalStr,
+
+  /**
+   * The canonical origin, e.g. https://wms.geniusitens.com.
+   *
+   * Validated here rather than read raw off process.env at four call
+   * sites, because a typo in it is invisible: the site keeps working and
+   * only the links inside emails are wrong, which nobody notices until a
+   * customer says the button did nothing.
+   */
+  NEXT_PUBLIC_APP_URL: optionalStr,
+
+  /**
+   * Injected by Vercel — the production domain attached to the project,
+   * with no protocol. Used as the fallback so a deploy that forgets
+   * NEXT_PUBLIC_APP_URL still builds correct links instead of localhost
+   * ones. Not available to the browser bundle, which is fine: every
+   * consumer of the absolute URL is server-side.
+   */
+  VERCEL_PROJECT_PRODUCTION_URL: optionalStr,
 });
 
 /**
@@ -248,7 +267,56 @@ export const recaptchaEnv = once("reCAPTCHA", () => {
   return r;
 });
 export const otpEnv = once("OTP", () => parse(otpSchema, "OTP"));
-export const appEnv = once("app", () => parse(appSchema, "app"));
+
+export const appEnv = once("app", () => {
+  const a = parse(appSchema, "app");
+  return { ...a, appUrl: resolveAppUrl(a) };
+});
+
+/**
+ * Work out the canonical origin, in the order that is hardest to get
+ * wrong.
+ *
+ * The explicit variable wins. Failing that, Vercel's own production
+ * domain, so the value tracks whatever domain is actually attached to
+ * the project rather than a hostname pasted into the source. Only in
+ * development does it fall back to localhost — a production build with
+ * neither set is a configuration error worth stopping for, because the
+ * alternative is emailing customers a link to the developer's laptop.
+ */
+function resolveAppUrl(a: z.infer<typeof appSchema>): string {
+  const explicit = a.NEXT_PUBLIC_APP_URL ?? process.env.NEXT_PUBLIC_APP_URL;
+  if (explicit) return normaliseOrigin(explicit, "NEXT_PUBLIC_APP_URL");
+  if (a.VERCEL_PROJECT_PRODUCTION_URL) {
+    return normaliseOrigin(
+      `https://${a.VERCEL_PROJECT_PRODUCTION_URL}`,
+      "VERCEL_PROJECT_PRODUCTION_URL",
+    );
+  }
+  if (a.APP_ENV === "production") {
+    throw new Error(
+      "NEXT_PUBLIC_APP_URL is not set and APP_ENV is production.\n" +
+        "Set it to the site's own origin, e.g. https://wms.geniusitens.com.\n" +
+        "Without it, links inside emails and push notifications are relative " +
+        "and therefore dead.",
+    );
+  }
+  return "http://localhost:3000";
+}
+
+/** No trailing slash, so callers can join with `${origin}${path}`. */
+function normaliseOrigin(value: string, key: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${key} must be an absolute URL, got: ${value}`);
+  }
+  if (url.protocol !== "https:" && url.hostname !== "localhost") {
+    throw new Error(`${key} must use https outside local development, got: ${value}`);
+  }
+  return url.origin;
+}
 
 /** True in production, or when explicitly forced on elsewhere. */
 export function shouldReallySend(): boolean {

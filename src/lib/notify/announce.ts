@@ -3,6 +3,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
+import { absoluteUrl } from "@/lib/url";
 
 import { sendEmail } from "./email";
 import { sendPush, devicesFor } from "./push";
@@ -159,6 +160,10 @@ async function deliver(
       toName: user.first_name,
       subject: render(template.subject ?? input.eventKey, input.values),
       message: render(template.body, input.values),
+      // The template stores a relative path; an email needs the origin.
+      actionUrl: template.actionUrl
+        ? absoluteUrl(render(template.actionUrl, input.values))
+        : null,
     });
     return record(notificationId, "EMAIL", user.email, outcome);
   }
@@ -176,13 +181,23 @@ async function deliver(
         token,
         title: render(template.subject ?? input.eventKey, input.values),
         body: render(template.body, input.values),
-        data: {
-          eventKey: input.eventKey,
-          notificationId: String(notificationId),
-          ...(template.actionUrl
-            ? { actionUrl: render(template.actionUrl, input.values) }
-            : {}),
-        },
+        data: (() => {
+          const base = {
+            eventKey: input.eventKey,
+            notificationId: String(notificationId),
+          };
+          if (!template.actionUrl) return base;
+          const rendered = render(template.actionUrl, input.values);
+          return {
+            ...base,
+            // Absolute, so the same string works as an Android App Link
+            // and still opens in a browser when the app is not installed.
+            actionUrl: absoluteUrl(rendered) ?? rendered,
+            // The raw path too, for a handset that would rather route
+            // internally than round-trip through a URL.
+            actionPath: rendered,
+          };
+        })(),
       });
       last = await record(notificationId, "PUSH", token, outcome);
     }

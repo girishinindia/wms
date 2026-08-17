@@ -28,6 +28,7 @@ import {
   sessionResponseSchema,
 } from "@/lib/validation/api-auth";
 import { errorSchema } from "@/lib/api/respond";
+import { appEnv } from "@/lib/env";
 
 /**
  * The OpenAPI document, generated from the same Zod schemas the forms and
@@ -452,16 +453,26 @@ authPath({
 
 // ── Document ──────────────────────────────────────────────────
 
+/**
+ * Where the generated client will point.
+ *
+ * Read from the environment rather than written here as a literal. The
+ * spec is what the Flutter client is generated from, so a hostname
+ * frozen into this file survives a domain change and ships a mobile
+ * build that calls the wrong origin — a failure that only shows up on a
+ * handset, after release.
+ */
 function servers() {
-  const list: { url: string; description: string }[] = [
-    { url: "https://wms.geniusitens.com", description: "Production" },
-  ];
+  const origin = appEnv().appUrl;
+  const list: { url: string; description: string }[] = [];
 
   if (process.env.NODE_ENV !== "production") {
-    list.unshift({
-      url: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
-      description: "Local development",
-    });
+    list.push({ url: origin, description: "Local development" });
+  }
+
+  const production = process.env.NEXT_PUBLIC_APP_URL ?? origin;
+  if (!list.some((s) => s.url === production)) {
+    list.push({ url: production, description: "Production" });
   }
 
   return list;
@@ -482,7 +493,7 @@ export function buildOpenApiDocument() {
         "with, so the document cannot drift from the implementation.",
       contact: {
         name: "Genius ITens",
-        url: "https://wms.geniusitens.com",
+        url: appEnv().appUrl,
       },
     },
     servers: servers(),
