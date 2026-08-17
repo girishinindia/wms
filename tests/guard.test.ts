@@ -79,3 +79,56 @@ describe("the connection pool fits one page render", () => {
     expect(db).toMatch(/prepare: false/);
   });
 });
+
+describe("the pool does not survive a freeze", () => {
+  /**
+   * The database's own log is what pointed here: seven times in one
+   * morning Postgres cancelled the 0.1ms session lookup after the full
+   * two-minute statement_timeout, each in state PARSE — first half of
+   * the statement received, second half never sent — with nothing
+   * locked. The client had gone quiet mid-statement: a serverless
+   * instance frozen between the driver's Parse+Describe and its
+   * Bind+Execute (two steps, because `prepare: false`). On thaw the pool
+   * handed that dangling connection to the next request, which queued
+   * behind the half-sent one for as long as the server waited.
+   *
+   * The driver's idle timer cannot catch this — it was frozen too. The
+   * check is on wall-clock time, and it must stay that way.
+   */
+  it("measures staleness with the wall clock, not a timer", () => {
+    expect(db).toMatch(/const stale = lastTouched !== 0 && now - lastTouched > STALE_MS/);
+    expect(db).toMatch(/Date\.now\(\)/);
+    expect(db).not.toMatch(/setInterval|setTimeout/);
+  });
+
+  it("treats anything past the idle window as untrusted", () => {
+    // Slightly past, not exactly: a healthy process closes the
+    // connection at IDLE_SECONDS on its own. Still holding one after
+    // that means the process was not running.
+    expect(db).toMatch(/const STALE_MS = \(IDLE_SECONDS \+ \d+\) \* 1000/);
+    expect(db).toMatch(/idle_timeout: IDLE_SECONDS/);
+  });
+
+  it("checks on every hand-out, both entry points", () => {
+    const body = db.slice(db.indexOf("export function getSql"));
+    expect(body.match(/rotateIfStale\(\)/g)?.length).toBe(2);
+  });
+
+  it("drops the module and global handles together", () => {
+    // Half a rotation is worse than none: a fresh module handle over a
+    // stale global one resurrects the old client on the next hot reload.
+    const fn = db.slice(db.indexOf("function rotateIfStale"), db.indexOf("export function getSql"));
+    expect(fn).toMatch(/sqlSingleton = undefined/);
+    expect(fn).toMatch(/dbSingleton = undefined/);
+    expect(fn).toMatch(/globalForDb\.__wmsSql = undefined/);
+    expect(fn).toMatch(/globalForDb\.__wmsDb = undefined/);
+  });
+
+  it("lets in-flight work on the old client finish", () => {
+    expect(db).toMatch(/old\.end\(\{ timeout: \d+ \}\)/);
+  });
+
+  it("retires connections on a schedule as well", () => {
+    expect(db).toMatch(/max_lifetime: 5 \* 60/);
+  });
+});

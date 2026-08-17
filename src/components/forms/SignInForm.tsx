@@ -37,41 +37,32 @@ function safeNext(value: string | null): string | null {
   return value;
 }
 
+type Permission = { permission: string; scope: "OWN" | "WAREHOUSE" | "ALL" };
+
 /**
  * Where to land.
  *
  * `next` wins, because the person was already going somewhere when the
- * guard interrupted them. Failing that, ask the server what this account
- * can actually see: an admin dropped on the marketing page has to know
- * to type /admin, which nobody does. The permission set is read from
- * `/auth/session` rather than guessed from role names, and fed to the
- * same `visibleNav` the sidebar uses — one answer to "does this person
- * belong in the admin area", not two that can disagree.
+ * guard interrupted them. Failing that, look at what this account can
+ * actually see: an admin dropped on the marketing page has to know to
+ * type /admin, which nobody does. The permission set comes back in the
+ * login response itself and is fed to the same `visibleNav` the sidebar
+ * uses — one answer to "does this person belong in the admin area", not
+ * two that can disagree.
+ *
+ * Synchronous, and that is the fix for "signed in on another computer
+ * and it did not go anywhere". This used to make a second request to
+ * `/auth/session` for the permission list, with a six-second cutoff and
+ * a fallback to the home page. On a server that was slow for reasons of
+ * its own, the cutoff fired and the fallback won: a correct sign-in that
+ * landed on the marketing page, which reads as "sign-in is broken". The
+ * login response now carries the list, so there is nothing left to wait
+ * for and nothing left to fall back from.
  */
-async function destination(next: string | null): Promise<string> {
+function destination(next: string | null, permissions: Permission[]): string {
   const wanted = safeNext(next);
   if (wanted) return wanted;
-
-  /**
-   * Bounded, because the alternative is being stuck forever.
-   *
-   * `fetch` has no timeout of its own. A request that stalls — a
-   * sleeping serverless instance, a flaky connection at the warehouse —
-   * leaves this promise unresolved, and the button sits on its pending
-   * label with nothing to click and no way out. Six seconds is far
-   * longer than this ever legitimately takes.
-   */
-  const cutoff = AbortSignal.timeout(6000);
-
-  const session = await api<{
-    permissions: { permission: string; scope: "OWN" | "WAREHOUSE" | "ALL" }[];
-  }>("/auth/session", { method: "GET", signal: cutoff });
-
-  // A failed or slow lookup is not a reason to block the sign-in that
-  // just succeeded — the home page is always a valid place to be, and
-  // the header's "Sign in" will bring an admin straight to the panel.
-  if (!session.ok) return "/";
-  return visibleNav(session.data.permissions).length > 0 ? "/admin" : "/";
+  return visibleNav(permissions).length > 0 ? "/admin" : "/";
 }
 
 export default function SignInForm() {
@@ -116,7 +107,11 @@ export default function SignInForm() {
   const onSubmit = async (values: SignInValues) => {
     setFormError(null);
 
-    const result = await api<{ user: { firstName: string }; expiresAt: string }>(
+    const result = await api<{
+      user: { firstName: string };
+      permissions: Permission[];
+      expiresAt: string;
+    }>(
       "/auth/login",
       {
         body: {
@@ -175,7 +170,7 @@ export default function SignInForm() {
      * while the guard on /sign-in stops Back landing on a filled-in
      * form.
      */
-    window.location.assign(await destination(params.get("next")));
+    window.location.assign(destination(params.get("next"), result.data.permissions ?? []));
   };
 
   return (

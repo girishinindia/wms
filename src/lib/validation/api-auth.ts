@@ -188,9 +188,25 @@ export const sessionUserSchema = z
   })
   .openapi("SessionUser");
 
+export const effectivePermissionSchema = z.object({
+  permission: z.string(),
+  scope: z.enum(["OWN", "WAREHOUSE", "ALL"]),
+  warehouseIds: z.array(z.number().int()),
+  importerIds: z.array(z.number().int()),
+});
+
 export const loginResponseSchema = z
   .object({
     user: sessionUserSchema,
+    /**
+     * The same flat list `/auth/session` returns, included here so a
+     * client can decide where to land without a second round trip. The
+     * sign-in form used to fetch the session after logging in, and that
+     * extra call is where "signed in but nothing happened" came from
+     * whenever the server was slow: it timed out and fell back to the
+     * home page.
+     */
+    permissions: z.array(effectivePermissionSchema),
     expiresAt: z.string().datetime(),
     /**
      * Present ONLY when `platform` is ANDROID or IOS. A browser gets the
@@ -208,14 +224,7 @@ export const loginResponseSchema = z
 export const sessionResponseSchema = z
   .object({
     user: sessionUserSchema,
-    permissions: z.array(
-      z.object({
-        permission: z.string(),
-        scope: z.enum(["OWN", "WAREHOUSE", "ALL"]),
-        warehouseIds: z.array(z.number().int()),
-        importerIds: z.array(z.number().int()),
-      }),
-    ),
+    permissions: z.array(effectivePermissionSchema),
     expiresAt: z.string().datetime(),
   })
   .openapi("SessionResponse");

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 
 import {
   findAccount,
+  permissionsFor,
   recordFailedLogin,
   recordSuccessfulLogin,
   rolesFor,
@@ -183,6 +184,17 @@ export async function POST(request: NextRequest) {
       // the Keychain / EncryptedSharedPreferences instead.
       const isNative = input.platform === "ANDROID" || input.platform === "IOS";
 
+      // Permissions ride along with the login so the browser can decide
+      // where to land from this one response. The sign-in form used to
+      // make a second call to /auth/session for exactly this list, and
+      // that call is where "signed in but nothing happened" came from:
+      // on a slow server it timed out and the form fell back to the home
+      // page. Same source as /auth/session, so the two never disagree.
+      const [roles, permissions] = await Promise.all([
+        rolesFor(account.id),
+        permissionsFor(account.id),
+      ]);
+
       return ok(
         {
           ...(isNative ? { sessionToken: session.token } : {}),
@@ -195,8 +207,9 @@ export async function POST(request: NextRequest) {
             emailVerified: account.emailVerifiedAt !== null,
             mobileVerified: account.mobileVerifiedAt !== null,
             mustChangePassword: account.mustChangePassword,
-            roles: await rolesFor(account.id),
+            roles,
           },
+          permissions,
           expiresAt: session.expiresAt.toISOString(),
         },
         requestId,

@@ -56,7 +56,7 @@ describe("post-sign-in redirect", () => {
   it("no longer navigates to a hardcoded destination", () => {
     // The original regression: `router.push("/")` with nothing else.
     expect(source).not.toMatch(/router\.(push|replace)\(\s*["']\/["']\s*\)/);
-    expect(source).toMatch(/window\.location\.assign\(await destination\(/);
+    expect(source).toMatch(/window\.location\.assign\(destination\(/);
   });
 
   /**
@@ -75,13 +75,21 @@ describe("post-sign-in redirect", () => {
   });
 
   /**
-   * And the session lookup cannot hang forever. `fetch` has no timeout
-   * of its own, so a stalled request left the promise unresolved and the
-   * button pending with nothing to click.
+   * There is no session lookup any more, and this pins its absence.
+   *
+   * The form used to call `/auth/session` after logging in to learn the
+   * permission list, bounded by a six-second cutoff that fell back to
+   * the home page. On a server that was slow for its own reasons the
+   * cutoff won, and a correct sign-in landed on the marketing page —
+   * "sign-in works on my machine, not on the other one". The permissions
+   * now arrive in the login response itself, so the decision is made
+   * from data already in hand and there is nothing to time out.
    */
-  it("bounds the session lookup", () => {
-    expect(source).toMatch(/AbortSignal\.timeout\(\d+\)/);
-    expect(source).toMatch(/signal:\s*cutoff/);
+  it("decides where to land from the login response, not a second request", () => {
+    expect(source).not.toMatch(/["']\/auth\/session["']/);
+    expect(source).not.toMatch(/AbortSignal\.timeout/);
+    expect(source).toMatch(/permissions:\s*Permission\[\]/);
+    expect(source).toMatch(/destination\(params\.get\("next"\),\s*result\.data\.permissions/);
   });
 
   it("still guards the parameter it now honours", () => {

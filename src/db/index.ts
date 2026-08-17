@@ -59,6 +59,22 @@ const globalForDb = globalThis as unknown as {
 let sqlSingleton: Client | undefined;
 let dbSingleton: Db | undefined;
 
+/** How long a connection may sit unused before the driver closes it. */
+const IDLE_SECONDS = 20;
+
+/**
+ * Anything unused for longer than the driver's own idle window is treated
+ * as untrustworthy — see `getSql`. A little past IDLE_SECONDS, because a
+ * healthy process would have closed the connection itself by then; if it
+ * is still here, the process was not running.
+ */
+const STALE_MS = (IDLE_SECONDS + 5) * 1000;
+
+/** When the pool was last handed to a caller. Frozen along with the rest
+ *  of the process, which is the point: the gap it shows after a thaw is
+ *  the length of the freeze. */
+let lastTouched = 0;
+
 function createClient(): Client {
   const url = process.env.DATABASE_URL;
 
@@ -96,7 +112,13 @@ function createClient(): Client {
     prepare: false,
     ssl,
     connect_timeout: 10,
-    idle_timeout: 20,
+    idle_timeout: IDLE_SECONDS,
+    /**
+     * Retire every connection after five minutes regardless of use, so
+     * nothing lives long enough to carry stale state between many
+     * requests. Reconnecting through the pooler is ~50ms and rare.
+     */
+    max_lifetime: 5 * 60,
     /**
      * int8 (bigint) arrives as a STRING by default, because 2^63 does not
      * fit a JS number. Every primary key in this schema is
@@ -128,7 +150,61 @@ function createClient(): Client {
   });
 }
 
+/**
+ * Never hand out a connection that lived through a freeze.
+ *
+ * This is the fix for "I click a menu item and it keeps processing", and
+ * it is worth being precise about, because the database's own log is
+ * what pointed here. Seven times in one morning Postgres cancelled the
+ * session lookup — a query that takes 0.1ms — after waiting the full
+ * two-minute `statement_timeout`, each time in state `PARSE`: it had the
+ * first half of the statement and never received the second. Nothing was
+ * locked (`log_lock_waits` is on and logged nothing). The client had
+ * simply stopped talking to it mid-statement.
+ *
+ * With `prepare: false` — mandatory on the pooler — the driver sends
+ * every parameterised query in two steps: Parse+Describe, wait for the
+ * server, then Bind+Execute. Between those steps a serverless instance
+ * can be frozen (its request was abandoned because the user clicked the
+ * next menu item; the platform paused the process) and the connection is
+ * left dangling with the server waiting on it. When the instance thaws
+ * for the next click, the pool hands that same connection out, the new
+ * query queues behind the half-sent one, and the tab loads for as long
+ * as it takes the server to give up — up to two minutes.
+ *
+ * The driver's own idle timer would have closed the connection, but the
+ * timer was frozen too. So the check has to be on wall-clock time, which
+ * survives a freeze because it is not ours: if the pool has not been
+ * touched for longer than its idle window, the process was asleep, and
+ * everything it was holding is thrown away and rebuilt. Costs one
+ * ~50ms reconnect on the first query after a pause. Costs nothing on a
+ * busy instance, where the gap never opens.
+ *
+ * `end()` on the old client waits for in-flight work up to its timeout
+ * before destroying the sockets, so a request that raced the rotation
+ * still completes; the reference it holds keeps its client alive.
+ */
+function rotateIfStale(): void {
+  const now = Date.now();
+  const stale = lastTouched !== 0 && now - lastTouched > STALE_MS;
+  lastTouched = now;
+  if (!stale) return;
+
+  const old = sqlSingleton ?? globalForDb.__wmsSql;
+  sqlSingleton = undefined;
+  dbSingleton = undefined;
+  globalForDb.__wmsSql = undefined;
+  globalForDb.__wmsDb = undefined;
+
+  if (old) {
+    // Errors here are about the connection we have already stopped
+    // trusting; nothing upstream can act on them.
+    old.end({ timeout: 5 }).catch(() => undefined);
+  }
+}
+
 export function getSql(): Client {
+  rotateIfStale();
   sqlSingleton ??= globalForDb.__wmsSql ?? createClient();
   // Survive hot reload in dev; harmless in production, where the module
   // is evaluated once.
@@ -137,6 +213,7 @@ export function getSql(): Client {
 }
 
 export function getDb(): Db {
+  rotateIfStale();
   dbSingleton ??= globalForDb.__wmsDb ?? drizzle(getSql(), { schema: fullSchema });
   globalForDb.__wmsDb = dbSingleton;
   return dbSingleton;
