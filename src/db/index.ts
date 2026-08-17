@@ -3,6 +3,22 @@ import "server-only";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
+import * as relations from "./relations";
+import * as schema from "./schema";
+
+/**
+ * Every table lives in the `wms` schema, and `pgSchema("wms")` makes
+ * Drizzle emit `"wms"."users"` on every query. The connection's
+ * search_path is therefore left alone deliberately: setting it as a
+ * startup parameter is one more thing the transaction pooler has to
+ * carry per backend connection, for no gain.
+ *
+ * The consequence: raw `sql` fragments must qualify their own names.
+ * `sql`select * from wms.user_ancestors(${id})`` works; the same line
+ * without the prefix will not.
+ */
+const fullSchema = { ...schema, ...relations };
+
 /**
  * Drizzle client, shared by every server-side caller.
  *
@@ -21,9 +37,11 @@ type Client = ReturnType<typeof postgres>;
 // Next's dev server re-evaluates modules on every edit. Without a global
 // the pool is recreated on each hot reload until the pooler stops
 // accepting new connections.
+type Db = PostgresJsDatabase<typeof fullSchema>;
+
 const globalForDb = globalThis as unknown as {
   __wmsSql?: Client;
-  __wmsDb?: PostgresJsDatabase;
+  __wmsDb?: Db;
 };
 
 function createClient(): Client {
@@ -64,8 +82,9 @@ export function getSql(): Client {
   return client;
 }
 
-export function getDb(): PostgresJsDatabase {
-  const instance = globalForDb.__wmsDb ?? drizzle(getSql());
+export function getDb(): Db {
+  const instance =
+    globalForDb.__wmsDb ?? drizzle(getSql(), { schema: fullSchema });
   if (process.env.NODE_ENV !== "production") globalForDb.__wmsDb = instance;
   return instance;
 }

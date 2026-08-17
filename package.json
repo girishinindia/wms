@@ -6,12 +6,18 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:pull": "drizzle-kit pull && node scripts/patch-pulled-schema.mjs && rm -f drizzle/schema.ts drizzle/relations.ts",
+    "db:generate": "drizzle-kit generate && node scripts/check-migration.mjs",
+    "db:migrate": "drizzle-kit migrate",
+    "db:baseline": "node scripts/mark-baseline-applied.mjs",
+    "db:check": "node scripts/check-migration.mjs"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",
     "@hookform/resolvers": "^5.9.0",
     "@scalar/nextjs-api-reference": "^0.11.14",
+    "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "next": "15.5.23",
     "postgres": "^3.4.9",
@@ -27,6 +33,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "15.5.23",
     "tailwindcss": "^4",
