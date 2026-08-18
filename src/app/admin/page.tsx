@@ -1,6 +1,9 @@
 import Link from "next/link";
 
+import CompanyProfileForm from "@/components/admin/CompanyProfileForm";
 import { Card, Empty, PageHeader, Stat, StatusBadge } from "@/components/admin/ui";
+import { loadGeoOptions } from "@/lib/admin/geo";
+import { loadImporterProfile } from "@/lib/importer/profile";
 import { getDb } from "@/db";
 import { currentActor, importerGateFor } from "@/lib/auth/guard";
 import { sql } from "drizzle-orm";
@@ -155,49 +158,34 @@ export default async function AdminDashboard() {
   );
 }
 
+/**
+ * The importer's dashboard IS their company profile: fill it in, submit
+ * it, watch its verification — and once verified, a count of their
+ * sales agents on top. There is no separate "My company" screen.
+ */
 async function ImporterDashboard({ importerId }: { importerId: number }) {
-  const [row] = await getDb().execute<{
-    code: string;
-    company_name: string;
-    status: string;
-    kyc_status: string;
-    agents: number;
-    agents_active: number;
-  }>(sql`
-    select i.code, i.company_name, i.status::text as status, i.kyc_status,
-           (select count(*) from wms.sales_agent a where a.importer_id = i.id and a.deleted_at is null)::int as agents,
-           (select count(*) from wms.sales_agent a where a.importer_id = i.id and a.deleted_at is null and a.is_active)::int as agents_active
-      from wms.importer i where i.id = ${importerId}
+  const profile = await loadImporterProfile(importerId);
+  if (!profile) return <PageHeader title="Dashboard" subtitle="No company is linked to this account." />;
+  const [row] = await getDb().execute<{ agents: number; agents_active: number }>(sql`
+    select (select count(*) from wms.sales_agent a where a.importer_id = ${importerId} and a.deleted_at is null)::int as agents,
+           (select count(*) from wms.sales_agent a where a.importer_id = ${importerId} and a.deleted_at is null and a.is_active)::int as agents_active
   `);
-  const verified = row?.status === "ACTIVE";
+  const geo = await loadGeoOptions();
+  const verified = profile.status === "ACTIVE";
   return (
     <>
       <PageHeader
-        title={row?.company_name ?? "Dashboard"}
-        subtitle={row ? `${row.code} · your company at a glance` : undefined}
-      />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
-          label="Verification"
-          value={(row?.kyc_status ?? "NOT_STARTED").toLowerCase().replace(/_/g, " ")}
-          note={verified ? "your company is verified" : "complete and submit your profile"}
-          tone={verified ? "default" : "warn"}
-        />
-        <Stat label="Company status" value={(row?.status ?? "—").toLowerCase()} />
-        <Stat label="Sales agents" value={row?.agents ?? 0} note={`${row?.agents_active ?? 0} active`} />
-      </div>
-      <Card className="mt-6 p-5">
-        <div className="flex flex-wrap gap-3">
-          <a href="/admin/company" className="rounded-xl bg-verdigris-400 px-4 py-2 text-sm font-semibold text-ink-900 transition-colors hover:bg-patina">
-            My company
-          </a>
-          {verified ? (
+        title={profile.profile.companyName}
+        subtitle={`${profile.code} · your company profile`}
+        action={
+          verified ? (
             <a href="/admin/sales-agents" className="rounded-xl border border-verdigris-300/20 px-4 py-2 text-sm text-verdigris-100 hover:border-verdigris-300/45">
-              Sales agents
+              Sales agents · {row?.agents ?? 0} ({row?.agents_active ?? 0} active)
             </a>
-          ) : null}
-        </div>
-      </Card>
+          ) : null
+        }
+      />
+      <CompanyProfileForm initial={profile} geo={geo} />
     </>
   );
 }

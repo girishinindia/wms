@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
 import { sql, type SQL } from "drizzle-orm";
 
 import { getDb } from "@/db";
+import { applyToUser } from "@/lib/accounts/lifecycle";
 import { auditQuietly } from "@/lib/audit";
 import type { Actor } from "@/lib/auth/guard";
 import { hashPassword } from "@/lib/auth/password";
@@ -21,6 +22,40 @@ import { absoluteUrl } from "@/lib/url";
  * already resolved it from the actor's role (OWN) or the request (ALL).
  * Nothing in this module trusts an importer id from a body.
  */
+
+export type SalesArea = {
+  stateId: number;
+  stateName: string;
+  cityId: number;
+  cityName: string;
+  areas: string[];
+};
+
+/**
+ * Rows written before areas existed carried `{stateId, cityId, label}`.
+ * Read them into the current shape so nothing downstream has two cases;
+ * they are rewritten in the new shape on the next save.
+ */
+function normaliseAreas(raw: unknown): SalesArea[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SalesArea[] = [];
+  for (const item of raw as Record<string, unknown>[]) {
+    if (!item || typeof item !== "object") continue;
+    const stateId = Number(item.stateId);
+    const cityId = Number(item.cityId);
+    if (!Number.isFinite(stateId) || !Number.isFinite(cityId) || cityId <= 0) continue;
+    const label = typeof item.label === "string" ? item.label : "";
+    const [cityFromLabel, stateFromLabel] = label.split(",").map((s) => s.trim());
+    out.push({
+      stateId,
+      stateName: String(item.stateName ?? stateFromLabel ?? ""),
+      cityId,
+      cityName: String(item.cityName ?? cityFromLabel ?? ""),
+      areas: Array.isArray(item.areas) ? (item.areas as unknown[]).map(String) : [],
+    });
+  }
+  return out;
+}
 
 export type SalesAgentRow = {
   id: number;
@@ -41,7 +76,7 @@ export type SalesAgentRow = {
   cityId: number | null;
   cityLabel: string | null;
   pincode: string | null;
-  salesAreas: { stateId: number; cityId?: number | null; label: string }[];
+  salesAreas: SalesArea[];
   status: string;
   isActive: boolean;
   notes: string | null;
@@ -81,7 +116,7 @@ function map(r: Record<string, unknown>): SalesAgentRow {
     cityId: r.city_id === null ? null : Number(r.city_id),
     cityLabel: (r.city_label as string | null) ?? null,
     pincode: (r.pincode as string | null) ?? null,
-    salesAreas: Array.isArray(r.sales_areas) ? (r.sales_areas as SalesAgentRow["salesAreas"]) : [],
+    salesAreas: normaliseAreas(r.sales_areas),
     status: String(r.status),
     isActive: Boolean(r.is_active),
     notes: (r.notes as string | null) ?? null,
@@ -279,11 +314,11 @@ export async function updateSalesAgent(
     update wms.sales_agent set ${sql.join(sets, sql`, `)}
      where id = ${agent.id} and deleted_at is null
   `);
-  // A deactivated agent should not keep signing in.
-  if (input.isActive === false && agent.userId) {
-    await getDb().execute(sql`
-      update wms.user_session set revoked_at = now() where user_id = ${agent.userId} and revoked_at is null
-    `);
+  // The login follows the profile: deactivated → suspended (sessions
+  // revoked), reactivated → active. lifecycle.ts, without bouncing back.
+  if (typeof input.isActive === "boolean" && agent.userId) {
+    await applyToUser(agent.userId, input.isActive ? "REACTIVATE" : "SUSPEND", actor, meta,
+      input.isActive ? "Sales agent profile reactivated" : "Sales agent profile deactivated", false);
   }
   const after = (await loadSalesAgent(agent.id))!;
   await auditQuietly({
@@ -321,16 +356,9 @@ export async function deleteSalesAgent(
        set deleted_at = now(), deleted_by = ${actor.session.userId}, is_active = false
      where id = ${agent.id} and deleted_at is null
   `);
+  // The login goes with the profile — soft-deleted, sessions revoked.
   if (agent.userId) {
-    await getDb().execute(sql`
-      update wms.users set status = 'SUSPENDED', deactivated_at = now(),
-             deactivated_by = ${actor.session.userId},
-             deactivation_reason = 'Sales agent profile deleted'
-       where id = ${agent.userId} and deleted_at is null
-    `);
-    await getDb().execute(sql`
-      update wms.user_session set revoked_at = now() where user_id = ${agent.userId} and revoked_at is null
-    `);
+    await applyToUser(agent.userId, "DELETE", actor, meta, "Sales agent profile deleted", false);
   }
   await auditQuietly({
     action: "sales_agent.deleted",

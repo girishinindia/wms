@@ -144,14 +144,13 @@ describe("admin navigation: grouping", () => {
       { permission: "master.city.read", scope: "ALL" as const },
     ];
     const leaves = visibleNav(importer).map((i) => i.label);
-    expect(leaves).toEqual(["Dashboard", "My company", "Sales agents"]);
+    // No "My company" entry: the importer's company profile is their
+    // dashboard.
+    expect(leaves).toEqual(["Dashboard", "Sales agents"]);
     const nodes = groupNav(visibleNav(importer));
     const group = nodes.find((n) => isGroup(n) && n.label === "Importers & agents");
     expect(group).toBeDefined();
-    expect(isGroup(group!) && group.children.map((c) => c.href)).toEqual([
-      "/admin/company",
-      "/admin/sales-agents",
-    ]);
+    expect(isGroup(group!) && group.children.map((c) => c.href)).toEqual(["/admin/sales-agents"]);
   });
 
   it("never lets OWN scope earn a platform list", () => {
@@ -275,9 +274,12 @@ describe("OpenAPI: admin endpoints", () => {
       "/api/v1/admin/cities",
       "/api/v1/admin/cities/{id}",
       "/api/v1/admin/importers/{id}/approve",
+      "/api/v1/admin/importers/{id}/lifecycle",
       "/api/v1/admin/importers/{id}/reject",
       "/api/v1/admin/master/{resource}",
       "/api/v1/admin/master/{resource}/bulk",
+      "/api/v1/admin/users/bulk",
+      "/api/v1/admin/users/{id}",
       "/api/v1/admin/users/{id}/roles",
       "/api/v1/admin/users/{id}/status",
     ]);

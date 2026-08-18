@@ -133,11 +133,13 @@ export default function DataTable<T>({
             const needle = String(value ?? "").trim().toLowerCase();
             if (!needle) return true;
             const keys = searchKeys ?? (Object.keys(row.original as object) as (keyof T & string)[]);
-            return keys.some((k) =>
-              String((row.original as Record<string, unknown>)[k] ?? "")
-                .toLowerCase()
-                .includes(needle),
-            );
+            return keys.some((k) => {
+              const v = (row.original as Record<string, unknown>)[k];
+              // Arrays and objects (sales areas, roles) search by their
+              // text, not "[object Object]".
+              const text = v === null || v === undefined ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+              return text.toLowerCase().includes(needle);
+            });
           },
           initialState: { pagination: { pageSize: DEFAULT_PAGE_SIZE } },
         }),

@@ -807,6 +807,69 @@ adminPath({
 });
 
 adminPath({
+  path: "/api/v1/admin/users/{id}",
+  operationId: "deleteUser",
+  method: "delete",
+  summary: "Delete a login (soft), and what it owns",
+  permission: "user.delete",
+  description:
+    "Soft-deletes the account and revokes its sessions. An IMPORTER's " +
+    "company and its sales agents go with it; a SALES_AGENT's profile " +
+    "goes with it (one life-cycle, `lifecycle.ts`). A super admin, and " +
+    "your own account, cannot be deleted here.",
+  params: idParam,
+  response: okAdminResponseSchema,
+  responses: { 404: errorResponse("No such user."), 409: errorResponse("That is your own account.") },
+});
+
+adminPath({
+  path: "/api/v1/admin/users/bulk",
+  operationId: "bulkUsers",
+  summary: "Activate, deactivate or delete several logins",
+  permission: "user.update",
+  description:
+    "Each one cascades exactly like the single-row endpoints. Super " +
+    "admins and the caller's own account are skipped with a reason, never " +
+    "refused as a whole. Delete needs `user.delete`.",
+  request: z
+    .object({
+      action: z.enum(["activate", "deactivate", "delete"]),
+      ids: z.array(z.number().int().positive()).min(1).max(200),
+      reason: z.string().max(300).optional(),
+    })
+    .openapi("UserBulkRequest"),
+  response: z
+    .object({
+      action: z.string(),
+      done: z.array(z.number().int()),
+      skipped: z.array(z.object({ id: z.number().int(), reason: z.string() })),
+      notes: z.array(z.object({ id: z.number().int(), note: z.string() })),
+    })
+    .openapi("UserBulkResponse"),
+});
+
+adminPath({
+  path: "/api/v1/admin/importers/{id}/lifecycle",
+  operationId: "importerLifecycle",
+  summary: "Suspend, reactivate or delete a company",
+  permission: "importer.update",
+  description:
+    "The owner login, every sales agent and their logins follow. Only an " +
+    "ACTIVE company can be suspended (an unverified one stays PENDING with " +
+    "its owner's login suspended). Delete needs `importer.delete`; the " +
+    "importer's own OWN-scoped grant is refused.",
+  params: idParam,
+  request: z
+    .object({
+      action: z.enum(["suspend", "reactivate", "delete"]),
+      reason: z.string().min(3).max(300).optional(),
+    })
+    .openapi("ImporterLifecycleRequest"),
+  response: okAdminResponseSchema,
+  responses: { 404: errorResponse("No such importer."), 409: errorResponse("Not in a state that allows this action.") },
+});
+
+adminPath({
   path: "/api/v1/admin/users/{id}/status",
   operationId: "setUserStatus",
   method: "patch",

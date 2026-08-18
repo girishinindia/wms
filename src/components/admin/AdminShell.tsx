@@ -82,6 +82,7 @@ export type AdminUser = {
 export type ImporterLock = {
   verified: boolean;
   kycStatus: string;
+  status: string;
 };
 
 export default function AdminShell({
@@ -425,7 +426,9 @@ export default function AdminShell({
 
         {lock && !lock.verified ? (
           <div className="border-b border-amber-400/25 bg-amber-400/10 px-4 py-2 text-sm text-amber-100 sm:px-8">
-            {lock.kycStatus === "SUBMITTED"
+            {lock.status === "SUSPENDED"
+              ? "Your company has been suspended. Contact the warehouse to have it reinstated."
+              : lock.kycStatus === "SUBMITTED"
               ? "Your company profile is with our team for verification. You will be able to use the rest of the portal once it is approved."
               : lock.kycStatus === "REJECTED"
                 ? "Your company profile was returned with remarks. Fix them and submit again."
@@ -434,7 +437,7 @@ export default function AdminShell({
         ) : null}
 
         <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">
-          {lock && !lock.verified && !pathname.startsWith("/admin/company") ? (
+          {lock && !lock.verified && pathname !== "/admin" ? (
             <div className="mx-auto mt-10 max-w-md rounded-2xl border border-verdigris-300/10 bg-ink-850 p-8 text-center card-shadow">
               <span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-amber-400/15 text-amber-300">
                 <LockIcon className="h-5 w-5" />
@@ -445,7 +448,7 @@ export default function AdminShell({
                 your profile and submit it — you will be notified when it is approved.
               </p>
               <a
-                href="/admin/company"
+                href="/admin"
                 className="mt-6 inline-block rounded-xl bg-verdigris-400 px-5 py-2.5 text-sm font-semibold text-ink-900 transition-colors hover:bg-patina"
               >
                 Go to my company profile

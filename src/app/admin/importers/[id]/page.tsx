@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import ImporterLifecycle from "@/components/admin/ImporterLifecycle";
 import ImporterReview, { type CityOption } from "@/components/admin/ImporterReview";
 import { Card, Denied, Facts, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { getDb } from "@/db";
@@ -245,6 +246,14 @@ export default async function ImporterDetailPage({
           ) : null}
         </Card>
       )}
+
+      <ImporterLifecycle
+        importerId={row.id}
+        companyName={row.company_name}
+        status={row.status}
+        canUpdate={grantFor(guard.actor, "importer.update")?.scope === "ALL"}
+        canDelete={grantFor(guard.actor, "importer.delete")?.scope === "ALL"}
+      />
     </>
   );
 }

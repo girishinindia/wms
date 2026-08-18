@@ -73,11 +73,24 @@ const isoDate = z
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
   .refine((s) => !Number.isNaN(Date.parse(s)), "Not a real date");
 
-export const salesAreaSchema = z.object({
-  stateId: z.number().int().positive(),
-  cityId: z.number().int().positive().nullable().optional(),
-  label: z.string().trim().min(1).max(160),
-});
+/**
+ * One territory: a state, a city in it, and the areas of that city the
+ * agent covers — because one city is split between several agents by
+ * locality. Names are stored beside the ids so the JSON reads on its own
+ * (reports, the mobile app) without a join; the ids keep it tied to the
+ * master.
+ */
+export const salesAreaSchema = z
+  .object({
+    stateId: z.number().int().positive(),
+    stateName: z.string().trim().min(1).max(120),
+    cityId: z.number().int().positive(),
+    cityName: z.string().trim().min(1).max(120),
+    areas: z.array(z.string().trim().min(1).max(80)).max(50).default([]),
+  })
+  .openapi("SalesArea", {
+    example: { stateId: 26, stateName: "Maharashtra", cityId: 88, cityName: "Mumbai", areas: ["Andheri East", "Bandra West"] },
+  });
 
 const salesAgentCore = {
   firstName: z.string().trim().min(1).max(80),

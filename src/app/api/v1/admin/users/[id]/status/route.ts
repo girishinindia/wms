@@ -3,10 +3,9 @@ import { type NextRequest } from "next/server";
 
 import { getDb } from "@/db";
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
-import { auditQuietly } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
-import { revokeAllSessions } from "@/lib/auth/session";
+import { applyToUser } from "@/lib/accounts/lifecycle";
 import { setUserStatusRequestSchema } from "@/lib/validation/api-admin";
 
 export const runtime = "nodejs";
@@ -83,40 +82,17 @@ export async function PATCH(
         return ok({ ok: true as const }, requestId);
       }
 
-      await getDb().execute(sql`
-        update wms.users
-           set status              = ${status}::wms.record_status,
-               deactivation_reason = ${status === "SUSPENDED" ? (reason ?? null) : null},
-               deactivated_by      = ${status === "SUSPENDED" ? actor.session.userId : null},
-               deactivated_at      = ${status === "SUSPENDED" ? sql`now()` : sql`null`},
-               updated_by          = ${actor.session.userId}
-         where id = ${targetUserId} and deleted_at is null
-      `);
+      // The login, and whatever it owns: an IMPORTER's company (and its
+      // agents), a SALES_AGENT's profile. One life-cycle — see lifecycle.ts.
+      const linked = await applyToUser(
+        targetUserId,
+        status === "SUSPENDED" ? "SUSPEND" : "REACTIVATE",
+        actor,
+        { requestId, ip: clientIp(request.headers), userAgent: request.headers.get("user-agent") },
+        reason ?? null,
+      );
 
-      let revoked = 0;
-      if (status === "SUSPENDED") {
-        revoked = await revokeAllSessions(targetUserId, `suspended: ${reason ?? "no reason"}`);
-      }
-
-      await auditQuietly({
-        action: status === "SUSPENDED" ? "user.deactivated" : "user.reactivated",
-        operation: "UPDATE",
-        entityType: "user",
-        entityId: String(targetUserId),
-        entityLabel: before[0]!.email,
-        actorUserId: actor.session.userId,
-        actorEmail: actor.session.email,
-        actorName: `${actor.session.firstName} ${actor.session.lastName}`.trim(),
-        reason: reason ?? null,
-        before: before[0],
-        after: { status },
-        ip: clientIp(request.headers),
-        userAgent: request.headers.get("user-agent"),
-        requestId,
-        metadata: { sessionsRevoked: revoked },
-      });
-
-      return ok({ ok: true as const }, requestId);
+      return ok({ ok: true as const, ...linked }, requestId);
     } catch (error) {
       if (error instanceof Error && /super.?admin/i.test(error.message)) {
         return fail("FORBIDDEN", "A super admin cannot be suspended by anyone else.", requestId);

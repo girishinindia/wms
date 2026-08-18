@@ -9,7 +9,7 @@ import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 import type { GeoOptions } from "@/lib/admin/geo";
-import type { SalesAgentRow } from "@/lib/sales-agents/ops";
+import type { SalesAgentRow, SalesArea } from "@/lib/sales-agents/ops";
 
 import DataTable, { SelectAllHeader, SelectRowCell, Switch, type ColumnMeta } from "./DataTable";
 import { Card, FactList, IconButton, StatusBadge } from "./ui";
@@ -34,7 +34,8 @@ export type SalesAgentsSpec = {
   geo: GeoOptions;
 };
 
-type Area = { stateId: number; cityId?: number | null; label: string };
+type Area = SalesArea;
+const areaLabel = (a: Area) => `${a.cityName}, ${a.stateName}`;
 type Drawer =
   | { mode: "view"; row: SalesAgentRow }
   | { mode: "edit"; row: SalesAgentRow }
@@ -180,16 +181,26 @@ export default function SalesAgentsTable({
     });
     cols.push({ id: "city", accessorFn: (r) => r.cityLabel ?? "", header: "City", cell: ({ row }) => row.original.cityLabel ?? "—" });
     cols.push({
-      id: "areas", accessorFn: (r) => r.salesAreas.map((a) => a.label).join(", "), header: "Sales areas", enableSorting: false,
+      id: "areas",
+      accessorFn: (r) => r.salesAreas.map((a) => `${areaLabel(a)} ${a.areas.join(" ")}`).join(" | "),
+      header: "Sales areas", enableSorting: false,
       cell: ({ row }) => {
         const a = row.original.salesAreas;
         if (!a.length) return <span className="text-verdigris-200/40">—</span>;
         return (
-          <span className="flex flex-wrap gap-1">
-            {a.slice(0, 3).map((x, i) => (
-              <span key={i} className="rounded-full border border-verdigris-300/20 px-2 py-0.5 text-[11px] text-verdigris-200">{x.label}</span>
+          <span className="flex flex-col gap-1">
+            {a.slice(0, 2).map((x, i) => (
+              <span key={i} className="text-xs">
+                <span className="text-verdigris-100">{x.cityName}</span>
+                <span className="text-verdigris-200/45"> · {x.stateName}</span>
+                {x.areas.length ? (
+                  <span className="block text-[11px] text-verdigris-200/65">
+                    {x.areas.slice(0, 3).join(", ")}{x.areas.length > 3 ? ` +${x.areas.length - 3}` : ""}
+                  </span>
+                ) : null}
+              </span>
             ))}
-            {a.length > 3 ? <span className="text-[11px] text-verdigris-200/50">+{a.length - 3}</span> : null}
+            {a.length > 2 ? <span className="text-[11px] text-verdigris-200/50">+{a.length - 2} more</span> : null}
           </span>
         );
       },
@@ -229,7 +240,7 @@ export default function SalesAgentsTable({
           data={rows}
           label="sales agents"
           enableSelection={spec.canUpdate || spec.canDelete}
-          searchKeys={["code", "firstName", "lastName", "mobile", "email", "importerName", "status"]}
+          searchKeys={["code", "firstName", "lastName", "mobile", "email", "importerName", "status", "salesAreas"]}
           emptyTitle="No sales agents yet."
           emptyHint={spec.canCreate ? "Add the people who sell for you; each gets a login for the mobile app." : undefined}
           rowClassName={(row) => (row.original.isActive ? "" : "opacity-60")}
@@ -312,19 +323,30 @@ function AgentDrawer({
   const states = geo.states.filter((s) => String(s.countryId) === countryId);
   const cities = geo.cities.filter((c) => String(c.stateId) === stateId);
 
-  // Sales-area picker: a state, optionally narrowed to a city, then Add.
+  // Sales-area picker: State → City from the master, then the areas of
+  // that city this agent covers (typed, comma or newline separated —
+  // localities are not master data), then Add. Adding the same city
+  // again merges the areas into the existing entry.
   const [areaState, setAreaState] = useState<string>("");
   const [areaCity, setAreaCity] = useState<string>("");
+  const [areaText, setAreaText] = useState<string>("");
   const areaCities = geo.cities.filter((c) => String(c.stateId) === areaState);
   function addArea() {
     const s = geo.states.find((x) => String(x.id) === areaState);
-    if (!s) return;
-    const c = areaCity ? geo.cities.find((x) => String(x.id) === areaCity) : undefined;
-    const next: Area = { stateId: s.id, cityId: c ? c.id : null, label: c ? `${c.name}, ${s.name}` : s.name };
-    if (areas.some((a) => a.stateId === next.stateId && (a.cityId ?? null) === (next.cityId ?? null))) return;
-    setAreas([...areas, next]);
+    const c = geo.cities.find((x) => String(x.id) === areaCity);
+    if (!s || !c) return;
+    const typed = [...new Set(areaText.split(/[,\n;]+/).map((t) => t.trim()).filter(Boolean))];
+    const existing = areas.find((a) => a.cityId === c.id);
+    if (existing) {
+      setAreas(areas.map((a) => (a.cityId === c.id ? { ...a, areas: [...new Set([...a.areas, ...typed])] } : a)));
+    } else {
+      setAreas([...areas, { stateId: s.id, stateName: s.name, cityId: c.id, cityName: c.name, areas: typed }]);
+    }
+    setAreaText("");
     setAreaCity("");
   }
+  const removeLocality = (cityId: number, locality: string) =>
+    setAreas(areas.map((a) => (a.cityId === cityId ? { ...a, areas: a.areas.filter((x) => x !== locality) } : a)));
 
   const set = (k: string, v: string) => setDraft({ ...draft, [k]: v });
   const input = "mt-1 w-full rounded-lg border bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50 placeholder:text-verdigris-200/30 focus:outline-none focus:ring-2 focus:ring-patina/40";
@@ -377,9 +399,15 @@ function AgentDrawer({
                 { label: "City", value: row.cityLabel ?? "—" },
                 { label: "Pincode", value: row.pincode ?? "—", mono: true },
                 { label: "Sales areas", value: row.salesAreas.length ? (
-                  <span className="flex flex-wrap gap-1">
-                    {row.salesAreas.map((a, i) => <span key={i} className="rounded-full border border-verdigris-300/20 px-2 py-0.5 text-[11px]">{a.label}</span>)}
-                  </span>
+                  <ul className="space-y-1">
+                    {row.salesAreas.map((a, i) => (
+                      <li key={i} className="text-sm">
+                        <span className="text-verdigris-50">{a.cityName}</span>
+                        <span className="text-verdigris-200/50">, {a.stateName}</span>
+                        {a.areas.length ? <span className="block text-xs text-verdigris-200/70">{a.areas.join(", ")}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
                 ) : "—" },
                 { label: "Status", value: <StatusBadge value={row.status} /> },
                 { label: "Active", value: row.isActive ? "Yes" : "No" },
@@ -422,24 +450,57 @@ function AgentDrawer({
 
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-verdigris-300">Sales areas</p>
-                <p className="mt-1 text-xs text-verdigris-200/55">Pick a state, or a city inside it, and add. From the master data only.</p>
-                <div className="mt-2 flex flex-wrap items-end gap-2">
-                  <label className={`${label} min-w-[10rem] flex-1`}>State{select(areaState, (v) => { setAreaState(v); setAreaCity(""); }, geo.states)}</label>
-                  <label className={`${label} min-w-[10rem] flex-1`}>City (optional){select(areaCity, setAreaCity, areaCities, { disabled: !areaState, placeholder: "Whole state" })}</label>
-                  <button type="button" onClick={addArea} disabled={!areaState}
-                    className="rounded-lg border border-verdigris-300/25 px-3 py-2 text-sm text-verdigris-100 hover:border-verdigris-300/50 disabled:opacity-40">
-                    Add
-                  </button>
+                <p className="mt-1 text-xs text-verdigris-200/55">
+                  State and city from the master; then the areas of that city this agent covers — one city is
+                  usually split between agents by locality.
+                </p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <label className={label}>State{select(areaState, (v) => { setAreaState(v); setAreaCity(""); }, geo.states)}</label>
+                  <label className={label}>City{select(areaCity, setAreaCity, areaCities, { disabled: !areaState })}</label>
+                  <label className={`${label} sm:col-span-2`}>
+                    Areas in this city
+                    <textarea
+                      value={areaText}
+                      onChange={(e) => setAreaText(e.target.value)}
+                      disabled={!areaCity}
+                      rows={2}
+                      placeholder="Andheri East, Bandra West, Kurla — comma or one per line"
+                      className={`${input} border-verdigris-300/15 disabled:opacity-50`}
+                    />
+                  </label>
+                  <div className="sm:col-span-2 flex justify-end">
+                    <button type="button" onClick={addArea} disabled={!areaCity}
+                      className="rounded-lg border border-verdigris-300/25 px-3 py-1.5 text-sm text-verdigris-100 hover:border-verdigris-300/50 disabled:opacity-40">
+                      Add territory
+                    </button>
+                  </div>
                 </div>
                 {areas.length ? (
-                  <ul className="mt-3 flex flex-wrap gap-1.5">
-                    {areas.map((a, i) => (
-                      <li key={i} className="inline-flex items-center gap-1 rounded-full border border-verdigris-300/25 bg-ink-900/50 py-0.5 pl-2.5 pr-1 text-xs text-verdigris-100">
-                        {a.label}
-                        <button type="button" aria-label={`Remove ${a.label}`} onClick={() => setAreas(areas.filter((_, j) => j !== i))}
-                          className="grid h-4 w-4 place-items-center rounded-full text-verdigris-200/60 hover:bg-verdigris-100/10 hover:text-verdigris-50">
-                          <XIcon className="h-3 w-3" />
-                        </button>
+                  <ul className="mt-3 space-y-2">
+                    {areas.map((a) => (
+                      <li key={a.cityId} className="rounded-lg border border-verdigris-300/15 bg-ink-900/40 px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm text-verdigris-50">
+                            {a.cityName} <span className="text-verdigris-200/50">· {a.stateName}</span>
+                          </span>
+                          <button type="button" aria-label={`Remove ${areaLabel(a)}`} onClick={() => setAreas(areas.filter((x) => x.cityId !== a.cityId))}
+                            className="grid h-5 w-5 place-items-center rounded-full text-verdigris-200/60 hover:bg-verdigris-100/10 hover:text-verdigris-50">
+                            <XIcon className="h-3 w-3" />
+                          </button>
+                        </div>
+                        {a.areas.length ? (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {a.areas.map((loc) => (
+                              <span key={loc} className="inline-flex items-center gap-1 rounded-full border border-verdigris-300/25 py-0.5 pl-2 pr-1 text-[11px] text-verdigris-100">
+                                {loc}
+                                <button type="button" aria-label={`Remove ${loc}`} onClick={() => removeLocality(a.cityId, loc)}
+                                  className="grid h-3.5 w-3.5 place-items-center rounded-full text-verdigris-200/60 hover:text-verdigris-50">
+                                  <XIcon className="h-2.5 w-2.5" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        ) : <p className="mt-1 text-[11px] text-verdigris-200/45">Whole city</p>}
                       </li>
                     ))}
                   </ul>

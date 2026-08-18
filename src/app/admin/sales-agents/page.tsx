@@ -23,7 +23,7 @@ export default async function SalesAgentsPage() {
   if (!guard.ok) return <Denied what="sales agents" />;
 
   const gate = await importerGateFor(guard.actor);
-  if (gate.kind === "importer" && !gate.verified) redirect("/admin/company");
+  if (gate.kind === "importer" && !gate.verified) redirect("/admin");
 
   const wide = guard.grant.scope === "ALL";
   const importerId = wide ? null : importerIdOf(guard.actor);

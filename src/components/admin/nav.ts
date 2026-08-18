@@ -35,7 +35,7 @@ export type AdminNavItem = {
    * Whether an OWN-scoped grant is enough to earn this entry.
    *
    * Off by default — see `visibleNav`. On for the importer's own
-   * screens: "My company" and "Sales agents" are precisely the things an
+   * screens: "Sales agents" is precisely the thing an
    * IMPORTER does over their own record, so OWN is the scope that means
    * yes there, not the scope that means no.
    */
@@ -112,19 +112,12 @@ export const MASTER_ITEMS: AdminNavItem[] = [
 ];
 
 /**
- * "Importers & agents". The super admin sees both lists; an importer
- * sees their own company profile and their own sales agents. Same
- * section, different leaves — the sidebar shows what the role earned.
+ * "Importers & agents". The super admin sees both lists; an importer sees
+ * only their own sales agents — their company profile is their dashboard,
+ * not a menu entry. Same section, different leaves.
  */
 export const IMPORTER_ITEMS: AdminNavItem[] = [
   { href: "/admin/importers", label: "Importers", permission: "importer.read", icon: "box" },
-  {
-    href: "/admin/company",
-    label: "My company",
-    permission: "importer.update",
-    own: true,
-    icon: "building",
-  },
   {
     href: "/admin/sales-agents",
     label: "Sales agents",
@@ -139,7 +132,7 @@ export const ADMIN_NAV: AdminNavNode[] = [
   {
     label: "Importers & agents",
     icon: "box",
-    match: "/admin/(importers|company|sales-agents)",
+    match: "/admin/(importers|sales-agents)",
     children: IMPORTER_ITEMS,
   },
   { href: "/admin/users", label: "Users", permission: "user.read", icon: "shield" },
@@ -168,7 +161,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = ADMIN_NAV.flatMap((node) =>
  * OWN scope never counts, except on an entry that says `own: true`. An
  * IMPORTER genuinely holds `importer.read` and `user.read` — over their
  * own record and their own account — and the Importers and Users lists
- * are not that. Their "My company" and "Sales agents" screens are, and
+ * are not that. Their "Sales agents" screen is, and
  * only those entries opt in.
  */
 export function visibleNav(

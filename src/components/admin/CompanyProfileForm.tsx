@@ -295,7 +295,7 @@ export default function CompanyProfileForm({
             {busy === "save" ? <Spinner className="h-3.5 w-3.5" /> : null}
             Save
           </button>
-          {!verified ? (
+          {!verified && profile.status !== "SUSPENDED" ? (
             <button
               type="button"
               onClick={submit}
@@ -319,7 +319,9 @@ export default function CompanyProfileForm({
           <p className="mt-3 text-sm text-verdigris-200/75">
             {verified
               ? "Your company is verified. Everything in the portal is open to you."
-              : submitted
+              : profile.status === "SUSPENDED"
+                ? "Your company has been suspended by the warehouse. Contact them to have it reinstated."
+                : submitted
                 ? "Our team is reviewing your profile. You will get a notification and an email when it is done."
                 : profile.kycStatus === "REJECTED"
                   ? "Your profile was returned. Read the remarks below, correct the details and resubmit."

@@ -39,15 +39,18 @@ export default async function AdminLayout({ children }: { children: ReactNode })
 
   /**
    * An importer who has not been verified yet gets exactly one screen:
-   * their company profile. The sidebar is cut down here, on the server,
-   * and the shell renders a lock card for any other route — the pages
-   * refuse on their own as well, so this is presentation, not the guard.
+   * the dashboard, which for an importer IS their company profile. The
+   * sidebar is cut down here, on the server, and the shell renders a
+   * lock card for any other route — the pages refuse on their own as
+   * well, so this is presentation, not the guard.
    */
   const gate = await importerGateFor(actor);
   const lock =
-    gate.kind === "importer" ? { verified: gate.verified, kycStatus: gate.kycStatus } : null;
+    gate.kind === "importer"
+      ? { verified: gate.verified, kycStatus: gate.kycStatus, status: gate.status }
+      : null;
   if (lock && !lock.verified) {
-    items = items.filter((i) => i.href === "/admin/company");
+    items = items.filter((i) => i.href === "/admin");
   }
 
   if (items.length === 0) {
