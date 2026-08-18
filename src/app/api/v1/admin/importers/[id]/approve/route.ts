@@ -4,6 +4,7 @@ import { type NextRequest } from "next/server";
 import { getDb } from "@/db";
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { auditQuietly } from "@/lib/audit";
+import { loadImporterProfile, missingFields } from "@/lib/importer/profile";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { announce } from "@/lib/notify/announce";
@@ -89,14 +90,34 @@ export async function POST(
 
       // Checked before the update so a retired city comes back as a field
       // message rather than a foreign-key violation the user cannot read.
-      const city = await getDb().execute<{ id: number; is_active: boolean }>(sql`
-        select id, is_active from wms.city
-         where id = ${input.cityId} and deleted_at is null
-      `);
-      if (city.length === 0 || !city[0]!.is_active) {
-        return fail("VALIDATION_FAILED", "Choose a city that is in use", requestId, {
-          fields: { cityId: "Not an active city" },
-        });
+      if (input.cityId !== undefined) {
+        const city = await getDb().execute<{ id: number; is_active: boolean }>(sql`
+          select id, is_active from wms.city
+           where id = ${input.cityId} and deleted_at is null
+        `);
+        if (city.length === 0 || !city[0]!.is_active) {
+          return fail("VALIDATION_FAILED", "Choose a city that is in use", requestId, {
+            fields: { cityId: "Not an active city" },
+          });
+        }
+      }
+
+      // The importer completes their own profile now; approval confirms
+      // it. Anything sent here overrides a field, anything not sent is
+      // kept. Whatever the merge produces must be complete — the
+      // database's importer_complete_before_active check is the last
+      // line, and this answers first with the field names.
+      const current = await loadImporterProfile(id);
+      if (!current) return fail("NOT_FOUND", "No such importer", requestId);
+      const merged = { ...current.profile, ...Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) };
+      const missing = missingFields(merged as typeof current.profile);
+      if (missing.length > 0) {
+        return fail(
+          "VALIDATION_FAILED",
+          "The importer has not completed their profile yet — " + missing.join(", ") + " missing.",
+          requestId,
+          { fields: Object.fromEntries(missing.map((k) => [k, "Required before approval"])) },
+        );
       }
 
       const rows = await getDb().execute<{
@@ -107,13 +128,13 @@ export async function POST(
         contact_email: string;
       }>(sql`
         update wms.importer
-           set legal_name       = ${input.legalName},
-               entity_type      = ${input.entityType},
-               address          = ${input.address},
-               city_id          = ${input.cityId},
-               pincode          = ${input.pincode}::wms.pincode_in,
-               gstin            = ${input.gstin ?? null}::wms.gstin,
-               pan              = ${input.pan ?? null}::wms.pan_no,
+           set legal_name       = coalesce(${input.legalName ?? null}, legal_name),
+               entity_type      = coalesce(${input.entityType ?? null}, entity_type),
+               address          = coalesce(${input.address ?? null}, address),
+               city_id          = coalesce(${input.cityId ?? null}, city_id),
+               pincode          = coalesce(${input.pincode ?? null}::wms.pincode_in, pincode),
+               gstin            = coalesce(${input.gstin ?? null}::wms.gstin, gstin),
+               pan              = coalesce(${input.pan ?? null}::wms.pan_no, pan),
                credit_limit     = coalesce(${input.creditLimit ?? null}, credit_limit),
                credit_days      = coalesce(${input.creditDays ?? null}, credit_days),
                notes            = coalesce(${input.notes ?? null}, notes),

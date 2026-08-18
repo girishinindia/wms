@@ -5,12 +5,14 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import {
   BoxIcon,
+  BuildingIcon,
   ChartIcon,
   CheckShieldIcon,
   DatabaseIcon,
   GlobeIcon,
   GridIcon,
   LayersIcon,
+  LockIcon,
   MapIcon,
   MenuIcon,
   MoonIcon,
@@ -18,6 +20,7 @@ import {
   SidebarIcon,
   SunIcon,
   TruckIcon,
+  UsersIcon,
 } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
@@ -35,7 +38,8 @@ import {
   type Theme,
 } from "@/lib/admin/prefs";
 
-import { groupNav, isGroup, type AdminNavItem } from "./nav";
+import { groupNav, inSection, isGroup, type AdminNavItem } from "./nav";
+import NotificationBell from "./NotificationBell";
 import RouterRecovery, { rememberIntent } from "./RouterRecovery";
 
 /**
@@ -58,6 +62,8 @@ const ICONS = {
   map: MapIcon,
   grid: GridIcon,
   truck: TruckIcon,
+  users: UsersIcon,
+  building: BuildingIcon,
 } as const;
 
 export type AdminUser = {
@@ -66,13 +72,29 @@ export type AdminUser = {
   roles: string[];
 };
 
+/**
+ * Where an importer stands. Absent for platform users. When `verified`
+ * is false the sidebar has already been cut down to the company profile
+ * (the layout did that), and any other route renders the lock card
+ * below instead of its page — the pages refuse on the server too; this
+ * only makes the refusal readable.
+ */
+export type ImporterLock = {
+  verified: boolean;
+  kycStatus: string;
+};
+
 export default function AdminShell({
   items,
   user,
+  lock = null,
+  showBell = true,
   children,
 }: {
   items: AdminNavItem[];
   user: AdminUser;
+  lock?: ImporterLock | null;
+  showBell?: boolean;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -141,7 +163,7 @@ export default function AdminShell({
   const nodes = groupNav(items);
 
   const isOpen = (label: string, match: string) =>
-    openGroups[label] ?? pathname.startsWith(match);
+    openGroups[label] ?? inSection(match, pathname);
 
   /** Flip a group, starting from whatever it is currently showing —
    *  which is route-derived until someone touches it. */
@@ -150,7 +172,7 @@ export default function AdminShell({
     const match = node && isGroup(node) ? node.match : null;
     setOpenGroups((g) => ({
       ...g,
-      [label]: !(g[label] ?? (match ? pathname.startsWith(match) : false)),
+      [label]: !(g[label] ?? (match ? inSection(match, pathname) : false)),
     }));
   };
 
@@ -254,7 +276,7 @@ export default function AdminShell({
                   onClick={() => toggleGroup(node.label)}
                   aria-expanded={isOpen(node.label, node.match)}
                   className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                    pathname.startsWith(node.match)
+                    inSection(node.match, pathname)
                       ? "text-verdigris-50"
                       : "text-verdigris-200/70 hover:bg-verdigris-100/5 hover:text-verdigris-100"
                   }`}
@@ -386,6 +408,8 @@ export default function AdminShell({
               </button>
             </div>
 
+            {showBell ? <NotificationBell /> : null}
+
             <button
               type="button"
               onClick={switchTheme}
@@ -399,7 +423,38 @@ export default function AdminShell({
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+        {lock && !lock.verified ? (
+          <div className="border-b border-amber-400/25 bg-amber-400/10 px-4 py-2 text-sm text-amber-100 sm:px-8">
+            {lock.kycStatus === "SUBMITTED"
+              ? "Your company profile is with our team for verification. You will be able to use the rest of the portal once it is approved."
+              : lock.kycStatus === "REJECTED"
+                ? "Your company profile was returned with remarks. Fix them and submit again."
+                : "Complete your company profile and submit it for verification to unlock the portal."}
+          </div>
+        ) : null}
+
+        <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">
+          {lock && !lock.verified && !pathname.startsWith("/admin/company") ? (
+            <div className="mx-auto mt-10 max-w-md rounded-2xl border border-verdigris-300/10 bg-ink-850 p-8 text-center card-shadow">
+              <span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-amber-400/15 text-amber-300">
+                <LockIcon className="h-5 w-5" />
+              </span>
+              <h1 className="mt-4 text-lg font-semibold text-verdigris-50">Not yet verified</h1>
+              <p className="mt-2 text-sm text-verdigris-200/70">
+                This part of the portal opens after a super admin verifies your company. Complete
+                your profile and submit it — you will be notified when it is approved.
+              </p>
+              <a
+                href="/admin/company"
+                className="mt-6 inline-block rounded-xl bg-verdigris-400 px-5 py-2.5 text-sm font-semibold text-ink-900 transition-colors hover:bg-patina"
+              >
+                Go to my company profile
+              </a>
+            </div>
+          ) : (
+            children
+          )}
+        </main>
       </div>
     </div>
   );

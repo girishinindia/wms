@@ -216,3 +216,18 @@ export const MoonIcon = (p: P) => (
     <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" />
   </svg>
 );
+
+export const UsersIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <circle cx="9" cy="8" r="3.2" />
+    <path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
+    <path d="M15.5 5.2a3.2 3.2 0 0 1 0 5.6M17.5 13.6a5.5 5.5 0 0 1 3 5.4" />
+  </svg>
+);
+
+export const BuildingIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M4 20V5.5A1.5 1.5 0 0 1 5.5 4h7A1.5 1.5 0 0 1 14 5.5V20M14 10h4.5A1.5 1.5 0 0 1 20 11.5V20M3 20h18" />
+    <path d="M7 8h2M7 11.5h2M7 15h2M10 20v-3h-2v3" />
+  </svg>
+);

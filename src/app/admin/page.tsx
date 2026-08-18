@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { Card, Empty, PageHeader, Stat, StatusBadge } from "@/components/admin/ui";
 import { getDb } from "@/db";
-import { currentActor } from "@/lib/auth/guard";
+import { currentActor, importerGateFor } from "@/lib/auth/guard";
 import { sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +35,11 @@ export default async function AdminDashboard() {
     (p) => p.permission === "importer.read" && p.scope !== "OWN",
   );
 
+  // An importer gets their own dashboard: their company, their people.
+  // The platform counts below are nobody's business but the operator's.
+  const gate = actor ? await importerGateFor(actor) : { kind: "none" as const };
+  if (gate.kind === "importer") return <ImporterDashboard importerId={gate.importerId} />;
+
   const [counts] = await getDb().execute<Counts>(sql`
     select
       (select count(*) from wms.importer where status = 'PENDING' and deleted_at is null)
@@ -58,7 +63,7 @@ export default async function AdminDashboard() {
         select id, code, company_name, contact_person, kyc_status, created_at
           from wms.importer
          where status = 'PENDING' and deleted_at is null
-         order by created_at
+         order by (kyc_status = 'SUBMITTED') desc, created_at
          limit 8
       `)
     : [];
@@ -74,7 +79,7 @@ export default async function AdminDashboard() {
         <Stat
           label="Awaiting approval"
           value={counts?.importers_pending ?? 0}
-          note="importers registered and verified"
+          note="registered; profiles submitted are reviewed first"
           tone={(counts?.importers_pending ?? 0) > 0 ? "warn" : "default"}
         />
         <Stat label="Importers" value={counts?.importers_total ?? 0} note="all statuses" />
@@ -146,6 +151,53 @@ export default async function AdminDashboard() {
           )}
         </Card>
       ) : null}
+    </>
+  );
+}
+
+async function ImporterDashboard({ importerId }: { importerId: number }) {
+  const [row] = await getDb().execute<{
+    code: string;
+    company_name: string;
+    status: string;
+    kyc_status: string;
+    agents: number;
+    agents_active: number;
+  }>(sql`
+    select i.code, i.company_name, i.status::text as status, i.kyc_status,
+           (select count(*) from wms.sales_agent a where a.importer_id = i.id and a.deleted_at is null)::int as agents,
+           (select count(*) from wms.sales_agent a where a.importer_id = i.id and a.deleted_at is null and a.is_active)::int as agents_active
+      from wms.importer i where i.id = ${importerId}
+  `);
+  const verified = row?.status === "ACTIVE";
+  return (
+    <>
+      <PageHeader
+        title={row?.company_name ?? "Dashboard"}
+        subtitle={row ? `${row.code} · your company at a glance` : undefined}
+      />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat
+          label="Verification"
+          value={(row?.kyc_status ?? "NOT_STARTED").toLowerCase().replace(/_/g, " ")}
+          note={verified ? "your company is verified" : "complete and submit your profile"}
+          tone={verified ? "default" : "warn"}
+        />
+        <Stat label="Company status" value={(row?.status ?? "—").toLowerCase()} />
+        <Stat label="Sales agents" value={row?.agents ?? 0} note={`${row?.agents_active ?? 0} active`} />
+      </div>
+      <Card className="mt-6 p-5">
+        <div className="flex flex-wrap gap-3">
+          <a href="/admin/company" className="rounded-xl bg-verdigris-400 px-4 py-2 text-sm font-semibold text-ink-900 transition-colors hover:bg-patina">
+            My company
+          </a>
+          {verified ? (
+            <a href="/admin/sales-agents" className="rounded-xl border border-verdigris-300/20 px-4 py-2 text-sm text-verdigris-100 hover:border-verdigris-300/45">
+              Sales agents
+            </a>
+          ) : null}
+        </div>
+      </Card>
     </>
   );
 }

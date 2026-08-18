@@ -1,8 +1,10 @@
 import "server-only";
 
+import { sql } from "drizzle-orm";
 import { cookies, headers } from "next/headers";
 import { cache } from "react";
 
+import { getDb } from "@/db";
 import { HandledError } from "@/lib/api/respond";
 import { auditQuietly } from "@/lib/audit";
 import { authEnv } from "@/lib/env";
@@ -214,4 +216,76 @@ export async function pageGuard(
   const grant = grantFor(actor, permission);
   if (!grant) return { ok: false, reason: "forbidden" };
   return { ok: true, actor, grant };
+}
+
+/**
+ * The importer this actor belongs to, if their roles are importer-domain
+ * (IMPORTER or SALES_AGENT). Null for platform and warehouse people.
+ */
+export function importerIdOf(actor: Actor): number | null {
+  const binding = actor.roles.find(
+    (r) => (r.role === "IMPORTER" || r.role === "SALES_AGENT") && r.importerId !== null,
+  );
+  return binding?.importerId ?? null;
+}
+
+export type ImporterGate =
+  | { kind: "none" }
+  | {
+      kind: "importer";
+      importerId: number;
+      status: string;
+      kycStatus: string;
+      /** True once the company is ACTIVE — the whole role unlocks. */
+      verified: boolean;
+      isOwner: boolean;
+    };
+
+/**
+ * Where an importer-domain actor stands: verified, or still on the
+ * profile step. Platform users are `none`.
+ *
+ * This is the one gate for "importer can use the portal only after
+ * verification": the layout uses it to decide what the sidebar offers,
+ * and `requireVerifiedImporter` uses it on the API side. One answer.
+ */
+export async function importerGateFor(actor: Actor): Promise<ImporterGate> {
+  const importerId = importerIdOf(actor);
+  if (importerId === null) return { kind: "none" };
+  const rows = await getDb().execute<{ status: string; kyc_status: string }>(sql`
+    select status::text as status, kyc_status from wms.importer
+     where id = ${importerId} and deleted_at is null
+  `);
+  const row = rows[0];
+  const status = row?.status ?? "CLOSED";
+  return {
+    kind: "importer",
+    importerId,
+    status,
+    kycStatus: row?.kyc_status ?? "NOT_STARTED",
+    verified: status === "ACTIVE",
+    isOwner: actor.roles.some((r) => r.role === "IMPORTER" && r.importerId === importerId),
+  };
+}
+
+/**
+ * Signed in, holding the permission, AND — for an importer-domain
+ * actor — belonging to a company that has been verified. A platform
+ * user passes straight through; the permission check already covers
+ * them. Used by every importer-facing write except the profile itself,
+ * which is exactly the thing an unverified importer must be able to do.
+ */
+export async function requireVerifiedImporter(
+  permission: string,
+  options: RequireOptions = {},
+): Promise<{ actor: Actor; grant: Grant; gate: ImporterGate }> {
+  const { actor, grant } = await requirePermission(permission, options);
+  const gate = await importerGateFor(actor);
+  if (gate.kind === "importer" && !gate.verified) {
+    throw new HandledError(
+      "FORBIDDEN",
+      "Your company profile has not been verified yet. Complete it and wait for approval.",
+    );
+  }
+  return { actor, grant, gate };
 }

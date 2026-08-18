@@ -5,6 +5,7 @@ import ImporterReview, { type CityOption } from "@/components/admin/ImporterRevi
 import { Card, Denied, Facts, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { getDb } from "@/db";
 import { grantFor, pageGuard } from "@/lib/auth/guard";
+import { missingFields } from "@/lib/importer/profile";
 import { sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -35,9 +36,14 @@ export default async function ImporterDetailPage({
       code: string;
       company_name: string;
       legal_name: string | null;
+      trade_name: string | null;
       entity_type: string | null;
       address: string | null;
+      landmark: string | null;
+      area: string | null;
+      city_id: number | null;
       city_name: string | null;
+      state_name: string | null;
       pincode: string | null;
       gstin: string | null;
       pan: string | null;
@@ -55,8 +61,9 @@ export default async function ImporterDetailPage({
       user_email_verified: boolean | null;
       user_mobile_verified: boolean | null;
     }>(sql`
-      select i.id, i.code, i.company_name, i.legal_name, i.entity_type, i.address,
-             c.name as city_name, i.pincode::text as pincode,
+      select i.id, i.code, i.company_name, i.legal_name, i.trade_name, i.entity_type, i.address,
+             i.landmark, i.area, i.city_id, c.name as city_name, st.name as state_name,
+             i.pincode::text as pincode,
              i.gstin::text as gstin, i.pan::text as pan,
              i.contact_person, i.contact_email::text as contact_email,
              i.contact_mobile::text as contact_mobile,
@@ -67,6 +74,7 @@ export default async function ImporterDetailPage({
              u.mobile_verified_at is not null as user_mobile_verified
         from wms.importer i
         left join wms.city  c on c.id = i.city_id
+        left join wms.state st on st.id = c.state_id
         left join wms.users d on d.id = coalesce(i.approved_by, i.rejected_by)
         -- The account that registered: the only live IMPORTER assignment
         -- for this importer. There is exactly one at sign-up.
@@ -92,6 +100,33 @@ export default async function ImporterDetailPage({
 
   const row = rows[0];
   if (!row) notFound();
+
+  const submittedProfile = {
+    legalName: row.legal_name ?? "",
+    tradeName: row.trade_name ?? "",
+    entityType: row.entity_type ?? "",
+    address: row.address ?? "",
+    landmark: row.landmark ?? "",
+    area: row.area ?? "",
+    cityId: row.city_id ? String(row.city_id) : "",
+    cityLabel: row.city_name ? `${row.city_name}${row.state_name ? `, ${row.state_name}` : ""}` : "",
+    pincode: row.pincode ?? "",
+    gstin: row.gstin ?? "",
+    pan: row.pan ?? "",
+  };
+  const missing = missingFields({
+    companyName: row.company_name,
+    legalName: row.legal_name ?? undefined,
+    entityType: row.entity_type ?? undefined,
+    address: row.address ?? undefined,
+    cityId: row.city_id ?? undefined,
+    pincode: row.pincode ?? undefined,
+    gstin: row.gstin ?? undefined,
+    pan: row.pan ?? undefined,
+    contactPerson: row.contact_person,
+    contactEmail: row.contact_email,
+    contactMobile: row.contact_mobile,
+  });
 
   const cityOptions: CityOption[] = cities.map((c) => ({
     id: c.id,
@@ -161,6 +196,10 @@ export default async function ImporterDetailPage({
           companyName={row.company_name}
           cities={cityOptions}
           canDecide={grantFor(guard.actor, "importer.approve") !== null}
+          initial={submittedProfile}
+          kycStatus={row.kyc_status}
+          missing={missing}
+          rejectionReason={row.rejection_reason}
         />
       ) : (
         <Card className="p-6">

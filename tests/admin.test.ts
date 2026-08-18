@@ -126,16 +126,38 @@ describe("admin navigation: grouping", () => {
 
   it("drops the group entirely rather than rendering an empty expander", () => {
     const warehouseAdmin = [
-      { permission: "importer.read", scope: "WAREHOUSE" as const },
       { permission: "user.read", scope: "WAREHOUSE" as const },
     ];
     const nodes = groupNav(visibleNav(warehouseAdmin));
+    // No importer entry earned → no "Importers & agents" group; no
+    // master entry earned → no "Master" group.
     expect(nodes.some((n) => isGroup(n))).toBe(false);
-    expect(nodes.map((n) => (isGroup(n) ? n.label : n.label))).toEqual([
-      "Dashboard",
-      "Importers",
-      "Users",
+    expect(nodes.map((n) => n.label)).toEqual(["Dashboard", "Users"]);
+  });
+
+  it("shows an importer only their own screens, under the importers group", () => {
+    const importer = [
+      { permission: "importer.read", scope: "OWN" as const },
+      { permission: "importer.update", scope: "OWN" as const },
+      { permission: "sales_agent.read", scope: "OWN" as const },
+      { permission: "user.read", scope: "OWN" as const },
+      { permission: "master.city.read", scope: "ALL" as const },
+    ];
+    const leaves = visibleNav(importer).map((i) => i.label);
+    expect(leaves).toEqual(["Dashboard", "My company", "Sales agents"]);
+    const nodes = groupNav(visibleNav(importer));
+    const group = nodes.find((n) => isGroup(n) && n.label === "Importers & agents");
+    expect(group).toBeDefined();
+    expect(isGroup(group!) && group.children.map((c) => c.href)).toEqual([
+      "/admin/company",
+      "/admin/sales-agents",
     ]);
+  });
+
+  it("never lets OWN scope earn a platform list", () => {
+    // importer.read at OWN is the importer's own record, not the list.
+    expect(visibleNav([{ permission: "importer.read", scope: "OWN" }])).toEqual([]);
+    expect(visibleNav([{ permission: "user.read", scope: "OWN" }])).toEqual([]);
   });
 
   it("has a nav entry for every registry resource, and vice versa", () => {

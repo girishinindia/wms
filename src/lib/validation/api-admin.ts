@@ -106,11 +106,18 @@ export const updateCityRequestSchema = z
  */
 export const approveImporterRequestSchema = z
   .object({
-    legalName: z.string().trim().min(2).max(160),
-    entityType: z.enum(ENTITY_TYPES),
-    address: z.string().trim().min(6).max(400),
-    cityId: z.number().int().positive(),
-    pincode,
+    /**
+     * All optional now: the importer completes their own profile and
+     * submits it, and approval simply confirms what is there. A super
+     * admin may still correct a field on the way through. Whatever is
+     * not sent is kept from the row, and the database's
+     * `importer_complete_before_active` check is the final word.
+     */
+    legalName: z.string().trim().min(2).max(160).optional(),
+    entityType: z.enum(ENTITY_TYPES).optional(),
+    address: z.string().trim().min(6).max(400).optional(),
+    cityId: z.number().int().positive().optional(),
+    pincode: pincode.optional(),
     gstin: optional(gstin),
     pan: optional(pan),
     creditLimit: z.number().min(0).max(99_999_999).optional(),
@@ -186,4 +193,4 @@ export const okAdminResponseSchema = z
   .object({ ok: z.literal(true) })
   .openapi("OkAdminResponse");
 
-export { ENTITY_TYPES };
+export { ENTITY_TYPES, pincode, gstin, pan, optional };

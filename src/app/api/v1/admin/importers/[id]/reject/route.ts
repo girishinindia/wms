@@ -81,8 +81,10 @@ export async function POST(
 
       const rows = await getDb().execute<{ id: number; code: string }>(sql`
         update wms.importer
-           set status           = 'REJECTED',
-               rejection_reason = ${reason},
+           -- The company stays PENDING: a rejection is "fix these and
+           -- resubmit", not the end. kyc_status carries the verdict and
+           -- the reason is shown to the importer on their profile.
+           set rejection_reason = ${reason},
                rejected_by      = ${actor.session.userId},
                rejected_at      = now(),
                kyc_status       = 'REJECTED',

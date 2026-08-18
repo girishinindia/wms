@@ -39,6 +39,13 @@ import {
   setUserStatusRequestSchema,
   updateCityRequestSchema,
 } from "@/lib/validation/api-admin";
+import {
+  importerProfilePatchSchema,
+  importerProfileResponseSchema,
+  salesAgentCreateSchema,
+  salesAgentSchema,
+  salesAgentUpdateSchema,
+} from "@/lib/validation/api-importer";
 import { errorSchema } from "@/lib/api/respond";
 import { appEnv } from "@/lib/env";
 
@@ -818,6 +825,257 @@ adminPath({
   responses: { 404: errorResponse("No such user.") },
 });
 
+// ── Importer self-service and sales agents ────────────────────────
+//
+// Same envelope, same guard, different tag: these are the endpoints an
+// IMPORTER (or SALES_AGENT) calls about their own company, and the ones
+// a super admin calls across companies. The Flutter app uses them.
+
+const securedPath = (config: {
+  tag: string;
+  path: string;
+  operationId: string;
+  summary: string;
+  description: string;
+  permission: string;
+  method?: "post" | "get" | "patch" | "delete";
+  request?: z.ZodTypeAny;
+  response: z.ZodTypeAny;
+  params?: z.AnyZodObject;
+  query?: z.AnyZodObject;
+  responses?: Record<number, ReturnType<typeof errorResponse>>;
+}) => {
+  registry.registerPath({
+    method: config.method ?? "post",
+    path: config.path,
+    operationId: config.operationId,
+    tags: [config.tag],
+    summary: config.summary,
+    description: `${config.description}\n\n**Requires** \`${config.permission}\`.`,
+    security: AUTHENTICATED,
+    request: {
+      ...(config.params ? { params: config.params } : {}),
+      ...(config.query ? { query: config.query } : {}),
+      ...(config.request
+        ? { body: { required: true, content: { "application/json": { schema: config.request } } } }
+        : {}),
+    },
+    responses: {
+      200: { description: "Success.", content: { "application/json": { schema: config.response } } },
+      401: errorResponse("No session. Sign in."),
+      403: errorResponse("Signed in, but not holding the permission — or, for an importer, not verified yet."),
+      422: errorResponse("The body failed validation. `error.fields` is keyed by field name."),
+      ...(config.responses ?? {}),
+    },
+  });
+};
+
+const kycSubmitResponse = z
+  .object({ kycStatus: z.string(), resubmitted: z.boolean() })
+  .openapi("ImporterKycSubmitResponse");
+
+securedPath({
+  tag: "Importer",
+  path: "/api/v1/importer/me",
+  method: "get",
+  operationId: "getMyImporter",
+  summary: "My company profile",
+  permission: "importer.read",
+  description:
+    "The importer named on the caller's own role assignment — never an id " +
+    "from the request. Includes `complete` and `missing`, so the app can " +
+    "show the same checklist the portal does.",
+  response: importerProfileResponseSchema,
+  responses: { 404: errorResponse("The caller is not linked to an importer.") },
+});
+
+securedPath({
+  tag: "Importer",
+  path: "/api/v1/importer/me",
+  method: "patch",
+  operationId: "patchMyImporter",
+  summary: "Save part of my company profile",
+  permission: "importer.update",
+  description:
+    "Any subset of fields; half-finished forms are fine. This is the one " +
+    "importer endpoint that does not require verification, because " +
+    "completing the profile is how you get verified. After the company " +
+    "is ACTIVE the identity fields (legal name, entity type, GSTIN, PAN) " +
+    "are locked and answer 409.",
+  request: importerProfilePatchSchema,
+  response: importerProfileResponseSchema,
+  responses: { 409: errorResponse("Locked field after verification, or a GSTIN/PAN already registered.") },
+});
+
+securedPath({
+  tag: "Importer",
+  path: "/api/v1/importer/me/submit",
+  operationId: "submitMyImporterKyc",
+  summary: "Submit my profile for verification",
+  permission: "importer.update",
+  description:
+    "Refuses while any required field is missing (`error.fields` names " +
+    "them). On success `kyc_status` becomes SUBMITTED and every super " +
+    "admin is notified in-app, by email and by push. A returned profile " +
+    "can be fixed and submitted again.",
+  response: kycSubmitResponse,
+  responses: { 409: errorResponse("Already submitted, or already verified.") },
+});
+
+const agentIdParam = z.object({ id: z.string().openapi({ example: "3" }) });
+const agentListResponse = z.object({ agents: z.array(salesAgentSchema) }).openapi("SalesAgentListResponse");
+const agentCreateResponse = z
+  .object({
+    agent: salesAgentSchema,
+    /** "created" (password emailed), "emailed" or "skipped" — or a note
+     *  when the email could not be sent. */
+    login: z.string(),
+  })
+  .openapi("SalesAgentCreateResponse");
+
+securedPath({
+  tag: "Sales agents",
+  path: "/api/v1/sales-agents",
+  method: "get",
+  operationId: "listSalesAgents",
+  summary: "List sales agents",
+  permission: "sales_agent.read",
+  description:
+    "An importer sees their own; a super admin sees all, or one importer's " +
+    "with `?importerId=`. A sales agent sees their own company's.",
+  query: z.object({ importerId: z.string().optional().openapi({ example: "12" }) }),
+  response: agentListResponse,
+});
+
+securedPath({
+  tag: "Sales agents",
+  path: "/api/v1/sales-agents",
+  operationId: "createSalesAgent",
+  summary: "Add a sales agent",
+  permission: "sales_agent.create",
+  description:
+    "The importer must be verified (ACTIVE) — until then this is a 403 " +
+    "with a message saying so. `importerId` is honoured only for a " +
+    "super admin; an importer's own request is pinned to their company. " +
+    "With `createLogin` (default true, needs an email) a users row is " +
+    "created with the SALES_AGENT role and a temporary password is " +
+    "emailed. `salesAreas` are picked from the state and city masters.",
+  request: salesAgentCreateSchema,
+  response: agentCreateResponse,
+  responses: { 409: errorResponse("Mobile, email or PAN already used by another agent of this importer.") },
+});
+
+securedPath({
+  tag: "Sales agents",
+  path: "/api/v1/sales-agents/{id}",
+  method: "get",
+  operationId: "getSalesAgent",
+  summary: "One sales agent",
+  permission: "sales_agent.read",
+  description: "Own company only, unless the grant is ALL.",
+  params: agentIdParam,
+  response: salesAgentSchema,
+  responses: { 404: errorResponse("No such sales agent.") },
+});
+
+securedPath({
+  tag: "Sales agents",
+  path: "/api/v1/sales-agents/{id}",
+  method: "patch",
+  operationId: "updateSalesAgent",
+  summary: "Edit a sales agent, or activate/deactivate",
+  permission: "sales_agent.update",
+  description:
+    "Any subset. `isActive: false` also revokes the agent's live sessions.",
+  params: agentIdParam,
+  request: salesAgentUpdateSchema,
+  response: salesAgentSchema,
+  responses: { 404: errorResponse("No such sales agent.") },
+});
+
+securedPath({
+  tag: "Sales agents",
+  path: "/api/v1/sales-agents/{id}",
+  method: "delete",
+  operationId: "deleteSalesAgent",
+  summary: "Delete a sales agent",
+  permission: "sales_agent.delete",
+  description: "Soft delete; the login is suspended and the audit log keeps the values.",
+  params: agentIdParam,
+  response: okAdminResponseSchema,
+  responses: { 404: errorResponse("No such sales agent.") },
+});
+
+securedPath({
+  tag: "Sales agents",
+  path: "/api/v1/sales-agents/bulk",
+  operationId: "bulkSalesAgents",
+  summary: "Activate, deactivate or delete several",
+  permission: "sales_agent.update",
+  description: "Rows outside the caller's scope are skipped, with a reason, never refused as a whole.",
+  request: z
+    .object({
+      action: z.enum(["activate", "deactivate", "delete"]),
+      ids: z.array(z.number().int().positive()).min(1).max(200),
+    })
+    .openapi("SalesAgentBulkRequest"),
+  response: z
+    .object({
+      action: z.string(),
+      done: z.array(z.number().int()),
+      skipped: z.array(z.object({ id: z.number().int(), reason: z.string() })),
+      notes: z.array(z.object({ id: z.number().int(), note: z.string() })),
+    })
+    .openapi("SalesAgentBulkResponse"),
+});
+
+const notificationItem = z
+  .object({
+    id: z.number().int(),
+    eventKey: z.string(),
+    title: z.string(),
+    body: z.string(),
+    actionUrl: z.string().nullable(),
+    createdAt: z.string(),
+    readAt: z.string().nullable(),
+  })
+  .openapi("NotificationItem");
+
+securedPath({
+  tag: "Notifications",
+  path: "/api/v1/notifications",
+  method: "get",
+  operationId: "listNotifications",
+  summary: "My in-app notifications",
+  permission: "notification.read",
+  description:
+    "Newest first, with the unread count, so a bell needs one call. " +
+    "`?unread=1` returns only unread; `?limit=` up to 50.",
+  query: z.object({
+    unread: z.string().optional().openapi({ example: "1" }),
+    limit: z.string().optional().openapi({ example: "20" }),
+  }),
+  response: z
+    .object({ unread: z.number().int(), items: z.array(notificationItem) })
+    .openapi("NotificationListResponse"),
+});
+
+securedPath({
+  tag: "Notifications",
+  path: "/api/v1/notifications/read",
+  operationId: "markNotificationsRead",
+  summary: "Mark notifications read",
+  permission: "notification.read",
+  description: "Send `{ids:[…]}` or `{all:true}`. Only the caller's own rows are ever touched.",
+  request: z
+    .object({
+      ids: z.array(z.number().int().positive()).max(200).optional(),
+      all: z.boolean().optional(),
+    })
+    .openapi("MarkNotificationsReadRequest"),
+  response: z.object({ marked: z.number().int() }).openapi("MarkNotificationsReadResponse"),
+});
+
 // ── Document ──────────────────────────────────────────────────
 
 /**
@@ -879,6 +1137,19 @@ export function buildOpenApiDocument() {
           "code — `wms.notification_rule` decides who hears about an " +
           "event and on which channels, so changing it is a row rather " +
           "than a deploy.",
+      },
+      {
+        name: "Importer",
+        description:
+          "An importer's own company: read it, complete it, submit it for " +
+          "verification. The portal opens to the importer only once a " +
+          "super admin has approved.",
+      },
+      {
+        name: "Sales agents",
+        description:
+          "An importer's field people, with an optional mobile-app login " +
+          "each. Available to a verified importer and to super admins.",
       },
       {
         name: "Auth",

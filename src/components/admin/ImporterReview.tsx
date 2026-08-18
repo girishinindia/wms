@@ -8,7 +8,7 @@ import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 
-import { Card } from "./ui";
+import { Card, FactList } from "./ui";
 
 /**
  * The decision.
@@ -40,16 +40,51 @@ const ENTITY_TYPES = [
 
 type Errors = Record<string, string>;
 
+export type SubmittedProfile = {
+  legalName: string;
+  tradeName: string;
+  entityType: string;
+  address: string;
+  landmark: string;
+  area: string;
+  cityId: string;
+  cityLabel: string;
+  pincode: string;
+  gstin: string;
+  pan: string;
+};
+
+const LABEL: Record<string, string> = {
+  legalName: "Legal name",
+  entityType: "Entity type",
+  address: "Address",
+  cityId: "City",
+  pincode: "Pincode",
+  gstin: "GSTIN",
+  pan: "PAN",
+};
+
 export default function ImporterReview({
   importerId,
   companyName,
   cities,
   canDecide,
+  initial,
+  kycStatus,
+  missing,
+  rejectionReason,
 }: {
   importerId: number;
   companyName: string;
   cities: CityOption[];
   canDecide: boolean;
+  /** What the importer has saved so far — pre-fills the form and, once
+   *  submitted and complete, is shown read-only for verification. */
+  initial: SubmittedProfile;
+  kycStatus: string;
+  /** Required fields the importer has not filled yet. */
+  missing: string[];
+  rejectionReason: string | null;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -59,15 +94,21 @@ export default function ImporterReview({
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  const submitted = kycStatus === "SUBMITTED";
+  const complete = missing.length === 0;
+  /** Submitted and complete → verify what they sent; otherwise the
+   *  reviewer fills the gaps themselves (an admin-created importer, or
+   *  a phone-and-paper KYC). */
+  const [editing, setEditing] = useState(!(submitted && complete));
 
   const [form, setForm] = useState({
-    legalName: companyName,
-    entityType: "PRIVATE_LIMITED",
-    address: "",
-    cityId: cities[0]?.id ? String(cities[0].id) : "",
-    pincode: "",
-    gstin: "",
-    pan: "",
+    legalName: initial.legalName || companyName,
+    entityType: initial.entityType || "PRIVATE_LIMITED",
+    address: initial.address,
+    cityId: initial.cityId || (cities[0]?.id ? String(cities[0].id) : ""),
+    pincode: initial.pincode,
+    gstin: initial.gstin,
+    pan: initial.pan,
     notes: "",
   });
 
@@ -158,11 +199,67 @@ export default function ImporterReview({
 
   return (
     <Card className="p-6">
-      <h2 className="text-sm font-semibold text-verdigris-50">Complete and approve</h2>
-      <p className="mt-1 text-xs text-verdigris-200/50">
-        Sign-up collects only a company name and a verified contact. These five fields are
-        required before the record can leave pending — the database enforces it.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-verdigris-50">
+            {submitted ? "Submitted for verification" : "Complete and approve"}
+          </h2>
+          <p className="mt-1 text-xs text-verdigris-200/50">
+            {submitted
+              ? "The importer completed their profile and asked to be verified. Check it against their documents, then approve or return it."
+              : kycStatus === "REJECTED"
+                ? "Returned to the importer with remarks; they can fix it and resubmit. You may still complete and approve it yourself."
+                : "The importer has not submitted their profile yet. Wait for them, or fill in what is missing and approve."}
+          </p>
+        </div>
+        {submitted && complete ? (
+          <button
+            type="button"
+            onClick={() => setEditing((v) => !v)}
+            className="rounded-lg border border-verdigris-300/20 px-3 py-1.5 text-xs text-verdigris-100 hover:border-verdigris-300/45"
+          >
+            {editing ? "Show as submitted" : "Edit before approving"}
+          </button>
+        ) : null}
+      </div>
+
+      {!complete && !submitted ? (
+        <p className="mt-3 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+          Still missing: {missing.map((m) => LABEL[m] ?? m).join(", ")}.
+        </p>
+      ) : null}
+      {kycStatus === "REJECTED" && rejectionReason ? (
+        <p className="mt-3 rounded-lg border border-rose-400/25 bg-rose-500/[0.06] px-3 py-2 text-xs text-rose-100">
+          Last remarks: {rejectionReason}
+        </p>
+      ) : null}
+
+      {!editing ? (
+        <div className="mt-5">
+          <FactList
+            items={[
+              { label: "Legal name", value: initial.legalName },
+              { label: "Trade name", value: initial.tradeName || "—" },
+              { label: "Entity type", value: initial.entityType.replace(/_/g, " ") },
+              { label: "GSTIN", value: initial.gstin || "—", mono: true },
+              { label: "PAN", value: initial.pan || "—", mono: true },
+              { label: "Address", value: [initial.address, initial.landmark, initial.area].filter(Boolean).join(", ") },
+              { label: "City", value: initial.cityLabel || "—" },
+              { label: "Pincode", value: initial.pincode, mono: true },
+            ]}
+          />
+          <div className="mt-4">
+            <Field
+              id="notes"
+              label="Internal note"
+              value={form.notes}
+              error={errors.notes}
+              hint="Not shown to the importer"
+              onChange={(e) => set("notes")(e.target.value)}
+            />
+          </div>
+        </div>
+      ) : null}
 
       {formError ? (
         <p
@@ -173,6 +270,7 @@ export default function ImporterReview({
         </p>
       ) : null}
 
+      {editing ? (
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
         <Field
           id="legalName"
@@ -287,6 +385,7 @@ export default function ImporterReview({
           onChange={(e) => set("notes")(e.target.value)}
         />
       </div>
+      ) : null}
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <button
@@ -296,7 +395,7 @@ export default function ImporterReview({
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-verdigris-400 px-6 py-3 text-sm font-semibold text-ink-900 transition-all hover:bg-patina disabled:cursor-not-allowed disabled:opacity-55"
         >
           {busy === "approve" ? <Spinner className="h-4 w-4" /> : null}
-          {busy === "approve" ? "Approving…" : "Approve and activate"}
+          {busy === "approve" ? "Approving…" : submitted ? "Verify and activate" : "Approve and activate"}
         </button>
 
         <button
@@ -305,7 +404,7 @@ export default function ImporterReview({
           disabled={busy !== null}
           className="rounded-xl border border-rose-400/30 px-5 py-3 text-sm font-medium text-rose-200 transition-colors hover:border-rose-400/55 hover:text-rose-100 disabled:opacity-55"
         >
-          {rejecting ? "Cancel" : "Reject"}
+          {rejecting ? "Cancel" : submitted ? "Return with remarks" : "Reject"}
         </button>
 
         <p className="text-xs text-verdigris-200/40">

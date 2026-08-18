@@ -24,8 +24,20 @@ export default async function ImportersPage({
 
   const { status } = await searchParams;
   const filter = status?.toUpperCase();
-  const valid = ["PENDING", "ACTIVE", "REJECTED", "SUSPENDED"];
-  const active = filter && valid.includes(filter) ? filter : null;
+  /**
+   * The tabs follow the review flow, not the raw status column: a
+   * rejection keeps the row PENDING (so it can be fixed and resubmitted)
+   * and marks kyc_status REJECTED, so "Rejected" and "Submitted" are KYC
+   * states while "Pending", "Active" and "Suspended" are record states.
+   */
+  const TABS: Record<string, ReturnType<typeof sql>> = {
+    PENDING: sql`and status = 'PENDING' and kyc_status not in ('SUBMITTED', 'REJECTED')`,
+    SUBMITTED: sql`and status = 'PENDING' and kyc_status = 'SUBMITTED'`,
+    REJECTED: sql`and status = 'PENDING' and kyc_status = 'REJECTED'`,
+    ACTIVE: sql`and status = 'ACTIVE'`,
+    SUSPENDED: sql`and status = 'SUSPENDED'`,
+  };
+  const active = filter && TABS[filter] ? filter : null;
 
   const rows = await getDb().execute<{
     id: number;
@@ -43,23 +55,25 @@ export default async function ImportersPage({
            status::text as status, kyc_status, created_at
       from wms.importer
      where deleted_at is null
-       ${active ? sql`and status = ${active}::wms.record_status` : sql``}
-     order by (status = 'PENDING') desc, created_at desc
+       ${active ? TABS[active]! : sql``}
+     order by (status = 'PENDING' and kyc_status = 'SUBMITTED') desc, (status = 'PENDING') desc, created_at desc
      limit 200
   `);
 
   const tabs = [
     { label: "All", value: null },
-    { label: "Pending", value: "PENDING" },
+    { label: "Submitted for verification", value: "SUBMITTED" },
+    { label: "Profile incomplete", value: "PENDING" },
+    { label: "Returned", value: "REJECTED" },
     { label: "Active", value: "ACTIVE" },
-    { label: "Rejected", value: "REJECTED" },
+    { label: "Suspended", value: "SUSPENDED" },
   ];
 
   return (
     <>
       <PageHeader
         title="Importers"
-        subtitle="Self-registrations arrive as pending and stay there until the KYC details are filled in."
+        subtitle="Self-registrations arrive as pending; the importer completes their profile and submits it, then you verify."
       />
 
       <div className="mb-4 flex flex-wrap gap-2">

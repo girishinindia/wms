@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import { visibleNav } from "@/components/admin/nav";
 import { PREFS_BOOT_SCRIPT } from "@/lib/admin/prefs";
-import { currentActor } from "@/lib/auth/guard";
+import { currentActor, grantFor, importerGateFor } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +35,21 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   const actor = await currentActor();
   if (!actor) redirect("/sign-in?next=/admin");
 
-  const items = visibleNav(actor.permissions);
+  let items = visibleNav(actor.permissions);
+
+  /**
+   * An importer who has not been verified yet gets exactly one screen:
+   * their company profile. The sidebar is cut down here, on the server,
+   * and the shell renders a lock card for any other route — the pages
+   * refuse on their own as well, so this is presentation, not the guard.
+   */
+  const gate = await importerGateFor(actor);
+  const lock =
+    gate.kind === "importer" ? { verified: gate.verified, kycStatus: gate.kycStatus } : null;
+  if (lock && !lock.verified) {
+    items = items.filter((i) => i.href === "/admin/company");
+  }
+
   if (items.length === 0) {
     return (
       <div className="grid min-h-full place-items-center bg-ink-900 px-6 py-20">
@@ -64,6 +78,8 @@ export default async function AdminLayout({ children }: { children: ReactNode })
       <script dangerouslySetInnerHTML={{ __html: PREFS_BOOT_SCRIPT }} />
       <AdminShell
         items={items}
+        lock={lock}
+        showBell={grantFor(actor, "notification.read") !== null}
         user={{
           name: `${actor.session.firstName} ${actor.session.lastName}`.trim(),
           email: actor.session.email,

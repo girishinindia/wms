@@ -31,6 +31,15 @@ export type AdminNavItem = {
    * other screens and grants nothing by itself.
    */
   permission: string | null;
+  /**
+   * Whether an OWN-scoped grant is enough to earn this entry.
+   *
+   * Off by default — see `visibleNav`. On for the importer's own
+   * screens: "My company" and "Sales agents" are precisely the things an
+   * IMPORTER does over their own record, so OWN is the scope that means
+   * yes there, not the scope that means no.
+   */
+  own?: boolean;
   icon: AdminNavIcon;
 };
 
@@ -43,14 +52,17 @@ export type AdminNavIcon =
   | "globe"
   | "map"
   | "grid"
-  | "truck";
+  | "truck"
+  | "users"
+  | "building";
 
 /** A collapsible section. Its children are ordinary items and are what
  *  `visibleNav` returns — the group itself grants nothing. */
 export type AdminNavGroup = {
   label: string;
   icon: AdminNavIcon;
-  /** Prefix used to decide whether the group is the current section. */
+  /** Regex source (anchored at the start of the path) used to decide
+   *  whether the group is the current section. */
   match: string;
   children: AdminNavItem[];
 };
@@ -59,6 +71,11 @@ export type AdminNavNode = AdminNavItem | AdminNavGroup;
 
 export function isGroup(node: AdminNavNode): node is AdminNavGroup {
   return (node as AdminNavGroup).children !== undefined;
+}
+
+/** Whether the current path is inside a group's section. */
+export function inSection(match: string, pathname: string): boolean {
+  return new RegExp(`^${match}(/|$)`).test(pathname);
 }
 
 export const MASTER_ITEMS: AdminNavItem[] = [
@@ -94,9 +111,37 @@ export const MASTER_ITEMS: AdminNavItem[] = [
   },
 ];
 
+/**
+ * "Importers & agents". The super admin sees both lists; an importer
+ * sees their own company profile and their own sales agents. Same
+ * section, different leaves — the sidebar shows what the role earned.
+ */
+export const IMPORTER_ITEMS: AdminNavItem[] = [
+  { href: "/admin/importers", label: "Importers", permission: "importer.read", icon: "box" },
+  {
+    href: "/admin/company",
+    label: "My company",
+    permission: "importer.update",
+    own: true,
+    icon: "building",
+  },
+  {
+    href: "/admin/sales-agents",
+    label: "Sales agents",
+    permission: "sales_agent.read",
+    own: true,
+    icon: "users",
+  },
+];
+
 export const ADMIN_NAV: AdminNavNode[] = [
   { href: "/admin", label: "Dashboard", permission: null, icon: "chart" },
-  { href: "/admin/importers", label: "Importers", permission: "importer.read", icon: "box" },
+  {
+    label: "Importers & agents",
+    icon: "box",
+    match: "/admin/(importers|company|sales-agents)",
+    children: IMPORTER_ITEMS,
+  },
   { href: "/admin/users", label: "Users", permission: "user.read", icon: "shield" },
   {
     label: "Master",
@@ -120,9 +165,11 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = ADMIN_NAV.flatMap((node) =>
  * signing in lands you. Changing the return type to a tree would quietly
  * change all three. Grouping is a rendering concern; see `groupNav`.
  *
- * OWN scope never counts. An IMPORTER genuinely holds `importer.read`
- * and `user.read` — over their own record and their own account — and
- * that is not what these screens are.
+ * OWN scope never counts, except on an entry that says `own: true`. An
+ * IMPORTER genuinely holds `importer.read` and `user.read` — over their
+ * own record and their own account — and the Importers and Users lists
+ * are not that. Their "My company" and "Sales agents" screens are, and
+ * only those entries opt in.
  */
 export function visibleNav(
   permissions: { permission: string; scope: "OWN" | "WAREHOUSE" | "ALL" }[],
@@ -130,9 +177,12 @@ export function visibleNav(
   const wide = new Set(
     permissions.filter((p) => p.scope !== "OWN").map((p) => p.permission),
   );
+  const own = new Set(permissions.map((p) => p.permission));
 
   const earned = ADMIN_NAV_ITEMS.filter(
-    (item) => item.permission !== null && wide.has(item.permission),
+    (item) =>
+      item.permission !== null &&
+      (wide.has(item.permission) || (item.own === true && own.has(item.permission))),
   );
   if (earned.length === 0) return [];
 
