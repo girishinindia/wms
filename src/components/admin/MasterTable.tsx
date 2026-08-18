@@ -17,7 +17,7 @@ import DataTable, {
   Switch,
   type ColumnMeta,
 } from "./DataTable";
-import { Card, IconButton, StatusBadge } from "./ui";
+import { Card, FactList, IconButton, StatusBadge } from "./ui";
 
 /**
  * The master-data table: one component, five screens, on DataTable.
@@ -549,6 +549,41 @@ function MasterDrawer({
         </header>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
+          {view && row ? (
+            <FactList
+              items={[
+                ...(spec.parent
+                  ? [
+                      {
+                        label: spec.parent.label,
+                        value: (
+                          <>
+                            {row.parentLabel ?? "—"}
+                            {grouped && currentParent?.groupLabel ? (
+                              <span className="text-verdigris-200/60">, {currentParent.groupLabel}</span>
+                            ) : null}
+                          </>
+                        ),
+                      },
+                    ]
+                  : []),
+                ...spec.fields.map((f) => ({
+                  label: f.label,
+                  mono: f.mono,
+                  value:
+                    row.values[f.key] === null || row.values[f.key] === undefined || row.values[f.key] === ""
+                      ? "—"
+                      : f.type === "select"
+                        ? String(row.values[f.key]).toLowerCase().replace(/_/g, " ")
+                        : String(row.values[f.key]),
+                })),
+                { label: "Status", value: <StatusBadge value={row.isActive ? "ACTIVE" : "CLOSED"} /> },
+                { label: "In use", value: row.inUse > 0 ? row.inUseDetail : "Not referenced anywhere" },
+                { label: "Created", value: fmtDate(row.createdAt) },
+                { label: "Updated", value: fmtDate(row.updatedAt) },
+              ]}
+            />
+          ) : (
           <form
             id="master-drawer-form"
             onSubmit={(e) => { e.preventDefault(); if (!view) onSave(); }}
@@ -679,19 +714,7 @@ function MasterDrawer({
               </div>
             )))}
           </form>
-
-          {view && row ? (
-            <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-verdigris-300/10 pt-5 text-sm">
-              <dt className="text-[12px] text-verdigris-200/60">Status</dt>
-              <dd><StatusBadge value={row.isActive ? "ACTIVE" : "CLOSED"} /></dd>
-              <dt className="text-[12px] text-verdigris-200/60">In use</dt>
-              <dd className="text-verdigris-100">{row.inUse > 0 ? row.inUseDetail : "Not referenced anywhere"}</dd>
-              <dt className="text-[12px] text-verdigris-200/60">Created</dt>
-              <dd className="text-verdigris-100">{fmtDate(row.createdAt)}</dd>
-              <dt className="text-[12px] text-verdigris-200/60">Updated</dt>
-              <dd className="text-verdigris-100">{fmtDate(row.updatedAt)}</dd>
-            </dl>
-          ) : null}
+          )}
         </div>
 
         <footer className="flex items-center justify-end gap-2 border-t border-verdigris-300/10 px-6 py-4">

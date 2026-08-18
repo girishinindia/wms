@@ -162,19 +162,52 @@ export function Empty({ title, hint }: { title: string; hint?: string }) {
 }
 
 /** A short definition list — the shape used all over the detail screens. */
-export function Facts({ items }: { items: { label: string; value: ReactNode }[] }) {
+/**
+ * Label on the left, value on the right, every row aligned to the same
+ * label column — the shape a record reads best in. Used by the master
+ * view drawer and the detail pages, so "view" looks the same everywhere.
+ */
+export function FactList({
+  items,
+  labelWidth = "9rem",
+  dense = false,
+}: {
+  items: { label: string; value: ReactNode; mono?: boolean }[];
+  /** CSS length for the label column. */
+  labelWidth?: string;
+  dense?: boolean;
+}) {
   return (
-    <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <dl
+      className={`grid gap-x-4 ${dense ? "gap-y-0" : "gap-y-0"}`}
+      style={{ gridTemplateColumns: `${labelWidth} minmax(0, 1fr)` }}
+    >
       {items.map((item) => (
-        <div key={item.label}>
-          <dt className="font-mono text-[10px] uppercase tracking-[0.14em] text-verdigris-400">
+        <div key={item.label} className="contents">
+          <dt
+            className={`border-b border-verdigris-300/10 text-[12px] font-medium text-verdigris-200/70 ${
+              dense ? "py-2" : "py-2.5"
+            }`}
+          >
             {item.label}
           </dt>
-          <dd className="mt-1 text-sm text-verdigris-100">{item.value}</dd>
+          <dd
+            className={`min-w-0 border-b border-verdigris-300/10 text-sm text-verdigris-50 break-words ${
+              dense ? "py-2" : "py-2.5"
+            } ${item.mono ? "font-mono" : ""}`}
+          >
+            {item.value}
+          </dd>
         </div>
       ))}
     </dl>
   );
+}
+
+/** Kept for the detail pages: the same rows, laid out with the label
+ *  on the left. */
+export function Facts({ items }: { items: { label: string; value: ReactNode }[] }) {
+  return <FactList items={items} labelWidth="11rem" />;
 }
 
 /**
