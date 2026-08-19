@@ -3,6 +3,7 @@ import { type NextRequest } from "next/server";
 
 import { getDb } from "@/db";
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
+import { invalidateGeo } from "@/lib/admin/geo";
 import { auditQuietly } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
@@ -114,6 +115,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      await invalidateGeo();
       return ok({ created: inserted.length, skipped }, requestId, 201);
     } catch (error) {
       return toResponse(error, requestId);

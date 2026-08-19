@@ -3,6 +3,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
+import { dropCachedActor, invalidateUser } from "@/lib/cache/actor";
 import { authEnv } from "@/lib/env";
 
 import { generateSessionToken, hashToken } from "./tokens";
@@ -147,6 +148,7 @@ export async function revokeSession(token: string, reason = "logout"): Promise<v
      where token_hash = ${hashToken(token)}
        and revoked_at is null
   `);
+  await dropCachedActor(token);
 }
 
 /**
@@ -172,6 +174,10 @@ export async function revokeAllSessions(
        ${exceptSessionId ? sql`and id <> ${exceptSessionId}` : sql``}
     returning id
   `);
+  // Cached actors for this user must go with the sessions — including
+  // the one kept alive by `exceptSessionId`, which is rebuilt on its next
+  // request with the current rights.
+  await invalidateUser(userId);
   return rows.length;
 }
 

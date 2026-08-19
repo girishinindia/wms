@@ -3,6 +3,8 @@ import "server-only";
 import { sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
+import { cacheDel, cacheGet, cacheSet, key } from "@/lib/cache/redis";
+import { cacheEnv } from "@/lib/env";
 
 /**
  * Country → state → city, for the pickers on the importer profile and
@@ -15,7 +17,22 @@ export type GeoOptions = {
   cities: { id: number; name: string; stateId: number }[];
 };
 
+const GEO_KEY = () => key("geo", "all");
+
+/** Any change to a country, state or city calls this. */
+export async function invalidateGeo(): Promise<void> {
+  await cacheDel(GEO_KEY());
+}
+
 export async function loadGeoOptions(): Promise<GeoOptions> {
+  const cached = await cacheGet<GeoOptions>(GEO_KEY());
+  if (cached) return cached;
+  const fresh = await loadGeoFromDb();
+  await cacheSet(GEO_KEY(), fresh, cacheEnv().CACHE_GEO_TTL);
+  return fresh;
+}
+
+async function loadGeoFromDb(): Promise<GeoOptions> {
   const db = getDb();
   const countries = await db.execute<{ id: number; name: string }>(sql`
     select id, name from wms.country where is_active and deleted_at is null order by name

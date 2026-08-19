@@ -4,6 +4,7 @@ import { z } from "zod";
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
+import { invalidateGeo } from "@/lib/admin/geo";
 import { resolveResource } from "@/lib/admin/master-registry";
 
 import { deleteOne, setActive } from "@/lib/admin/master-ops";
@@ -87,6 +88,7 @@ export async function POST(
         }
       }
 
+      await invalidateGeo();
       return ok({ action, done, skipped, notes }, requestId);
     } catch (error) {
       return toResponse(error, requestId);

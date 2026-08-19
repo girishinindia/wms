@@ -7,6 +7,7 @@ import { cache } from "react";
 import { getDb } from "@/db";
 import { HandledError } from "@/lib/api/respond";
 import { auditQuietly } from "@/lib/audit";
+import { getCachedActor, putCachedActor } from "@/lib/cache/actor";
 import { authEnv } from "@/lib/env";
 
 import {
@@ -63,13 +64,32 @@ async function resolveActor(): Promise<Actor | null> {
   const [cookieStore, headerList] = await Promise.all([cookies(), headers()]);
 
   const bearer = headerList.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const session = await resolveSession(bearer || cookieStore.get(env.AUTH_COOKIE_NAME)?.value);
+  const token = bearer || cookieStore.get(env.AUTH_COOKIE_NAME)?.value;
+  if (!token) return null;
+
+  // Redis first: one read instead of three Postgres round trips. A miss,
+  // a cache outage or no cache configured all fall through to the
+  // database below. See src/lib/cache/actor.ts for how this is kept
+  // honest when rights change.
+  const cached = await getCachedActor(token);
+  if (cached) {
+    return {
+      session: cached.session,
+      roles: cached.roles,
+      permissions: cached.permissions,
+      isSuperAdmin: cached.roles.some((r) => r.role === "SUPER_ADMIN"),
+    };
+  }
+
+  const session = await resolveSession(token);
   if (!session) return null;
 
-  const [roles, permissions] = await Promise.all([
-    rolesFor(session.userId),
-    permissionsFor(session.userId),
-  ]);
+  // Sequential on purpose — see src/db/index.ts on the pooler and
+  // pipelining.
+  const roles = await rolesFor(session.userId);
+  const permissions = await permissionsFor(session.userId);
+
+  await putCachedActor(token, { session, roles, permissions, at: Date.now() });
 
   return {
     session,

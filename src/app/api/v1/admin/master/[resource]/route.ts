@@ -7,6 +7,7 @@ import { auditQuietly } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { deleteOne, dependentCounts, identifier } from "@/lib/admin/master-ops";
+import { invalidateGeo } from "@/lib/admin/geo";
 import { resolveResource } from "@/lib/admin/master-registry";
 import { isUniqueViolation } from "@/lib/db-errors";
 
@@ -113,6 +114,7 @@ export async function POST(
         requestId,
       });
 
+      await invalidateGeo();
       return ok({ id: rows[0]?.id ?? 0 }, requestId, 201);
     } catch (error) {
       return translate(error, requestId, await context.params.then((p) => p.resource));
@@ -265,6 +267,7 @@ export async function PATCH(
         requestId,
       });
 
+      await invalidateGeo();
       return ok({ ok: true as const }, requestId);
     } catch (error) {
       return translate(error, requestId, await context.params.then((p) => p.resource));
@@ -307,6 +310,7 @@ export async function DELETE(
           requestId,
         );
       }
+      await invalidateGeo();
       return ok({ ok: true as const }, requestId);
     } catch (error) {
       return translate(error, requestId, await context.params.then((p) => p.resource));

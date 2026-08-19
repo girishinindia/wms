@@ -3,7 +3,7 @@ import "server-only";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 
-import { ratelimitEnv } from "@/lib/env";
+import { cacheEnv, ratelimitEnv } from "@/lib/env";
 
 /**
  * Rate limiting, on Upstash.
@@ -45,7 +45,7 @@ function limiter(name: string, tokens: number, windowSeconds: number): Ratelimit
     existing = new Ratelimit({
       redis: client(),
       limiter: Ratelimit.slidingWindow(tokens, `${windowSeconds} s`),
-      prefix: `wms:rl:${name}`,
+      prefix: `${cacheEnv().REDIS_KEY_PREFIX}rl:${name}`,
       analytics: false,
     });
     limiters.set(key, existing);
@@ -71,7 +71,15 @@ async function check(
   windowSeconds: number,
   scope: "ip" | "account",
 ): Promise<LimitResult> {
-  const result = await limiter(name, tokens, windowSeconds).limit(identifier);
+  let result: Awaited<ReturnType<Ratelimit["limit"]>>;
+  try {
+    result = await limiter(name, tokens, windowSeconds).limit(identifier);
+  } catch (error) {
+    // Redis down must not mean nobody can sign in. Fail OPEN, loudly:
+    // the captcha and the account lockout still stand behind this.
+    console.error("[ratelimit] unavailable, allowing", name, error instanceof Error ? error.message : error);
+    return ALLOWED;
+  }
   return {
     allowed: result.success,
     remaining: result.remaining,

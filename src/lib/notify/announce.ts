@@ -3,10 +3,9 @@ import "server-only";
 import { sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
-import { absoluteUrl } from "@/lib/url";
 
-import { sendEmail } from "./email";
-import { sendPush, devicesFor } from "./push";
+import { queueDelivery } from "./outbox";
+import { devicesFor } from "./push";
 import { getTemplate, render } from "./templates";
 import type { SendOutcome } from "./types";
 
@@ -40,6 +39,8 @@ export type AnnounceResult = {
   recipients: number;
   sent: Record<string, number>;
   failed: Record<string, number>;
+  /** Handed to the queue; the job reports the final outcome on the row. */
+  queued: Record<string, number>;
 };
 
 export async function announce(input: AnnounceInput): Promise<AnnounceResult> {
@@ -53,7 +54,7 @@ export async function announce(input: AnnounceInput): Promise<AnnounceResult> {
      where event_key = ${input.eventKey} and is_active
   `);
 
-  const result: AnnounceResult = { recipients: 0, sent: {}, failed: {} };
+  const result: AnnounceResult = { recipients: 0, sent: {}, failed: {}, queued: {} };
   if (rules.length === 0) return result;
 
   const seen = new Set<number>();
@@ -81,7 +82,8 @@ export async function announce(input: AnnounceInput): Promise<AnnounceResult> {
       for (const channel of rule.channels) {
         const outcome = await deliver(channel, userId, input, notificationId);
         if (!outcome) continue;
-        const bucket = outcome.status === "FAILED" ? result.failed : result.sent;
+        const bucket =
+          outcome === "QUEUED" ? result.queued : outcome.status === "FAILED" ? result.failed : result.sent;
         bucket[channel] = (bucket[channel] ?? 0) + 1;
       }
     }
@@ -135,7 +137,7 @@ async function deliver(
   userId: number,
   input: AnnounceInput,
   notificationId: number,
-): Promise<SendOutcome | null> {
+): Promise<SendOutcome | "QUEUED" | null> {
   if (channel === "IN_APP") {
     // The `notification` row IS the in-app delivery. Recorded anyway, so
     // one query answers "which channels was this sent on".
@@ -147,25 +149,18 @@ async function deliver(
     });
   }
 
+  // EMAIL and PUSH go through the outbox: a QUEUED delivery row now,
+  // the provider call from the QStash job (or inline when there is no
+  // queue). Three attempts at most — see outbox.ts.
   if (channel === "EMAIL") {
-    const [user] = await getDb().execute<{ email: string; first_name: string }>(sql`
-      select email::text as email, first_name from wms.users where id = ${userId}
+    const [user] = await getDb().execute<{ email: string }>(sql`
+      select email::text as email from wms.users where id = ${userId} and deleted_at is null
     `);
     if (!user) return null;
     const template = await getTemplate(input.eventKey, "EMAIL").catch(() => null);
     if (!template) return null;
-
-    const outcome = await sendEmail({
-      toEmail: user.email,
-      toName: user.first_name,
-      subject: render(template.subject ?? input.eventKey, input.values),
-      message: render(template.body, input.values),
-      // The template stores a relative path; an email needs the origin.
-      actionUrl: template.actionUrl
-        ? absoluteUrl(render(template.actionUrl, input.values))
-        : null,
-    });
-    return record(notificationId, "EMAIL", user.email, outcome);
+    const { outcome } = await queueDelivery({ notificationId, channel: "EMAIL", address: user.email });
+    return outcome;
   }
 
   if (channel === "PUSH") {
@@ -174,32 +169,10 @@ async function deliver(
     const tokens = await devicesFor(userId);
     // No registered device is not a failure — most admins are on the web.
     if (tokens.length === 0) return null;
-
-    let last: SendOutcome | null = null;
+    let last: SendOutcome | "QUEUED" | null = null;
     for (const token of tokens) {
-      const outcome = await sendPush({
-        token,
-        title: render(template.subject ?? input.eventKey, input.values),
-        body: render(template.body, input.values),
-        data: (() => {
-          const base = {
-            eventKey: input.eventKey,
-            notificationId: String(notificationId),
-          };
-          if (!template.actionUrl) return base;
-          const rendered = render(template.actionUrl, input.values);
-          return {
-            ...base,
-            // Absolute, so the same string works as an Android App Link
-            // and still opens in a browser when the app is not installed.
-            actionUrl: absoluteUrl(rendered) ?? rendered,
-            // The raw path too, for a handset that would rather route
-            // internally than round-trip through a URL.
-            actionPath: rendered,
-          };
-        })(),
-      });
-      last = await record(notificationId, "PUSH", token, outcome);
+      const { outcome } = await queueDelivery({ notificationId, channel: "PUSH", address: token });
+      last = outcome;
     }
     return last;
   }

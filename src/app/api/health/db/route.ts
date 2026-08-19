@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { sql as raw } from "drizzle-orm";
 
 import { getDb } from "@/db";
+import { cacheActive, redis } from "@/lib/cache/redis";
+import { qstashActive } from "@/lib/jobs/qstash";
 
 /**
  * Database readiness probe.
@@ -44,6 +46,22 @@ export async function GET() {
     const row = rows[0];
     const latencyMs = Date.now() - startedAt;
 
+    // Redis and QStash: configured or not, and (for Redis) reachable.
+    // Both are optional, so neither turns this probe red — they are
+    // reported so "is the cache actually on in prod" is one curl.
+    let cache: "off" | "ok" | "unreachable" = "off";
+    let cacheMs: number | null = null;
+    if (cacheActive()) {
+      const t = Date.now();
+      try {
+        const pong = await Promise.race([redis()!.ping(), new Promise((r) => setTimeout(() => r(null), 1500))]);
+        cache = pong ? "ok" : "unreachable";
+      } catch {
+        cache = "unreachable";
+      }
+      cacheMs = Date.now() - t;
+    }
+
     return NextResponse.json(
       {
         status: "ok" as const,
@@ -55,6 +73,9 @@ export async function GET() {
         server: row.version.split(" ").slice(0, 2).join(" "),
         serverTime: row.server_time,
         pooler: poolerMode(),
+        cache,
+        cacheMs,
+        queue: qstashActive() ? "qstash" : "inline",
         timestamp: new Date().toISOString(),
       },
       { status: 200, headers: NO_STORE }

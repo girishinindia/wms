@@ -3,6 +3,7 @@ import { type NextRequest } from "next/server";
 
 import { getDb } from "@/db";
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
+import { invalidateGeo } from "@/lib/admin/geo";
 import { auditQuietly } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
@@ -89,6 +90,7 @@ export async function PATCH(
         requestId,
       });
 
+      await invalidateGeo();
       return ok({ ok: true as const }, requestId);
     } catch (error) {
       // A rename onto an existing name in the same state hits the unique

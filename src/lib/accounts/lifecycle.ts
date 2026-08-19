@@ -6,6 +6,7 @@ import { getDb } from "@/db";
 import { auditQuietly } from "@/lib/audit";
 import type { Actor } from "@/lib/auth/guard";
 import { revokeAllSessions } from "@/lib/auth/session";
+import { invalidateUser } from "@/lib/cache/actor";
 
 /**
  * One life-cycle for the three things that are really one person or one
@@ -89,6 +90,9 @@ async function setUserRow(userId: number, kind: Kind, actor: Actor, reason: stri
        ${suspend ? sql`` : sql`and status = 'SUSPENDED'`}
   `);
   if (suspend) await revokeAllSessions(userId, `suspended: ${reason ?? "no reason"}`);
+  // Reactivation changes nothing in the sessions table (they were
+  // revoked) but a stale cached actor would still say SUSPENDED.
+  await invalidateUser(userId);
 }
 
 /**

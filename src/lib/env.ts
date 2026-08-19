@@ -161,6 +161,40 @@ const ratelimitSchema = z.object({
   RATELIMIT_OTP_PER_DAY: intFromStr(10).pipe(z.number().min(1)),
 });
 
+// ── Cache (Upstash Redis) and jobs (Upstash QStash) ───────────────
+/**
+ * Both OPTIONAL, both safe-mode: with the variables missing or the
+ * service unreachable, the application behaves exactly as it did before
+ * they existed — every cache read misses to Postgres, every queued
+ * delivery is sent inline. Nothing here can 500 a request.
+ */
+const cacheSchema = z.object({
+  CACHE_ENABLED: boolFromStr(true),
+  UPSTASH_REDIS_REST_URL: optionalStr,
+  UPSTASH_REDIS_REST_TOKEN: optionalStr,
+  /** wms:dev: / wms:staging: / wms:prod: — one Redis, no collisions. */
+  REDIS_KEY_PREFIX: z.string().trim().default("wms:dev:"),
+  /** Actor (session + roles + permissions) cache lifetime. */
+  CACHE_ACTOR_TTL: durationSeconds(60),
+  /** Master data (countries/states/cities). */
+  CACHE_GEO_TTL: durationSeconds(600),
+});
+
+const qstashSchema = z.object({
+  QSTASH_URL: z.string().trim().default("https://qstash.upstash.io"),
+  QSTASH_TOKEN: optionalStr,
+  QSTASH_CURRENT_SIGNING_KEY: optionalStr,
+  QSTASH_NEXT_SIGNING_KEY: optionalStr,
+  /** Public origin QStash calls back to. Defaults to the app URL. */
+  QSTASH_CALLBACK_BASE_URL: optionalStr,
+  /** Hard cap on delivery attempts per row: after this many, the row is
+   *  FAILED for good and nothing retries it. */
+  NOTIFY_MAX_ATTEMPTS: intFromStr(3).pipe(z.number().min(1).max(10)),
+  /** Shared secret for the cron routes (retry-failed, housekeeping) when
+   *  they are called without a QStash signature. */
+  JOBS_SECRET: optionalStr,
+});
+
 // ── reCAPTCHA v3 ──────────────────────────────────────────────────
 const recaptchaSchema = z.object({
   RECAPTCHA_ENABLED: boolFromStr(false),
@@ -252,6 +286,8 @@ export const smsEnv = once("SMS", () => parse(smsSchema, "SMS"));
 
 export const authEnv = once("auth", () => parse(authSchema, "auth"));
 export const ratelimitEnv = once("rate limit", () => parse(ratelimitSchema, "rate limit"));
+export const cacheEnv = once("cache", () => parse(cacheSchema, "cache"));
+export const qstashEnv = once("QStash", () => parse(qstashSchema, "QStash"));
 
 export const recaptchaEnv = once("reCAPTCHA", () => {
   const r = parse(recaptchaSchema, "reCAPTCHA");

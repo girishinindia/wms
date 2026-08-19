@@ -6,6 +6,7 @@ import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { auditQuietly } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
+import { invalidateUser } from "@/lib/cache/actor";
 import { assignRoleRequestSchema, revokeRoleRequestSchema } from "@/lib/validation/api-admin";
 
 export const runtime = "nodejs";
@@ -173,6 +174,8 @@ export async function POST(
       if (rows.length === 0) {
         return fail("CONFLICT", "They already hold that role here.", requestId);
       }
+      // Their cached actor no longer describes what they may do.
+      await invalidateUser(targetUserId);
 
       await auditQuietly({
         action: "user.role_assigned",
@@ -274,6 +277,7 @@ export async function DELETE(
                revoke_reason = ${reason}
          where id = ${assignmentId} and user_id = ${targetUserId} and revoked_at is null
       `);
+      await invalidateUser(targetUserId);
 
       await auditQuietly({
         action: "user.role_revoked",
