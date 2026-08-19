@@ -46,7 +46,7 @@ export default function AdminError({
         </p>
 
         {error.digest ? (
-          <p className="mt-4 font-mono text-[11px] text-verdigris-200/45">
+          <p className="mt-4 font-mono text-[0.78rem] text-verdigris-200/45">
             Reference {error.digest}
           </p>
         ) : null}

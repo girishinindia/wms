@@ -69,7 +69,7 @@ export function Stat({
         : "text-verdigris-300";
   return (
     <Card className="p-5">
-      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-verdigris-400">
+      <p className="font-mono text-[0.72rem] uppercase tracking-[0.16em] text-verdigris-400">
         {label}
       </p>
       <p className={`mt-2 font-mono text-3xl font-medium ${valueTone}`}>{value}</p>
@@ -97,7 +97,7 @@ export function StatusBadge({ value }: { value: string }) {
   const tone = STATUS_TONE[value] ?? "border-verdigris-300/20 bg-ink-900/70 text-verdigris-200/70";
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${tone}`}
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.78rem] font-medium ${tone}`}
     >
       {value.toLowerCase().replace(/_/g, " ")}
     </span>
@@ -113,7 +113,7 @@ export function Table({ head, children }: { head: ReactNode[]; children: ReactNo
             {head.map((cell, i) => (
               <th
                 key={i}
-                className="px-4 py-3 text-left font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-verdigris-400"
+                className="px-4 py-3 text-left font-mono text-[0.72rem] font-medium uppercase tracking-[0.14em] text-verdigris-400"
               >
                 {cell}
               </th>
@@ -185,7 +185,7 @@ export function FactList({
       {items.map((item) => (
         <div key={item.label} className="contents">
           <dt
-            className={`border-b border-verdigris-300/10 text-[12px] font-medium text-verdigris-200/70 ${
+            className={`border-b border-verdigris-300/10 text-[0.84rem] font-medium text-verdigris-200/70 ${
               dense ? "py-2" : "py-2.5"
             }`}
           >

@@ -160,7 +160,7 @@ export function SortHeader({
     <th
       style={width ? { width: `${width}rem` } : undefined}
       aria-sort={active ? (list.dir === "asc" ? "ascending" : "descending") : "none"}
-      className={`px-4 py-3 font-mono text-[10px] font-medium uppercase tracking-[0.14em] ${
+      className={`px-4 py-3 font-mono text-[0.72rem] font-medium uppercase tracking-[0.14em] ${
         align === "right" ? "text-right" : "text-left"
       } ${active ? "text-verdigris-100" : "text-verdigris-400"}`}
     >

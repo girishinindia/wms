@@ -78,7 +78,7 @@ export type DataTableProps<T> = {
  * column names read at a glance rather than as a faint rule.
  */
 const HEADER =
-  "bg-ink-900/70 px-4 py-3 text-[12px] font-bold uppercase tracking-[0.08em] text-verdigris-50";
+  "bg-ink-900/70 px-4 py-3 text-[0.84rem] font-bold uppercase tracking-[0.08em] text-verdigris-50";
 
 export default function DataTable<T>({
   columns,
@@ -177,7 +177,7 @@ export default function DataTable<T>({
           aria-label="Bulk actions"
           className="flex flex-wrap items-center gap-3 border-b border-verdigris-300/10 bg-verdigris-500/[0.07] px-5 py-2.5"
         >
-          <span className="text-[13px] font-medium text-verdigris-50">
+          <span className="text-[0.9rem] font-medium text-verdigris-50">
             {selectedRows.length} selected
           </span>
           {bulk(selectedRows, clearSelection)}

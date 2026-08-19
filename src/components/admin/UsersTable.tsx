@@ -124,7 +124,7 @@ export default function UsersTable({
         header: "Roles",
         cell: ({ row }) =>
           row.original.roles.length > 0 ? (
-            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-verdigris-300">
+            <span className="font-mono text-[0.72rem] uppercase tracking-[0.1em] text-verdigris-300">
               {row.original.roles.join(" · ")}
             </span>
           ) : (
@@ -232,7 +232,7 @@ export default function UsersTable({
       />
 
       {confirm ? (
-        <div role="alertdialog" aria-label="Confirm delete" className="flex flex-wrap items-center gap-3 border-t border-rose-400/25 bg-rose-500/[0.07] px-5 py-3 text-[13px] text-rose-100">
+        <div role="alertdialog" aria-label="Confirm delete" className="flex flex-wrap items-center gap-3 border-t border-rose-400/25 bg-rose-500/[0.07] px-5 py-3 text-[0.9rem] text-rose-100">
           <span className="flex-1">
             Delete {confirm.label}? The login is closed and, if it is an importer, their company and its sales agents go with it; a sales agent&apos;s profile goes too. The audit log keeps everything.
           </span>

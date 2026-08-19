@@ -264,7 +264,7 @@ export default function ImporterReview({
       {formError ? (
         <p
           role="alert"
-          className="mt-4 rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-[13px] text-rose-100"
+          className="mt-4 rounded-xl border border-rose-400/30 bg-rose-500/10 p-3 text-[0.9rem] text-rose-100"
         >
           {formError}
         </p>
@@ -285,7 +285,7 @@ export default function ImporterReview({
         <div>
           <label
             htmlFor="entityType"
-            className="mb-1.5 block text-[13px] font-medium text-verdigris-100"
+            className="mb-1.5 block text-[0.9rem] font-medium text-verdigris-100"
           >
             Entity type <span className="text-rose-300">*</span>
           </label>
@@ -316,7 +316,7 @@ export default function ImporterReview({
         <div>
           <label
             htmlFor="cityId"
-            className="mb-1.5 block text-[13px] font-medium text-verdigris-100"
+            className="mb-1.5 block text-[0.9rem] font-medium text-verdigris-100"
           >
             City <span className="text-rose-300">*</span>
           </label>
@@ -414,7 +414,7 @@ export default function ImporterReview({
 
       {rejecting ? (
         <div className="mt-5 rounded-xl border border-rose-400/25 bg-rose-500/[0.06] p-4">
-          <label htmlFor="reason" className="block text-[13px] font-medium text-rose-100">
+          <label htmlFor="reason" className="block text-[0.9rem] font-medium text-rose-100">
             Why is this being rejected?
           </label>
           <p className="mt-1 text-xs text-rose-200/60">

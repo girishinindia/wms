@@ -71,7 +71,7 @@ export default function HealthBadge() {
         )}
         <span className={`relative inline-flex h-2 w-2 rounded-full ${dot}`} />
       </span>
-      <span className="font-mono text-[11px] tracking-wide text-verdigris-200">
+      <span className="font-mono text-[0.78rem] tracking-wide text-verdigris-200">
         {label}
       </span>
     </div>

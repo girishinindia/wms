@@ -318,7 +318,7 @@ export default function AdminShell({
         <div className="border-t border-verdigris-300/10 p-3">
           <p className="truncate px-2 text-sm text-verdigris-100">{user.name}</p>
           <p className="truncate px-2 text-xs text-verdigris-200/45">{user.email}</p>
-          <p className="mt-1.5 px-2 font-mono text-[10px] uppercase tracking-[0.14em] text-verdigris-400">
+          <p className="mt-1.5 px-2 font-mono text-[0.72rem] uppercase tracking-[0.14em] text-verdigris-400">
             {user.roles.join(" · ") || "no role"}
           </p>
           <button
@@ -382,7 +382,7 @@ export default function AdminShell({
                 disabled={font === FONT_STEPS[0]}
                 aria-label="Smaller text"
                 title="Smaller text"
-                className="px-2 py-1.5 text-[11px] font-semibold text-verdigris-200 hover:text-verdigris-50 disabled:opacity-35"
+                className="px-2 py-1.5 text-[0.78rem] font-semibold text-verdigris-200 hover:text-verdigris-50 disabled:opacity-35"
               >
                 A−
               </button>
@@ -391,7 +391,7 @@ export default function AdminShell({
                 onClick={() => stepFont(0)}
                 aria-label={`Text size ${font}%. Reset to default`}
                 title={`${font}% — reset`}
-                className={`border-x border-verdigris-300/15 px-2 py-1.5 text-[12px] font-semibold hover:text-verdigris-50 ${
+                className={`border-x border-verdigris-300/15 px-2 py-1.5 text-[0.84rem] font-semibold hover:text-verdigris-50 ${
                   font === DEFAULT_FONT ? "text-verdigris-200/60" : "text-verdigris-50"
                 }`}
               >
@@ -403,7 +403,7 @@ export default function AdminShell({
                 disabled={font === FONT_STEPS[FONT_STEPS.length - 1]}
                 aria-label="Larger text"
                 title="Larger text"
-                className="px-2 py-1.5 text-[13px] font-semibold text-verdigris-200 hover:text-verdigris-50 disabled:opacity-35"
+                className="px-2 py-1.5 text-[0.9rem] font-semibold text-verdigris-200 hover:text-verdigris-50 disabled:opacity-35"
               >
                 A+
               </button>

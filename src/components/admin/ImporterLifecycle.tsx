@@ -89,7 +89,7 @@ export default function ImporterLifecycle({
       {pending ? (
         <div
           role="alertdialog"
-          className={`mt-3 rounded-xl border p-4 text-[13px] ${
+          className={`mt-3 rounded-xl border p-4 text-[0.9rem] ${
             pending === "delete"
               ? "border-rose-400/25 bg-rose-500/[0.07] text-rose-100"
               : "border-amber-400/25 bg-amber-500/[0.07] text-amber-100"

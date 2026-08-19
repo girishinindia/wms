@@ -133,7 +133,7 @@ export default function UserRoles({
           <Table head={["Role", "Scope", "Since", ""]}>
             {assignments.map((a) => (
               <Row key={a.id}>
-                <Cell className="font-mono text-[11px] uppercase tracking-[0.1em] text-verdigris-300">
+                <Cell className="font-mono text-[0.78rem] uppercase tracking-[0.1em] text-verdigris-300">
                   {a.role}
                 </Cell>
                 <Cell className="text-verdigris-200/60">
@@ -149,7 +149,7 @@ export default function UserRoles({
                 <Cell className="text-right">
                   {a.isImmutable ? (
                     <span
-                      className="text-[11px] text-verdigris-200/40"
+                      className="text-[0.78rem] text-verdigris-200/40"
                       title="An immutable role is bound to the account for its lifetime. Suspend the account instead."
                     >
                       permanent
@@ -207,7 +207,7 @@ export default function UserRoles({
             Only the roles your own role is permitted to grant are listed.
           </p>
 
-          <label htmlFor="role" className="mt-5 block text-[13px] font-medium text-verdigris-100">
+          <label htmlFor="role" className="mt-5 block text-[0.9rem] font-medium text-verdigris-100">
             Role
           </label>
           <select
@@ -230,7 +230,7 @@ export default function UserRoles({
             <>
               <label
                 htmlFor="scope"
-                className="mt-4 block text-[13px] font-medium text-verdigris-100"
+                className="mt-4 block text-[0.9rem] font-medium text-verdigris-100"
               >
                 {needs === "warehouse" ? "Warehouse" : "Importer"}
               </label>

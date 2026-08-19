@@ -96,7 +96,7 @@ export default function UserStatus({
 
   return open ? (
     <div className="rounded-xl border border-rose-400/25 bg-rose-500/[0.06] p-4">
-      <label htmlFor="suspendReason" className="block text-[13px] font-medium text-rose-100">
+      <label htmlFor="suspendReason" className="block text-[0.9rem] font-medium text-rose-100">
         Why is this account being suspended?
       </label>
       <input

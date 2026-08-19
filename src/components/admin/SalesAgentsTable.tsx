@@ -163,7 +163,7 @@ export default function SalesAgentsTable({
       cell: ({ row }) => (
         <button type="button" onClick={() => openView(row.original)} className="text-left font-medium hover:text-patina">
           {name(row.original)}
-          {row.original.userId ? null : <span className="ml-1.5 text-[10px] uppercase tracking-wide text-verdigris-200/45">no login</span>}
+          {row.original.userId ? null : <span className="ml-1.5 text-[0.72rem] uppercase tracking-wide text-verdigris-200/45">no login</span>}
         </button>
       ),
     });
@@ -194,13 +194,13 @@ export default function SalesAgentsTable({
                 <span className="text-verdigris-100">{x.cityName}</span>
                 <span className="text-verdigris-200/45"> · {x.stateName}</span>
                 {x.areas.length ? (
-                  <span className="block text-[11px] text-verdigris-200/65">
+                  <span className="block text-[0.78rem] text-verdigris-200/65">
                     {x.areas.slice(0, 3).join(", ")}{x.areas.length > 3 ? ` +${x.areas.length - 3}` : ""}
                   </span>
                 ) : null}
               </span>
             ))}
-            {a.length > 2 ? <span className="text-[11px] text-verdigris-200/50">+{a.length - 2} more</span> : null}
+            {a.length > 2 ? <span className="text-[0.78rem] text-verdigris-200/50">+{a.length - 2} more</span> : null}
           </span>
         );
       },
@@ -271,7 +271,7 @@ export default function SalesAgentsTable({
         />
 
         {confirm?.kind === "delete" ? (
-          <div role="alertdialog" aria-label="Confirm delete" className="flex flex-wrap items-center gap-3 border-t border-rose-400/25 bg-rose-500/[0.07] px-5 py-3 text-[13px] text-rose-100">
+          <div role="alertdialog" aria-label="Confirm delete" className="flex flex-wrap items-center gap-3 border-t border-rose-400/25 bg-rose-500/[0.07] px-5 py-3 text-[0.9rem] text-rose-100">
             <span className="flex-1">Delete {confirm.label}? Their login is suspended and the record is kept in the audit log.</span>
             <button type="button" disabled={busy === "bulk"} onClick={() => bulk("delete", confirm.ids)} className="rounded-lg bg-rose-500/80 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500">
               {busy === "bulk" ? "Deleting…" : "Delete"}
@@ -377,7 +377,7 @@ function AgentDrawer({
         <header className="flex items-center justify-between border-b border-verdigris-300/10 px-6 py-4">
           <div>
             <h2 className="text-base font-semibold text-verdigris-50">{title}</h2>
-            {row ? <p className="mt-0.5 font-mono text-[11px] text-verdigris-200/45">{row.code}</p> : null}
+            {row ? <p className="mt-0.5 font-mono text-[0.78rem] text-verdigris-200/45">{row.code}</p> : null}
           </div>
           <IconButton label="Close" onClick={onClose} icon={<XIcon className="h-4 w-4" />} />
         </header>
@@ -491,7 +491,7 @@ function AgentDrawer({
                         {a.areas.length ? (
                           <div className="mt-1.5 flex flex-wrap gap-1">
                             {a.areas.map((loc) => (
-                              <span key={loc} className="inline-flex items-center gap-1 rounded-full border border-verdigris-300/25 py-0.5 pl-2 pr-1 text-[11px] text-verdigris-100">
+                              <span key={loc} className="inline-flex items-center gap-1 rounded-full border border-verdigris-300/25 py-0.5 pl-2 pr-1 text-[0.78rem] text-verdigris-100">
                                 {loc}
                                 <button type="button" aria-label={`Remove ${loc}`} onClick={() => removeLocality(a.cityId, loc)}
                                   className="grid h-3.5 w-3.5 place-items-center rounded-full text-verdigris-200/60 hover:text-verdigris-50">
@@ -500,7 +500,7 @@ function AgentDrawer({
                               </span>
                             ))}
                           </div>
-                        ) : <p className="mt-1 text-[11px] text-verdigris-200/45">Whole city</p>}
+                        ) : <p className="mt-1 text-[0.78rem] text-verdigris-200/45">Whole city</p>}
                       </li>
                     ))}
                   </ul>

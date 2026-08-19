@@ -343,7 +343,7 @@ export default function CompanyProfileForm({
                 const done = Boolean((draft[k] ?? "").trim());
                 return (
                   <li key={k} className={`flex items-center gap-2 ${done ? "text-verdigris-100" : "text-verdigris-200/60"}`}>
-                    <span className={`grid h-4 w-4 place-items-center rounded-full border text-[10px] ${done ? "border-verdigris-300/50 bg-verdigris-500/20" : "border-verdigris-300/25"}`}>
+                    <span className={`grid h-4 w-4 place-items-center rounded-full border text-[0.72rem] ${done ? "border-verdigris-300/50 bg-verdigris-500/20" : "border-verdigris-300/25"}`}>
                       {done ? "✓" : ""}
                     </span>
                     {LABELS[k]}

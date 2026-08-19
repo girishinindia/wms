@@ -117,7 +117,7 @@ export default function NotificationBell() {
       >
         <BellIcon className="h-4 w-4" />
         {unread > 0 ? (
-          <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-amber-400 px-1 text-[10px] font-bold text-ink-900">
+          <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-amber-400 px-1 text-[0.72rem] font-bold text-ink-900">
             {unread > 99 ? "99+" : unread}
           </span>
         ) : null}
@@ -167,7 +167,7 @@ export default function NotificationBell() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-verdigris-50">{item.title}</p>
                         <p className="mt-0.5 line-clamp-2 text-xs text-verdigris-200/70">{item.body}</p>
-                        <p className="mt-1 text-[11px] text-verdigris-200/45">{ago(item.createdAt)}</p>
+                        <p className="mt-1 text-[0.78rem] text-verdigris-200/45">{ago(item.createdAt)}</p>
                       </div>
                     </div>
                   </button>

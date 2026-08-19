@@ -302,7 +302,7 @@ export default function MasterTable({
           const v = row.original.values[f.key];
           if (f.type === "select" && v !== null && v !== undefined) {
             return (
-              <span className="rounded-full border border-verdigris-300/20 px-2.5 py-0.5 text-[11px] text-verdigris-200">
+              <span className="rounded-full border border-verdigris-300/20 px-2.5 py-0.5 text-[0.78rem] text-verdigris-200">
                 {String(v).toLowerCase().replace(/_/g, " ")}
               </span>
             );
@@ -429,7 +429,7 @@ export default function MasterTable({
         />
 
         {confirm?.kind === "deactivate-in-use" ? (
-          <div role="alert" className="flex flex-wrap items-center gap-3 border-t border-amber-400/25 bg-amber-500/[0.07] px-5 py-3 text-[13px] text-amber-100">
+          <div role="alert" className="flex flex-wrap items-center gap-3 border-t border-amber-400/25 bg-amber-500/[0.07] px-5 py-3 text-[0.9rem] text-amber-100">
             <span className="flex-1">{confirm.message}</span>
             <IconButton label="Deactivate anyway" tone="danger" busy={busy === confirm.row.id}
               onClick={() => toggle(confirm.row, true)} icon={<PowerIcon className="h-4 w-4" />} />
@@ -439,7 +439,7 @@ export default function MasterTable({
 
         {confirm?.kind === "delete" ? (
           <div role="alertdialog" aria-label="Confirm delete"
-            className="flex flex-wrap items-center gap-3 border-t border-rose-400/25 bg-rose-500/[0.07] px-5 py-3 text-[13px] text-rose-100">
+            className="flex flex-wrap items-center gap-3 border-t border-rose-400/25 bg-rose-500/[0.07] px-5 py-3 text-[0.9rem] text-rose-100">
             <span className="flex-1">
               Delete {confirm.label}? This cannot be undone; the audit log keeps a copy of the values.
             </span>
@@ -542,7 +542,7 @@ function MasterDrawer({
           <div>
             <h2 className="text-base font-semibold text-verdigris-50">{title}</h2>
             {row ? (
-              <p className="mt-0.5 font-mono text-[11px] text-verdigris-200/45">id {row.id}</p>
+              <p className="mt-0.5 font-mono text-[0.78rem] text-verdigris-200/45">id {row.id}</p>
             ) : null}
           </div>
           <IconButton label="Close" onClick={onClose} icon={<XIcon className="h-4 w-4" />} />
@@ -591,7 +591,7 @@ function MasterDrawer({
           >
             {spec.parent && grouped && !view ? (
               <div>
-                <label htmlFor="f-group" className="text-[12px] font-medium text-verdigris-200/70">
+                <label htmlFor="f-group" className="text-[0.84rem] font-medium text-verdigris-200/70">
                   {spec.parent.groupLabel}
                 </label>
                 <select
@@ -614,7 +614,7 @@ function MasterDrawer({
 
             {spec.parent ? (
               <div>
-                <label htmlFor="f-parent" className="text-[12px] font-medium text-verdigris-200/70">
+                <label htmlFor="f-parent" className="text-[0.84rem] font-medium text-verdigris-200/70">
                   {spec.parent.label}
                 </label>
                 {view ? (
@@ -646,7 +646,7 @@ function MasterDrawer({
 
             {drawer.mode === "create" && spec.bulkCreate ? (
               <div>
-                <label htmlFor="f-bulk" className="text-[12px] font-medium text-verdigris-200/70">
+                <label htmlFor="f-bulk" className="text-[0.84rem] font-medium text-verdigris-200/70">
                   {spec.bulkCreate.label} *
                 </label>
                 <textarea
@@ -671,7 +671,7 @@ function MasterDrawer({
 
             {spec.fields.map((f) => (drawer.mode === "create" && spec.bulkCreate ? null : (
               <div key={f.key}>
-                <label htmlFor={`f-${f.key}`} className="text-[12px] font-medium text-verdigris-200/70">
+                <label htmlFor={`f-${f.key}`} className="text-[0.84rem] font-medium text-verdigris-200/70">
                   {f.label}{f.required && !view ? " *" : ""}
                 </label>
                 {view ? (

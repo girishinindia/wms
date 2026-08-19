@@ -238,7 +238,7 @@ export default async function ImporterDetailPage({
 
           {row.rejection_reason ? (
             <div className="mt-5 rounded-xl border border-rose-400/25 bg-rose-500/[0.06] p-4">
-              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-rose-300">
+              <p className="font-mono text-[0.72rem] uppercase tracking-[0.14em] text-rose-300">
                 Reason given
               </p>
               <p className="mt-1.5 text-sm text-rose-100">{row.rejection_reason}</p>
