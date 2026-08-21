@@ -40,6 +40,7 @@ import {
   revokeRoleRequestSchema,
   setUserStatusRequestSchema,
   updateCityRequestSchema,
+  updateImporterRequestSchema,
 } from "@/lib/validation/api-admin";
 import {
   importerProfilePatchSchema,
@@ -737,6 +738,35 @@ adminPath({
   status: 201,
   responses: {
     409: errorResponse("Company name, GSTIN, PAN, email or mobile already registered."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/importers/{id}",
+  operationId: "updateImporter",
+  method: "patch",
+  summary: "Correct an importer's record",
+  permission: "importer.update",
+  description:
+    "Any subset of the company's own fields, at any status. The " +
+    "counterpart to `PATCH /importer/me`, and deliberately a separate " +
+    "route: the importer's own endpoint locks legal name, entity type, " +
+    "GSTIN and PAN once verified and tells them to ask the warehouse — " +
+    "which are exactly the fields this exists to fix.\n\nOnly an " +
+    "ALL-scoped grant qualifies; an importer's OWN-scoped " +
+    "`importer.update` is refused here. A field sent empty is cleared, " +
+    "except the four the database will not accept null (company name, " +
+    "contact person, email, mobile). On a company that is no longer " +
+    "PENDING the reply names any required field the edit would empty, " +
+    "rather than letting `importer_complete_before_active` answer for " +
+    "it. Status, KYC state and credit terms are not touched here — " +
+    "approve, reject and lifecycle own those.",
+  params: idParam,
+  request: updateImporterRequestSchema,
+  response: importerProfileResponseSchema,
+  responses: {
+    404: errorResponse("No such importer."),
+    409: errorResponse("Company name, GSTIN or PAN already registered to another importer."),
   },
 });
 

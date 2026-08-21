@@ -61,6 +61,10 @@ const COLUMNS: Record<string, string> = {
   contactEmail: "contact_email",
   contactMobile: "contact_mobile",
   alternateMobile: "alternate_mobile",
+  // Admin-only, and safe to sit here: `importerProfilePatchSchema` does
+  // not carry `notes` and zod strips unknown keys, so the importer's own
+  // PATCH can never reach this column. The admin update schema does.
+  notes: "notes",
 };
 
 /** The typed casts the domains need. Anything not listed is plain text. */

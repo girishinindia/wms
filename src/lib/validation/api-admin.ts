@@ -206,6 +206,56 @@ export const createImporterResponseSchema = z
   })
   .openapi("CreateImporterResponse");
 
+/**
+ * On an update, an empty box means "remove what is there".
+ *
+ * The opposite of what it means on a create, where an empty optional
+ * field was simply never filled in. `optional()` above maps "" to
+ * undefined — right for a create, wrong here, because it would make a
+ * mistyped PAN impossible to clear. So "" becomes null, the column is
+ * set to null, and the field counts as touched for the audit row.
+ */
+const clearable = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (v === "" || v === null ? null : v), schema.nullable().optional());
+
+/**
+ * A super admin correcting an importer's record — any subset of fields.
+ *
+ * Everything is optional because this is a PATCH, and everything the
+ * database allows to be null is `clearable`. Company name and the three
+ * contact columns are NOT NULL, so they can be changed but not emptied.
+ *
+ * Status, KYC state and credit terms are deliberately absent: those move
+ * through approve, reject and lifecycle, where each has its own rules and
+ * its own notification.
+ */
+export const updateImporterRequestSchema = z
+  .object({
+    companyName: z.string().trim().min(2).max(160).optional(),
+    legalName: clearable(z.string().trim().min(2).max(160)),
+    tradeName: clearable(z.string().trim().min(1).max(160)),
+    entityType: clearable(z.enum(ENTITY_TYPES)),
+    address: clearable(addressText(6, 400)),
+    landmark: clearable(addressText(2, 160)),
+    area: clearable(addressText(2, 160)),
+    cityId: clearable(z.number().int().positive()),
+    pincode: clearable(pincode),
+    gstin: clearable(gstin),
+    pan: clearable(pan),
+    contactPerson: z.string().trim().min(2).max(120).optional(),
+    contactEmail: z.string().trim().email().max(160).optional(),
+    contactMobile: z
+      .string()
+      .trim()
+      .regex(/^[6-9][0-9]{9}$/, "Enter a 10-digit Indian mobile number")
+      .optional(),
+    alternateMobile: clearable(
+      z.string().trim().regex(/^[6-9][0-9]{9}$/, "Enter a 10-digit Indian mobile number"),
+    ),
+    notes: clearable(z.string().trim().max(1000)),
+  })
+  .openapi("UpdateImporterRequest");
+
 export const rejectImporterRequestSchema = z
   .object({
     /**

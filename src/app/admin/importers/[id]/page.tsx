@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import ImporterEditDrawer from "@/components/admin/ImporterEditDrawer";
 import ImporterLifecycle from "@/components/admin/ImporterLifecycle";
 import ImporterReview, { type CityOption } from "@/components/admin/ImporterReview";
 import { Card, Denied, Facts, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { getDb } from "@/db";
+import { loadGeoOptions } from "@/lib/admin/geo";
 import { grantFor, importerIdOf, pageGuard } from "@/lib/auth/guard";
 import { missingFields } from "@/lib/importer/profile";
 import { sql } from "drizzle-orm";
@@ -50,12 +52,16 @@ export default async function ImporterDetailPage({
       city_id: number | null;
       city_name: string | null;
       state_name: string | null;
+      state_id: number | null;
+      country_id: number | null;
       pincode: string | null;
       gstin: string | null;
       pan: string | null;
       contact_person: string;
       contact_email: string;
       contact_mobile: string;
+      alternate_mobile: string | null;
+      notes: string | null;
       status: string;
       kyc_status: string;
       origin: string;
@@ -69,10 +75,12 @@ export default async function ImporterDetailPage({
     }>(sql`
       select i.id, i.code, i.company_name, i.legal_name, i.trade_name, i.entity_type, i.address,
              i.landmark, i.area, i.city_id, c.name as city_name, st.name as state_name,
+             st.id as state_id, st.country_id,
              i.pincode::text as pincode,
              i.gstin::text as gstin, i.pan::text as pan,
              i.contact_person, i.contact_email::text as contact_email,
              i.contact_mobile::text as contact_mobile,
+             i.alternate_mobile::text as alternate_mobile, i.notes,
              i.status::text as status, i.kyc_status, i.origin,
              i.created_at, i.approved_at, i.rejected_at, i.rejection_reason,
              d.email::text as decided_by,
@@ -106,6 +114,16 @@ export default async function ImporterDetailPage({
 
   const row = rows[0];
   if (!row) notFound();
+
+  /**
+   * Correcting the record is a platform-wide power, so only an ALL-scoped
+   * grant gets the button. An IMPORTER also holds `importer.update` — over
+   * their own company, through their own profile screen, where legal name,
+   * entity type, GSTIN and PAN are locked once verified. This is the door
+   * that message tells them to knock on.
+   */
+  const canEdit = grantFor(guard.actor, "importer.update")?.scope === "ALL";
+  const geo = canEdit ? await loadGeoOptions() : { countries: [], states: [], cities: [] };
 
   const submittedProfile = {
     legalName: row.legal_name ?? "",
@@ -160,7 +178,35 @@ export default async function ImporterDetailPage({
         title={row.company_name}
         subtitle={`${row.code} · registered ${new Date(row.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} · ${row.origin === "SELF_REGISTERED" ? "self-registered" : "created by an admin"}`}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {canEdit ? (
+              <ImporterEditDrawer
+                importerId={row.id}
+                companyName={row.company_name}
+                geo={geo}
+                initialCountryId={row.country_id ? String(row.country_id) : ""}
+                initialStateId={row.state_id ? String(row.state_id) : ""}
+                verified={row.status !== "PENDING"}
+                initial={{
+                  companyName: row.company_name,
+                  legalName: row.legal_name ?? "",
+                  tradeName: row.trade_name ?? "",
+                  entityType: row.entity_type ?? "",
+                  gstin: row.gstin ?? "",
+                  pan: row.pan ?? "",
+                  address: row.address ?? "",
+                  landmark: row.landmark ?? "",
+                  area: row.area ?? "",
+                  cityId: row.city_id ? String(row.city_id) : "",
+                  pincode: row.pincode ?? "",
+                  contactPerson: row.contact_person,
+                  contactEmail: row.contact_email,
+                  contactMobile: row.contact_mobile,
+                  alternateMobile: row.alternate_mobile ?? "",
+                  notes: row.notes ?? "",
+                }}
+              />
+            ) : null}
             <StatusBadge value={row.status} />
             <StatusBadge value={row.kyc_status} />
           </div>

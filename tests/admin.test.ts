@@ -276,6 +276,7 @@ describe("OpenAPI: admin endpoints", () => {
       "/api/v1/admin/cities",
       "/api/v1/admin/cities/{id}",
       "/api/v1/admin/importers",
+      "/api/v1/admin/importers/{id}",
       "/api/v1/admin/importers/{id}/approve",
       "/api/v1/admin/importers/{id}/lifecycle",
       "/api/v1/admin/importers/{id}/reject",

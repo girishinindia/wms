@@ -66,6 +66,17 @@ export const PROFILE_REQUIRED = [
   "pan",
 ] as const;
 
+/**
+ * The five `importer_complete_before_active` actually demands — no more.
+ *
+ * GSTIN and PAN are this portal's rule for submitting a profile, not the
+ * database's rule for a row being ACTIVE, and a company verified before
+ * that rule existed may carry neither. Anything that edits an existing
+ * row measures against THIS list: check the seven instead and correcting
+ * a company's landmark starts demanding a PAN it has never had.
+ */
+export const ACTIVE_REQUIRED = ["legalName", "entityType", "address", "cityId", "pincode"] as const;
+
 // ── Sales agents ──────────────────────────────────────────────────
 
 const isoDate = z
