@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { XIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
@@ -54,6 +54,7 @@ export default function ImporterEditDrawer({
   initialCountryId,
   initialStateId,
   verified,
+  trigger,
 }: {
   importerId: number;
   companyName: string;
@@ -63,6 +64,13 @@ export default function ImporterEditDrawer({
   initialStateId: string;
   /** ACTIVE or SUSPENDED — the KYC fields cannot be emptied on one. */
   verified: boolean;
+  /**
+   * What opens it. The detail page wants a labelled "Edit" button beside
+   * the status badges; a table row wants the pencil that sits with the
+   * other row actions. Same drawer either way — passing the opener in is
+   * what stops this becoming two components that drift apart.
+   */
+  trigger?: (open: () => void) => ReactNode;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -178,13 +186,17 @@ export default function ImporterEditDrawer({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="rounded-lg border border-verdigris-300/25 px-3.5 py-1.5 text-xs font-semibold text-verdigris-100 transition-colors hover:border-verdigris-300/55 hover:text-verdigris-50"
-      >
-        Edit
-      </button>
+      {trigger ? (
+        trigger(() => setOpen(true))
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-lg border border-verdigris-300/25 px-3.5 py-1.5 text-xs font-semibold text-verdigris-100 transition-colors hover:border-verdigris-300/55 hover:text-verdigris-50"
+        >
+          Edit
+        </button>
+      )}
 
       {open ? (
         <div className="fixed inset-0 z-50 flex justify-end">

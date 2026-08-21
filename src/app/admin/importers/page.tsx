@@ -50,30 +50,62 @@ export default async function ImportersPage({
   };
   const active = filter && TABS[filter] ? filter : null;
 
+  /**
+   * The whole record, not just the columns on show: the pencil in each
+   * row opens the edit drawer pre-filled, and fetching that per row when
+   * it is clicked would mean a round trip and a spinner for something
+   * the list query can carry for nothing.
+   */
   const rows = await getDb().execute<{
     id: number;
     code: string;
     company_name: string;
+    legal_name: string | null;
+    trade_name: string | null;
+    entity_type: string | null;
+    gstin: string | null;
+    pan: string | null;
+    address: string | null;
+    landmark: string | null;
+    area: string | null;
+    city_id: number | null;
+    state_id: number | null;
+    country_id: number | null;
+    pincode: string | null;
     contact_person: string;
     contact_email: string;
     contact_mobile: string;
+    alternate_mobile: string | null;
+    notes: string | null;
     status: string;
     kyc_status: string;
     created_at: string;
   }>(sql`
-    select id, code, company_name, contact_person,
-           contact_email::text as contact_email, contact_mobile::text as contact_mobile,
-           status::text as status, kyc_status, created_at
-      from wms.importer
-     where deleted_at is null
+    select i.id, i.code, i.company_name, i.legal_name, i.trade_name, i.entity_type,
+           i.gstin::text as gstin, i.pan::text as pan,
+           i.address, i.landmark, i.area, i.city_id, s.id as state_id, s.country_id,
+           i.pincode::text as pincode,
+           i.contact_person,
+           i.contact_email::text as contact_email, i.contact_mobile::text as contact_mobile,
+           i.alternate_mobile::text as alternate_mobile, i.notes,
+           i.status::text as status, i.kyc_status, i.created_at
+      from wms.importer i
+      left join wms.city c on c.id = i.city_id
+      left join wms.state s on s.id = c.state_id
+     where i.deleted_at is null
        ${active ? TABS[active]! : sql``}
-     order by (status = 'PENDING' and kyc_status = 'SUBMITTED') desc, (status = 'PENDING') desc, created_at desc
+     order by (i.status = 'PENDING' and i.kyc_status = 'SUBMITTED') desc,
+              (i.status = 'PENDING') desc, i.created_at desc
      limit 200
   `);
 
-  // Only a platform-wide grant means "create any company".
+  // Only a platform-wide grant means "any company" — an importer's own
+  // OWN-scoped grant is not this screen, and never reaches here anyway.
   const canCreate = grantFor(guard.actor, "importer.create")?.scope === "ALL";
-  const geo = canCreate ? await loadGeoOptions() : { countries: [], states: [], cities: [] };
+  const canEdit = grantFor(guard.actor, "importer.update")?.scope === "ALL";
+  const canDelete = grantFor(guard.actor, "importer.delete")?.scope === "ALL";
+  const geo =
+    canCreate || canEdit ? await loadGeoOptions() : { countries: [], states: [], cities: [] };
 
   const tabs = [
     { label: "All", value: null },
@@ -113,6 +145,9 @@ export default async function ImportersPage({
 
       <Card>
         <ImportersTable
+          geo={geo}
+          canEdit={canEdit}
+          canDelete={canDelete}
           rows={rows.map((r) => ({
             id: r.id,
             code: r.code,
@@ -123,6 +158,26 @@ export default async function ImportersPage({
             status: r.status,
             kycStatus: r.kyc_status,
             createdAt: String(r.created_at),
+            countryId: r.country_id ? String(r.country_id) : "",
+            stateId: r.state_id ? String(r.state_id) : "",
+            edit: {
+              companyName: r.company_name,
+              legalName: r.legal_name ?? "",
+              tradeName: r.trade_name ?? "",
+              entityType: r.entity_type ?? "",
+              gstin: r.gstin ?? "",
+              pan: r.pan ?? "",
+              address: r.address ?? "",
+              landmark: r.landmark ?? "",
+              area: r.area ?? "",
+              cityId: r.city_id ? String(r.city_id) : "",
+              pincode: r.pincode ?? "",
+              contactPerson: r.contact_person,
+              contactEmail: r.contact_email,
+              contactMobile: r.contact_mobile,
+              alternateMobile: r.alternate_mobile ?? "",
+              notes: r.notes ?? "",
+            },
           }))}
         />
       </Card>
