@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import AdminShell from "@/components/admin/AdminShell";
+import { ForceChangePassword } from "@/components/admin/ProfileForms";
 import { visibleNav } from "@/components/admin/nav";
 import { PREFS_BOOT_SCRIPT } from "@/lib/admin/prefs";
 import { currentActor, grantFor, importerGateFor } from "@/lib/auth/guard";
@@ -34,6 +35,18 @@ export const metadata: Metadata = {
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const actor = await currentActor();
   if (!actor) redirect("/sign-in?next=/admin");
+
+  // A temporary password opens exactly one door: the form that replaces
+  // it. Rendering the gate here, in the layout, means no admin URL can
+  // route around it.
+  if (actor.session.mustChangePassword) {
+    return (
+      <>
+        <script dangerouslySetInnerHTML={{ __html: PREFS_BOOT_SCRIPT }} />
+        <ForceChangePassword name={actor.session.firstName} />
+      </>
+    );
+  }
 
   let items = visibleNav(actor.permissions);
 

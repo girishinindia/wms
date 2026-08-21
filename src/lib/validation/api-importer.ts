@@ -1,6 +1,6 @@
 import { z } from "@/lib/openapi/zod";
 
-import { ENTITY_TYPES, gstin, optional, pan, pincode } from "./api-admin";
+import { addressText, ENTITY_TYPES, gstin, optional, pan, pincode } from "./api-admin";
 
 /**
  * The importer's own profile, and sales agents.
@@ -24,9 +24,9 @@ export const importerProfilePatchSchema = z
     legalName: z.string().trim().min(2).max(160).optional(),
     tradeName: optional(z.string().trim().max(160)),
     entityType: z.enum(ENTITY_TYPES).optional(),
-    address: z.string().trim().min(6).max(400).optional(),
-    landmark: optional(z.string().trim().max(160)),
-    area: optional(z.string().trim().max(160)),
+    address: addressText(6, 400).optional(),
+    landmark: optional(addressText(2, 160)),
+    area: optional(addressText(2, 160)),
     cityId: z.number().int().positive().optional(),
     pincode: pincode.optional(),
     gstin: optional(gstin),
@@ -100,9 +100,9 @@ const salesAgentCore = {
   birthDate: optional(isoDate),
   joiningDate: isoDate,
   pan: optional(pan),
-  address: optional(z.string().trim().max(400)),
-  landmark: optional(z.string().trim().max(160)),
-  area: optional(z.string().trim().max(160)),
+  address: optional(addressText(2, 400)),
+  landmark: optional(addressText(2, 160)),
+  area: optional(addressText(2, 160)),
   cityId: z.number().int().positive().nullable().optional(),
   pincode: optional(pincode),
   salesAreas: z.array(salesAreaSchema).max(100).default([]),
@@ -112,6 +112,9 @@ const salesAgentCore = {
 export const salesAgentCreateSchema = z
   .object({
     ...salesAgentCore,
+    /** Required on create: the email IS the login, and the one-time
+     *  password goes there. */
+    email: z.string().trim().email().max(160),
     /** Super admin only: which importer. An importer's own request is
      *  pinned to their importer regardless of what is sent. */
     importerId: z.number().int().positive().optional(),

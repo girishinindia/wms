@@ -8,7 +8,7 @@ import { importerIdOf, requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { loadImporterProfile, patchImporterProfile } from "@/lib/importer/profile";
 import { importerProfilePatchSchema } from "@/lib/validation/api-importer";
-import { isUniqueViolation } from "@/lib/db-errors";
+import { constraintNameOf, isUniqueViolation } from "@/lib/db-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -106,6 +106,11 @@ export async function PATCH(request: NextRequest) {
       return ok(after, requestId);
     } catch (error) {
       if (isUniqueViolation(error)) {
+        if (constraintNameOf(error) === "importer_company_name_uk") {
+          return fail("CONFLICT", "That company name is already registered to another importer", requestId, {
+            fields: { companyName: "Already registered" },
+          });
+        }
         return fail("CONFLICT", "That GSTIN or PAN is already registered to another importer", requestId);
       }
       return toResponse(error, requestId);

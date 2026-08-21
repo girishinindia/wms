@@ -4,7 +4,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import { EyeIcon, PencilIcon, PowerIcon, TrashIcon, XIcon } from "@/components/icons";
+import { EyeIcon, PencilIcon, TrashIcon, XIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
@@ -17,7 +17,7 @@ import DataTable, {
   Switch,
   type ColumnMeta,
 } from "./DataTable";
-import { Card, FactList, IconButton, StatusBadge } from "./ui";
+import { Card, ConfirmDialog, FactList, IconButton, StatusBadge } from "./ui";
 
 /**
  * The master-data table: one component, five screens, on DataTable.
@@ -428,32 +428,30 @@ export default function MasterTable({
           }}
         />
 
-        {confirm?.kind === "deactivate-in-use" ? (
-          <div role="alert" className="flex flex-wrap items-center gap-3 border-t border-amber-400/25 bg-amber-500/[0.07] px-5 py-3 text-[0.9rem] text-amber-100">
-            <span className="flex-1">{confirm.message}</span>
-            <IconButton label="Deactivate anyway" tone="danger" busy={busy === confirm.row.id}
-              onClick={() => toggle(confirm.row, true)} icon={<PowerIcon className="h-4 w-4" />} />
-            <IconButton label="Keep it active" onClick={() => setConfirm(null)} icon={<XIcon className="h-4 w-4" />} />
-          </div>
-        ) : null}
-
-        {confirm?.kind === "delete" ? (
-          <div role="alertdialog" aria-label="Confirm delete"
-            className="flex flex-wrap items-center gap-3 border-t border-rose-400/25 bg-rose-500/[0.07] px-5 py-3 text-[0.9rem] text-rose-100">
-            <span className="flex-1">
-              Delete {confirm.label}? This cannot be undone; the audit log keeps a copy of the values.
-            </span>
-            <button type="button" disabled={busy === "bulk"} onClick={() => remove(confirm.ids)}
-              className="rounded-lg bg-rose-500/80 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500">
-              {busy === "bulk" ? "Deleting…" : "Delete"}
-            </button>
-            <button type="button" onClick={() => setConfirm(null)}
-              className="rounded-lg border border-verdigris-300/20 px-3 py-1 text-xs text-verdigris-100 hover:border-verdigris-300/45">
-              Cancel
-            </button>
-          </div>
-        ) : null}
       </Card>
+
+      {confirm?.kind === "deactivate-in-use" ? (
+        <ConfirmDialog
+          title="Still in use"
+          message={confirm.message}
+          confirmLabel="Deactivate anyway"
+          tone="warn"
+          busy={busy === confirm.row.id}
+          onConfirm={() => toggle(confirm.row, true)}
+          onCancel={() => setConfirm(null)}
+        />
+      ) : null}
+
+      {confirm?.kind === "delete" ? (
+        <ConfirmDialog
+          title={`Delete ${confirm.label}?`}
+          message="This cannot be undone; the audit log keeps a copy of the values."
+          confirmLabel="Delete"
+          busy={busy === "bulk"}
+          onConfirm={() => remove(confirm.ids)}
+          onCancel={() => setConfirm(null)}
+        />
+      ) : null}
 
       {drawer ? (
         <MasterDrawer

@@ -77,6 +77,7 @@ export type ResolvedSession = {
   firstName: string;
   lastName: string;
   status: string;
+  mustChangePassword: boolean;
   activeRole: string | null;
   activeWarehouseId: number | null;
   activeImporterId: number | null;
@@ -106,6 +107,7 @@ export async function resolveSession(token: string | undefined): Promise<Resolve
     first_name: string;
     last_name: string;
     status: string;
+    must_change_password: boolean;
     active_role: string | null;
     active_warehouse_id: number | null;
     active_importer_id: number | null;
@@ -121,7 +123,7 @@ export async function resolveSession(token: string | undefined): Promise<Resolve
        and u.deleted_at is null
        and u.status = 'ACTIVE'
     returning s.id, s.user_id, u.email::text as email, u.first_name, u.last_name,
-              u.status::text as status, s.active_role::text as active_role,
+              u.status::text as status, u.must_change_password, s.active_role::text as active_role,
               s.active_warehouse_id, s.active_importer_id
   `);
 
@@ -134,6 +136,7 @@ export async function resolveSession(token: string | undefined): Promise<Resolve
     firstName: row.first_name,
     lastName: row.last_name,
     status: row.status,
+    mustChangePassword: Boolean(row.must_change_password),
     activeRole: row.active_role,
     activeWarehouseId: row.active_warehouse_id,
     activeImporterId: row.active_importer_id,

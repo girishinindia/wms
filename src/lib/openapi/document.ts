@@ -870,6 +870,23 @@ adminPath({
 });
 
 adminPath({
+  path: "/api/v1/admin/users/{id}/profile",
+  operationId: "adminEditUserName",
+  method: "patch",
+  summary: "Correct a user's name",
+  permission: "user.update",
+  description:
+    "Name only. Email, mobile and password change exclusively through the " +
+    "owner's own verified flows — an admin cannot set them for anyone.",
+  params: idParam,
+  request: z
+    .object({ firstName: z.string().optional(), lastName: z.string().optional() })
+    .openapi("AdminUserNamePatch"),
+  response: okAdminResponseSchema,
+  responses: { 404: errorResponse("No such user.") },
+});
+
+adminPath({
   path: "/api/v1/admin/users/{id}/status",
   operationId: "setUserStatus",
   method: "patch",
@@ -1139,6 +1156,125 @@ securedPath({
   response: z.object({ marked: z.number().int() }).openapi("MarkNotificationsReadResponse"),
 });
 
+
+// ── My profile ────────────────────────────────────────────────────
+
+const profileResponse = z
+  .object({
+    firstName: z.string(),
+    lastName: z.string(),
+    email: z.string(),
+    mobile: z.string(),
+    emailVerified: z.boolean(),
+    mobileVerified: z.boolean(),
+    roles: z.array(z.string()),
+    lastLoginAt: z.string().nullable(),
+  })
+  .openapi("ProfileResponse");
+
+securedPath({
+  tag: "Profile",
+  path: "/api/v1/profile",
+  method: "get",
+  operationId: "getProfile",
+  summary: "My account",
+  permission: "authenticated",
+  description: "Who the session belongs to: name, contact addresses and roles.",
+  response: profileResponse,
+});
+
+securedPath({
+  tag: "Profile",
+  path: "/api/v1/profile",
+  method: "patch",
+  operationId: "patchProfile",
+  summary: "Change my name",
+  permission: "authenticated",
+  description:
+    "Name only. Email, mobile and password each have their own verified " +
+    "flow and can never be edited directly — not even by a super admin.",
+  request: z
+    .object({ firstName: z.string().optional(), lastName: z.string().optional() })
+    .openapi("ProfilePatch"),
+  response: okAdminResponseSchema,
+});
+
+securedPath({
+  tag: "Profile",
+  path: "/api/v1/profile/password",
+  operationId: "changePassword",
+  summary: "Change my password",
+  permission: "authenticated",
+  description:
+    "Current password required, unless the account is on a forced " +
+    "first-login change. Every session is revoked afterwards — including " +
+    "this one — so the client returns to sign-in.",
+  request: z
+    .object({
+      oldPassword: z.string().optional(),
+      newPassword: z.string().min(8),
+      confirmPassword: z.string(),
+    })
+    .openapi("ChangePasswordRequest"),
+  response: z.object({ ok: z.boolean(), signedOut: z.boolean() }).openapi("SignedOutResponse"),
+});
+
+const otpStartResponse = z
+  .object({ sent: z.boolean(), expiresInSeconds: z.number().int(), resendAfterSeconds: z.number().int() })
+  .openapi("ContactChangeStartResponse");
+const otpVerifyRequest = z.object({ code: z.string() }).openapi("ContactChangeVerifyRequest");
+
+securedPath({
+  tag: "Profile",
+  path: "/api/v1/profile/email",
+  operationId: "startEmailChange",
+  summary: "Change my email — step 1, code to the new address",
+  permission: "authenticated",
+  description: "Nothing changes yet; a one-time code goes to the NEW email.",
+  request: z.object({ newEmail: z.string().email() }).openapi("EmailChangeRequest"),
+  response: otpStartResponse,
+  responses: { 409: errorResponse("That email already belongs to another account.") },
+});
+
+securedPath({
+  tag: "Profile",
+  path: "/api/v1/profile/email/verify",
+  operationId: "verifyEmailChange",
+  summary: "Change my email — step 2, confirm the code",
+  permission: "authenticated",
+  description: "On success the email is updated and every session is revoked.",
+  request: otpVerifyRequest,
+  response: z
+    .object({ ok: z.boolean(), signedOut: z.boolean(), email: z.string() })
+    .openapi("EmailChangeVerifyResponse"),
+});
+
+securedPath({
+  tag: "Profile",
+  path: "/api/v1/profile/mobile",
+  operationId: "startMobileChange",
+  summary: "Change my mobile — step 1, code by SMS to the new number",
+  permission: "authenticated",
+  description: "Nothing changes yet; a one-time code goes to the NEW number.",
+  request: z.object({ newMobile: z.string() }).openapi("MobileChangeRequest"),
+  response: otpStartResponse,
+  responses: { 409: errorResponse("That mobile already belongs to another account.") },
+});
+
+securedPath({
+  tag: "Profile",
+  path: "/api/v1/profile/mobile/verify",
+  operationId: "verifyMobileChange",
+  summary: "Change my mobile — step 2, confirm the code",
+  permission: "authenticated",
+  description: "On success the mobile is updated and every session is revoked.",
+  request: otpVerifyRequest,
+  response: z
+    .object({ ok: z.boolean(), signedOut: z.boolean(), mobile: z.string() })
+    .openapi("MobileChangeVerifyResponse"),
+});
+
+
 // ── Document ──────────────────────────────────────────────────
 
 /**
@@ -1200,6 +1336,12 @@ export function buildOpenApiDocument() {
           "code — `wms.notification_rule` decides who hears about an " +
           "event and on which channels, so changing it is a row rather " +
           "than a deploy.",
+      },
+      {
+        name: "Profile",
+        description:
+          "The signed-in user's own account: name, password, and the " +
+          "OTP-verified email and mobile changes.",
       },
       {
         name: "Importer",

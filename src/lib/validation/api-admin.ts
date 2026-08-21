@@ -56,6 +56,24 @@ const pan = z
 const optional = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((v) => (v === "" || v === null ? undefined : v), schema.optional());
 
+/**
+ * Address lines, landmarks, localities and similar free text.
+ *
+ * Starts with a letter or digit; after that letters, digits, spaces and
+ * the punctuation real addresses use ( , . - / ( ) ' & ). "99-100" and
+ * "12/3, MG Road" pass; "@@$# fvf 56768" does not.
+ */
+const addressText = (min: number, max: number) =>
+  z
+    .string()
+    .trim()
+    .min(min)
+    .max(max)
+    .regex(
+      /^[A-Za-z0-9][A-Za-z0-9 ,.\-/()'&]*$/,
+      "Only letters, digits, spaces and , . - / ( ) ' & are allowed",
+    );
+
 // ── Cities ────────────────────────────────────────────────────────
 /**
  * Several at once, on purpose.
@@ -115,7 +133,7 @@ export const approveImporterRequestSchema = z
      */
     legalName: z.string().trim().min(2).max(160).optional(),
     entityType: z.enum(ENTITY_TYPES).optional(),
-    address: z.string().trim().min(6).max(400).optional(),
+    address: addressText(6, 400).optional(),
     cityId: z.number().int().positive().optional(),
     pincode: pincode.optional(),
     gstin: optional(gstin),
@@ -193,4 +211,4 @@ export const okAdminResponseSchema = z
   .object({ ok: z.literal(true) })
   .openapi("OkAdminResponse");
 
-export { ENTITY_TYPES, pincode, gstin, pan, optional };
+export { ENTITY_TYPES, pincode, gstin, pan, optional, addressText };

@@ -269,3 +269,69 @@ export function Denied({ what }: { what: string }) {
     </Card>
   );
 }
+
+/**
+ * A centred confirmation dialog. Replaces the old bar that rendered at
+ * the BOTTOM of the table — off-screen whenever the list was long, which
+ * meant scrolling to find the Delete button you had just asked for.
+ */
+export function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  tone = "danger",
+  busy,
+  onConfirm,
+  onCancel,
+  children,
+}: {
+  title: string;
+  message: ReactNode;
+  confirmLabel: string;
+  tone?: "danger" | "warn";
+  busy?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+  /** Extra content between the message and the buttons — a reason box. */
+  children?: ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <button type="button" aria-label="Cancel" onClick={onCancel} className="absolute inset-0 bg-ink-900/70" />
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`relative w-full max-w-md rounded-2xl border bg-ink-850 p-6 card-shadow ${
+          tone === "danger" ? "border-rose-400/30" : "border-amber-400/30"
+        }`}
+      >
+        <h2 className="text-base font-semibold text-verdigris-50">{title}</h2>
+        <div className={`mt-2 text-sm ${tone === "danger" ? "text-rose-100/90" : "text-amber-100/90"}`}>
+          {message}
+        </div>
+        {children}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-lg border border-verdigris-300/20 px-4 py-2 text-sm text-verdigris-100 hover:border-verdigris-300/45"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${
+              tone === "danger" ? "bg-rose-500/85 hover:bg-rose-500" : "bg-amber-500/85 text-ink-900 hover:bg-amber-500"
+            }`}
+          >
+            {busy ? "Working…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

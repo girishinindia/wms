@@ -116,15 +116,42 @@ const code = (len: number, label: string) =>
     .string()
     .trim()
     .toUpperCase()
-    .length(len, `${label} must be exactly ${len} characters`);
+    .length(len, `${label} must be exactly ${len} characters`)
+    .regex(/^[A-Z0-9]+$/, `${label} may only use letters and digits`);
 
-const name = (max: number) => z.string().trim().min(2).max(max);
+/** Free-length codes: letters, digits, _ and -, starting alphanumeric.
+ *  "TEST @#$" is a typo, not a code. */
+const codeText = (min: number, max: number) =>
+  z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(min)
+    .max(max)
+    .regex(/^[A-Z0-9][A-Z0-9_-]*$/, "Codes may only use letters, digits, _ and -");
+
+/** Human names of things: must start with a letter or digit, and only
+ *  everyday punctuation after that. "#$@@ 56 kkj" is not a name. */
+const NAME_CHARS = /^[A-Za-z0-9][A-Za-z0-9 ,.&()/'-]*$/;
+const name = (max: number) =>
+  z
+    .string()
+    .trim()
+    .min(2)
+    .max(max)
+    .regex(NAME_CHARS, "Only letters, digits, spaces and , . & ( ) / ' - are allowed")
+    .refine((v) => /[A-Za-z]/.test(v), "A name needs at least one letter");
 
 /** An empty input means "not given", not "invalid". */
 const optionalText = (max: number) =>
   z.preprocess(
     (v) => (v === "" || v === null ? undefined : v),
-    z.string().trim().max(max).optional(),
+    z
+      .string()
+      .trim()
+      .max(max)
+      .regex(NAME_CHARS, "Only letters, digits, spaces and , . & ( ) / ' - are allowed")
+      .optional(),
   );
 
 const optionalNumber = (max: number) =>
@@ -208,11 +235,11 @@ const state: MasterResource = {
   orderBy: "name",
   createSchema: withActive({
     countryId: z.number().int().positive(),
-    code: z.string().trim().toUpperCase().min(1).max(8),
+    code: codeText(1, 8),
     name: name(80),
   }),
   updateSchema: withActive({
-    code: z.string().trim().toUpperCase().min(1).max(8).optional(),
+    code: codeText(1, 8).optional(),
     name: name(80).optional(),
   }),
 };
@@ -236,12 +263,12 @@ const warehouseType: MasterResource = {
   conflict: "A warehouse type with that code already exists",
   orderBy: "name",
   createSchema: withActive({
-    code: z.string().trim().toUpperCase().min(2).max(24),
+    code: codeText(2, 24),
     name: name(80),
     description: optionalText(300),
   }),
   updateSchema: withActive({
-    code: z.string().trim().toUpperCase().min(2).max(24).optional(),
+    code: codeText(2, 24).optional(),
     name: name(80).optional(),
     description: optionalText(300),
   }),
@@ -283,7 +310,7 @@ const vehicleType: MasterResource = {
   conflict: "A vehicle type with that code already exists",
   orderBy: "capacity_kg nulls last, name",
   createSchema: withActive({
-    code: z.string().trim().toUpperCase().min(2).max(24),
+    code: codeText(2, 24),
     name: name(80),
     category: z.enum(VEHICLE_CATEGORIES),
     axleCount: optionalNumber(12),
@@ -294,7 +321,7 @@ const vehicleType: MasterResource = {
     heightFt: optionalNumber(20),
   }),
   updateSchema: withActive({
-    code: z.string().trim().toUpperCase().min(2).max(24).optional(),
+    code: codeText(2, 24).optional(),
     name: name(80).optional(),
     category: z.enum(VEHICLE_CATEGORIES).optional(),
     axleCount: optionalNumber(12),

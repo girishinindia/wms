@@ -366,10 +366,10 @@ export function Switch({
       title={label}
       disabled={disabled || busy}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors disabled:opacity-50 ${
+      className={`switch-track relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors disabled:opacity-50 ${
         checked
-          ? "border-verdigris-300/40 bg-verdigris-400/80"
-          : "border-verdigris-300/20 bg-ink-900/70"
+          ? "switch-on border-verdigris-300/40 bg-verdigris-400/80"
+          : "switch-off border-verdigris-300/20 bg-ink-900/70"
       } ${busy ? "animate-pulse" : ""}`}
     >
       <span

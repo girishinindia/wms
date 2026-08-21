@@ -316,11 +316,17 @@ export default function AdminShell({
         </nav>
 
         <div className="border-t border-verdigris-300/10 p-3">
-          <p className="truncate px-2 text-sm text-verdigris-100">{user.name}</p>
-          <p className="truncate px-2 text-xs text-verdigris-200/45">{user.email}</p>
-          <p className="mt-1.5 px-2 font-mono text-[0.72rem] uppercase tracking-[0.14em] text-verdigris-400">
-            {user.roles.join(" · ") || "no role"}
-          </p>
+          <a
+            href="/admin/profile"
+            title="My profile"
+            className="block rounded-lg px-2 py-1 transition-colors hover:bg-verdigris-100/5"
+          >
+            <p className="truncate text-sm text-verdigris-100">{user.name}</p>
+            <p className="truncate text-xs text-verdigris-200/45">{user.email}</p>
+            <p className="mt-1.5 font-mono text-[0.72rem] uppercase tracking-[0.14em] text-verdigris-400">
+              {user.roles.join(" · ") || "no role"} · <span className="text-verdigris-300">my profile</span>
+            </p>
+          </a>
           <button
             type="button"
             onClick={signOut}

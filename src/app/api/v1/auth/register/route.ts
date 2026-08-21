@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { createSelfRegistration, findAccount } from "@/lib/auth/account";
+import { createSelfRegistration } from "@/lib/auth/account";
+import { constraintNameOf, isUniqueViolation } from "@/lib/db-errors";
 import { dispatchOtp } from "@/lib/auth/dispatch-otp";
 import { hashPassword } from "@/lib/auth/password";
 import { clientIp, limitAuthAttempt, limitOrAllow } from "@/lib/auth/ratelimit";
@@ -85,35 +86,42 @@ export async function POST(request: NextRequest) {
         throw new HandledError("CAPTCHA_FAILED", "We could not verify that you are human.");
       }
 
-      const created = await createSelfRegistration({
+      let created;
+      try {
+        created = await createSelfRegistration({
         firstName: input.firstName,
         lastName: input.lastName,
         email: input.email,
         mobile: input.mobile,
         companyName: input.companyName,
         passwordHash: await hashPassword(input.password),
-      });
+        });
+      } catch (error) {
+        if (isUniqueViolation(error) && constraintNameOf(error) === "importer_company_name_uk") {
+          return fail(
+            "CONFLICT",
+            "That company name is already registered. If it is your company, sign in instead.",
+            requestId,
+            { fields: { companyName: "Already registered" } },
+          );
+        }
+        throw error;
+      }
 
       if (!created) {
-        // Address already in use. Logged as a real event — repeated hits
-        // on one address are worth seeing — but answered like a success.
-        const existing = await findAccount(input.email);
+        // Address already in use. This used to answer like a success (an
+        // anti-enumeration stance); the operator chose a plain error —
+        // people were registering twice without realising it.
         await auditQuietly({
           action: "auth.register", operation: "DENY", entityType: "user",
           entityId: input.email, result: "DENIED", reason: "identifier already registered",
           ip, userAgent, requestId,
           metadata: { emailOrMobileTaken: true },
         });
-        return ok(
-          {
-            userId: existing?.id ?? 0,
-            verificationRequired: true as const,
-            channels: ["EMAIL", "SMS"],
-            expiresInSeconds: 0,
-            resendAfterSeconds: 0,
-          },
+        return fail(
+          "CONFLICT",
+          "An account with that email or mobile number already exists. Sign in, or use Forgot password.",
           requestId,
-          201,
         );
       }
 

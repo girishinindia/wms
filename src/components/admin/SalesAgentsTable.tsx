@@ -12,7 +12,7 @@ import type { GeoOptions } from "@/lib/admin/geo";
 import type { SalesAgentRow, SalesArea } from "@/lib/sales-agents/ops";
 
 import DataTable, { SelectAllHeader, SelectRowCell, Switch, type ColumnMeta } from "./DataTable";
-import { Card, FactList, IconButton, StatusBadge } from "./ui";
+import { Card, ConfirmDialog, FactList, IconButton, StatusBadge } from "./ui";
 
 /**
  * Sales agents on DataTable, client mode: the list is an importer's own
@@ -80,6 +80,8 @@ export default function SalesAgentsTable({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<number | "drawer" | "bulk" | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
+  /** Shown once after a create-with-login; never stored. */
+  const [credentials, setCredentials] = useState<{ name: string; email: string; password: string } | null>(null);
 
   const openView = (row: SalesAgentRow) => { setErrors({}); setDrawer({ mode: "view", row }); };
   const openEdit = (row: SalesAgentRow) => { setErrors({}); setDraft(toDraft(row, spec)); setAreas(row.salesAreas); setDrawer({ mode: "edit", row }); };
@@ -108,7 +110,15 @@ export default function SalesAgentsTable({
     if (drawer.mode === "create") {
       payload.createLogin = draft.createLogin === "yes";
       if (spec.crossImporter && draft.importerId) payload.importerId = Number(draft.importerId);
-      result = await api<{ agent: SalesAgentRow; login: unknown }>("/sales-agents", { body: payload });
+      const created = await api<{ agent: SalesAgentRow; login: unknown; tempPassword: string | null }>("/sales-agents", { body: payload });
+      if (created.ok && created.data.tempPassword) {
+        setCredentials({
+          name: `${created.data.agent.firstName} ${created.data.agent.lastName}`.trim(),
+          email: created.data.agent.email ?? "",
+          password: created.data.tempPassword,
+        });
+      }
+      result = created;
     } else {
       result = await api<SalesAgentRow>(`/sales-agents/${drawer.row.id}`, { method: "PATCH", body: payload });
     }
@@ -270,16 +280,47 @@ export default function SalesAgentsTable({
           }}
         />
 
-        {confirm?.kind === "delete" ? (
-          <div role="alertdialog" aria-label="Confirm delete" className="flex flex-wrap items-center gap-3 border-t border-rose-400/25 bg-rose-500/[0.07] px-5 py-3 text-[0.9rem] text-rose-100">
-            <span className="flex-1">Delete {confirm.label}? Their login is suspended and the record is kept in the audit log.</span>
-            <button type="button" disabled={busy === "bulk"} onClick={() => bulk("delete", confirm.ids)} className="rounded-lg bg-rose-500/80 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500">
-              {busy === "bulk" ? "Deleting…" : "Delete"}
-            </button>
-            <button type="button" onClick={() => setConfirm(null)} className="rounded-lg border border-verdigris-300/20 px-3 py-1 text-xs text-verdigris-100 hover:border-verdigris-300/45">Cancel</button>
-          </div>
-        ) : null}
       </Card>
+
+      {confirm?.kind === "delete" ? (
+        <ConfirmDialog
+          title={`Delete ${confirm.label}?`}
+          message="Their login is closed and the record is kept in the audit log."
+          confirmLabel="Delete"
+          busy={busy === "bulk"}
+          onConfirm={() => bulk("delete", confirm.ids)}
+          onCancel={() => setConfirm(null)}
+        />
+      ) : null}
+
+      {credentials ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-ink-900/70" aria-hidden />
+          <div role="dialog" aria-modal="true" aria-label="Login created"
+            className="relative w-full max-w-md rounded-2xl border border-verdigris-300/20 bg-ink-850 p-6 card-shadow">
+            <h2 className="text-base font-semibold text-verdigris-50">Login created for {credentials.name}</h2>
+            <p className="mt-2 text-sm text-verdigris-200/75">
+              The temporary password below was also emailed to {credentials.email}. It is shown
+              here ONCE — copy it if you want to hand it over yourself. They must change it at
+              first sign-in.
+            </p>
+            <div className="mt-4 flex items-center gap-2 rounded-lg border border-verdigris-300/20 bg-ink-900/60 px-4 py-3">
+              <code className="flex-1 select-all font-mono text-lg tracking-wider text-verdigris-50">{credentials.password}</code>
+              <button type="button"
+                onClick={() => { void navigator.clipboard?.writeText(credentials.password).then(() => toast.success("Copied.")); }}
+                className="rounded-lg border border-verdigris-300/25 px-3 py-1.5 text-xs text-verdigris-100 hover:border-verdigris-300/50">
+                Copy
+              </button>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button type="button" onClick={() => setCredentials(null)}
+                className="rounded-lg bg-verdigris-400 px-4 py-2 text-sm font-semibold text-ink-900 hover:bg-patina">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {drawer ? (
         <AgentDrawer
@@ -429,7 +470,7 @@ function AgentDrawer({
                 {text("firstName", "First name", { required: true })}
                 {text("lastName", "Last name", { required: true })}
                 {text("mobile", "Mobile", { required: true, placeholder: "9876543210" })}
-                {text("email", "Email", { type: "email", required: drawer.mode === "create" && draft.createLogin === "yes" })}
+                {text("email", "Email", { type: "email", required: drawer.mode === "create" })}
                 {text("birthDate", "Birth date", { type: "date" })}
                 {text("joiningDate", "Joining date", { type: "date", required: true })}
                 {text("pan", "PAN", { mono: true, placeholder: "AAAAA0000A" })}

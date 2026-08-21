@@ -3,6 +3,7 @@ import { type NextRequest } from "next/server";
 
 import { getDb } from "@/db";
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
+import { constraintNameOf, isUniqueViolation } from "@/lib/db-errors";
 import { auditQuietly } from "@/lib/audit";
 import { loadImporterProfile, missingFields } from "@/lib/importer/profile";
 import { requirePermission } from "@/lib/auth/guard";
@@ -204,6 +205,15 @@ export async function POST(
         requestId,
       );
     } catch (error) {
+      if (isUniqueViolation(error)) {
+        return fail(
+          "CONFLICT",
+          constraintNameOf(error) === "importer_company_name_uk"
+            ? "That company name is already registered to another importer"
+            : "That GSTIN or PAN is already registered to another importer",
+          requestId,
+        );
+      }
       return toResponse(error, requestId);
     }
   })();

@@ -6,6 +6,7 @@ import UserRoles, {
   type GrantableRole,
   type ScopeOption,
 } from "@/components/admin/UserRoles";
+import UserNameEditor from "@/components/admin/UserNameEditor";
 import UserStatus from "@/components/admin/UserStatus";
 import { Card, Denied, Facts, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { getDb } from "@/db";
@@ -152,7 +153,14 @@ export default async function UserDetailPage({
       <PageHeader
         title={`${user.first_name} ${user.last_name}`}
         subtitle={user.email}
-        action={<StatusBadge value={user.status} />}
+        action={
+          <div className="flex items-center gap-2">
+            {canUpdate ? (
+              <UserNameEditor userId={user.id} firstName={user.first_name} lastName={user.last_name} />
+            ) : null}
+            <StatusBadge value={user.status} />
+          </div>
+        }
       />
 
       <Card className="mb-6 p-6">

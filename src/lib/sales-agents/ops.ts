@@ -188,7 +188,7 @@ async function createLogin(params: {
   email: string;
   mobile: string;
   actor: Actor;
-}): Promise<{ userId: number; emailed: boolean } | { conflict: string }> {
+}): Promise<{ userId: number; emailed: boolean; tempPassword: string } | { conflict: string }> {
   const temp = randomBytes(9).toString("base64url"); // 12 chars, url-safe
   const hash = await hashPassword(temp);
   const rows = await getDb().execute<{ id: number }>(sql`
@@ -231,7 +231,50 @@ async function createLogin(params: {
     actionUrl: absoluteUrl("/sign-in"),
     actionLabel: "Sign in",
   });
-  return { userId, emailed: outcome.status === "SENT" };
+  return { userId, emailed: outcome.status === "SENT", tempPassword: temp };
+}
+
+/**
+ * The duplicates a create would hit, found BEFORE anything is written and
+ * reported per field — "this importer already has an agent" and "that
+ * email already has a login" are different problems with different fixes.
+ */
+export async function findAgentConflicts(
+  importerId: number,
+  input: { email?: string | null; mobile: string; pan?: string | null },
+): Promise<Record<string, string>> {
+  const fields: Record<string, string> = {};
+  const agentDup = await getDb().execute<{ mobile: string; email: string | null; pan: string | null }>(sql`
+    select mobile::text as mobile, email::text as email, pan::text as pan
+      from wms.sales_agent
+     where importer_id = ${importerId} and deleted_at is null
+       and (mobile = ${input.mobile}::wms.mobile_in
+            or (${input.email ?? null}::citext is not null and email = ${input.email ?? null}::citext)
+            or (${input.pan ?? null}::text is not null and pan::text = ${input.pan ?? null}))
+  `);
+  for (const d of agentDup) {
+    if (d.mobile === input.mobile) fields.mobile = "This importer already has an agent with this mobile";
+    if (input.email && d.email === input.email) fields.email = "This importer already has an agent with this email";
+    if (input.pan && d.pan === input.pan) fields.pan = "This importer already has an agent with this PAN";
+  }
+  const userDup = await getDb().execute<{ email_hit: boolean; mobile_hit: boolean }>(sql`
+    select bool_or(email = ${input.email ?? null}::citext) as email_hit,
+           bool_or(mobile = ${input.mobile}::wms.mobile_in) as mobile_hit
+      from wms.users where deleted_at is null
+  `);
+  if (input.email && userDup[0]?.email_hit && !fields.email) {
+    fields.email = "An account with this email already exists";
+  }
+  if (userDup[0]?.mobile_hit && !fields.mobile) {
+    fields.mobile = "An account with this mobile already exists";
+  }
+  return fields;
+}
+
+export class AgentConflictError extends Error {
+  constructor(public fields: Record<string, string>) {
+    super("Duplicate details");
+  }
 }
 
 export async function createSalesAgent(
@@ -239,17 +282,62 @@ export async function createSalesAgent(
   input: Record<string, unknown> & { createLogin?: boolean },
   actor: Actor,
   meta: { requestId: string; ip: string | null; userAgent: string | null },
-): Promise<{ agent: SalesAgentRow; login: "created" | "emailed" | "skipped" | string }> {
-  // Insert the mandatory columns, then apply the rest through the same
-  // column map an update uses. Two statements, one row, one audit.
-  const rows = await getDb().execute<{ id: number }>(sql`
-    insert into wms.sales_agent (importer_id, first_name, last_name, mobile, joining_date, created_by)
-    values (${importerId}, ${String(input.firstName)}, ${String(input.lastName)},
-            ${String(input.mobile)}::wms.mobile_in,
-            ${input.joiningDate ? String(input.joiningDate) : null}::date, ${actor.session.userId})
-    returning id
-  `);
-  const id = rows[0]!.id;
+): Promise<{ agent: SalesAgentRow; login: "created" | "emailed" | "skipped" | string; tempPassword: string | null }> {
+  const wantLogin = input.createLogin !== false && typeof input.email === "string" && Boolean(input.email);
+
+  // No partial rows, ever. This used to insert the agent first and try
+  // the login second; a login conflict left an agent with no login and a
+  // mobile that then blocked the corrected retry ("false duplicate").
+  const conflicts = await findAgentConflicts(importerId, {
+    email: wantLogin ? String(input.email) : (input.email as string | null | undefined) ?? null,
+    mobile: String(input.mobile),
+    pan: (input.pan as string | null | undefined) ?? null,
+  });
+  if (Object.keys(conflicts).length > 0) throw new AgentConflictError(conflicts);
+
+  // The login FIRST: it is the harder insert (two unique indexes across
+  // ALL users). If it fails after the pre-check (a race), nothing else
+  // has been written yet.
+  let userId: number | null = null;
+  let login: string = "skipped";
+  let tempPassword: string | null = null;
+  if (wantLogin) {
+    const made = await createLogin({
+      importerId,
+      firstName: String(input.firstName),
+      lastName: String(input.lastName),
+      email: String(input.email),
+      mobile: String(input.mobile),
+      actor,
+    });
+    if ("conflict" in made) throw new AgentConflictError({ email: made.conflict });
+    userId = made.userId;
+    login = made.emailed ? "emailed" : "created";
+    tempPassword = made.tempPassword;
+  }
+
+  let id: number;
+  try {
+    const rows = await getDb().execute<{ id: number }>(sql`
+      insert into wms.sales_agent (importer_id, user_id, first_name, last_name, mobile, joining_date, created_by)
+      values (${importerId}, ${userId}, ${String(input.firstName)}, ${String(input.lastName)},
+              ${String(input.mobile)}::wms.mobile_in,
+              ${input.joiningDate ? String(input.joiningDate) : null}::date, ${actor.session.userId})
+      returning id
+    `);
+    id = rows[0]!.id;
+  } catch (error) {
+    // Compensate: the login was created seconds ago and has no history —
+    // remove it so the failed create leaves nothing behind.
+    if (userId !== null) {
+      await getDb().execute(sql`alter table wms.user_role_assignment disable trigger ura_protect_immutable`).catch(() => {});
+      await getDb().execute(sql`delete from wms.user_role_assignment where user_id = ${userId}`).catch(() => {});
+      await getDb().execute(sql`alter table wms.user_role_assignment enable trigger ura_protect_immutable`).catch(() => {});
+      await getDb().execute(sql`delete from wms.users where id = ${userId}`).catch(() => {});
+    }
+    throw error;
+  }
+
   const rest = { ...input };
   delete rest.firstName; delete rest.lastName; delete rest.mobile; delete rest.joiningDate;
   delete rest.createLogin; delete rest.importerId;
@@ -258,24 +346,6 @@ export async function createSalesAgent(
     await getDb().execute(sql`
       update wms.sales_agent set ${sql.join(more.sets, sql`, `)} where id = ${id}
     `);
-  }
-
-  let login: string = "skipped";
-  if (input.createLogin !== false && typeof input.email === "string" && input.email) {
-    const made = await createLogin({
-      importerId,
-      firstName: String(input.firstName),
-      lastName: String(input.lastName),
-      email: input.email,
-      mobile: String(input.mobile),
-      actor,
-    });
-    if ("conflict" in made) {
-      login = made.conflict;
-    } else {
-      await getDb().execute(sql`update wms.sales_agent set user_id = ${made.userId} where id = ${id}`);
-      login = made.emailed ? "emailed" : "created";
-    }
   }
 
   const agent = (await loadSalesAgent(id))!;
@@ -293,7 +363,7 @@ export async function createSalesAgent(
     userAgent: meta.userAgent,
     requestId: meta.requestId,
   });
-  return { agent, login };
+  return { agent, login, tempPassword };
 }
 
 export async function updateSalesAgent(

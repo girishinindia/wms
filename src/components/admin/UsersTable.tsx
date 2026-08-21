@@ -10,7 +10,7 @@ import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 
 import DataTable, { SelectAllHeader, SelectRowCell, Switch, type ColumnMeta } from "./DataTable";
-import { IconButton, StatusBadge } from "./ui";
+import { ConfirmDialog, IconButton, StatusBadge } from "./ui";
 
 export type UserListRow = {
   id: number;
@@ -232,15 +232,14 @@ export default function UsersTable({
       />
 
       {confirm ? (
-        <div role="alertdialog" aria-label="Confirm delete" className="flex flex-wrap items-center gap-3 border-t border-rose-400/25 bg-rose-500/[0.07] px-5 py-3 text-[0.9rem] text-rose-100">
-          <span className="flex-1">
-            Delete {confirm.label}? The login is closed and, if it is an importer, their company and its sales agents go with it; a sales agent&apos;s profile goes too. The audit log keeps everything.
-          </span>
-          <button type="button" disabled={busy === "bulk"} onClick={() => bulk("delete", confirm.ids)} className="rounded-lg bg-rose-500/80 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500">
-            {busy === "bulk" ? "Deleting…" : "Delete"}
-          </button>
-          <button type="button" onClick={() => setConfirm(null)} className="rounded-lg border border-verdigris-300/20 px-3 py-1 text-xs text-verdigris-100 hover:border-verdigris-300/45">Cancel</button>
-        </div>
+        <ConfirmDialog
+          title={`Delete ${confirm.label}?`}
+          message="The login is closed and, if it is an importer, their company and its sales agents go with it; a sales agent's profile goes too. The audit log keeps everything."
+          confirmLabel="Delete"
+          busy={busy === "bulk"}
+          onConfirm={() => bulk("delete", confirm.ids)}
+          onCancel={() => setConfirm(null)}
+        />
       ) : null}
     </>
   );

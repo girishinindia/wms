@@ -41,7 +41,14 @@ export default async function AdminDashboard() {
   // An importer gets their own dashboard: their company, their people.
   // The platform counts below are nobody's business but the operator's.
   const gate = actor ? await importerGateFor(actor) : { kind: "none" as const };
-  if (gate.kind === "importer") return <ImporterDashboard importerId={gate.importerId} />;
+  if (gate.kind === "importer") {
+    return (
+      <ImporterDashboard
+        importerId={gate.importerId}
+        canEdit={actor!.permissions.some((p) => p.permission === "importer.update")}
+      />
+    );
+  }
 
   const [counts] = await getDb().execute<Counts>(sql`
     select
@@ -163,7 +170,14 @@ export default async function AdminDashboard() {
  * it, watch its verification — and once verified, a count of their
  * sales agents on top. There is no separate "My company" screen.
  */
-async function ImporterDashboard({ importerId }: { importerId: number }) {
+async function ImporterDashboard({
+  importerId,
+  canEdit,
+}: {
+  importerId: number;
+  /** False for a SALES_AGENT: they see the company, the owner edits it. */
+  canEdit: boolean;
+}) {
   const profile = await loadImporterProfile(importerId);
   if (!profile) return <PageHeader title="Dashboard" subtitle="No company is linked to this account." />;
   const [row] = await getDb().execute<{ agents: number; agents_active: number }>(sql`
@@ -185,7 +199,7 @@ async function ImporterDashboard({ importerId }: { importerId: number }) {
           ) : null
         }
       />
-      <CompanyProfileForm initial={profile} geo={geo} />
+      <CompanyProfileForm initial={profile} geo={geo} readOnly={!canEdit} />
     </>
   );
 }

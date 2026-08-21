@@ -53,9 +53,12 @@ function toDraft(p: ImporterProfile): Draft {
 export default function CompanyProfileForm({
   initial,
   geo,
+  readOnly = false,
 }: {
   initial: ImporterProfile;
   geo: GeoOptions;
+  /** Sales agents can SEE their company but not touch it. */
+  readOnly?: boolean;
 }) {
   const toast = useToast();
   const [profile, setProfile] = useState(initial);
@@ -66,7 +69,7 @@ export default function CompanyProfileForm({
   const [busy, setBusy] = useState<"save" | "submit" | null>(null);
 
   const verified = profile.status === "ACTIVE";
-  const submitted = profile.kycStatus === "SUBMITTED";
+  const submitted = profile.kycStatus === "SUBMITTED" || readOnly;
 
   const states = useMemo(() => geo.states.filter((s) => String(s.countryId) === countryId), [geo, countryId]);
   const cities = useMemo(() => geo.cities.filter((c) => String(c.stateId) === stateId), [geo, stateId]);
@@ -286,7 +289,7 @@ export default function CompanyProfileForm({
           </div>
         </section>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className={`flex flex-wrap items-center justify-end gap-2 ${readOnly ? "hidden" : ""}`}>
           <button
             type="submit"
             disabled={busy !== null || !dirty || submitted}

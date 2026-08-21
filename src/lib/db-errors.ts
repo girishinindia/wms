@@ -42,3 +42,19 @@ export function isForeignKeyViolation(error: unknown): boolean {
 export function isCheckViolation(error: unknown): boolean {
   return findCode(error, /violates check constraint/i, "23514");
 }
+
+/** The violated constraint's name, when the driver reported one. */
+export function constraintNameOf(error: unknown): string | null {
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    const candidate = current as { constraint_name?: unknown; constraint?: unknown; message?: unknown; cause?: unknown };
+    const name = candidate.constraint_name ?? candidate.constraint;
+    if (typeof name === "string") return name;
+    if (typeof candidate.message === "string") {
+      const m = /unique constraint "([^"]+)"/.exec(candidate.message);
+      if (m) return m[1]!;
+    }
+    current = candidate.cause;
+  }
+  return null;
+}

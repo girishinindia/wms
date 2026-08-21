@@ -280,6 +280,7 @@ describe("OpenAPI: admin endpoints", () => {
       "/api/v1/admin/master/{resource}/bulk",
       "/api/v1/admin/users/bulk",
       "/api/v1/admin/users/{id}",
+      "/api/v1/admin/users/{id}/profile",
       "/api/v1/admin/users/{id}/roles",
       "/api/v1/admin/users/{id}/status",
     ]);

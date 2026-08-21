@@ -276,3 +276,14 @@ body {
     transform: translateY(0);
   }
 }
+
+/* The Active switch in its OFF state was near-invisible on the light
+   theme (dark track on white). Give it a definite grey track and a
+   darker knob there; the ON state already reads on both themes. */
+html[data-theme="light"] .switch-off {
+  background-color: #c3cfce !important;
+  border-color: #8fa3a1 !important;
+}
+html[data-theme="light"] .switch-off > span {
+  background-color: #5b6f6d !important;
+}

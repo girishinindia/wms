@@ -5,7 +5,7 @@ import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { requirePermission, requireVerifiedImporter } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { announce } from "@/lib/notify/announce";
-import { createSalesAgent, listSalesAgents } from "@/lib/sales-agents/ops";
+import { AgentConflictError, createSalesAgent, listSalesAgents } from "@/lib/sales-agents/ops";
 import { resolveImporterScope } from "@/lib/sales-agents/scope";
 import { salesAgentCreateSchema } from "@/lib/validation/api-importer";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -56,14 +56,8 @@ export async function POST(request: NextRequest) {
       if (scope.importerId === null) {
         return fail("VALIDATION_FAILED", "Which importer?", requestId, { fields: { importerId: "Required" } });
       }
-      if (input.createLogin && !input.email) {
-        return fail("VALIDATION_FAILED", "An email address is needed to create a login", requestId, {
-          fields: { email: "Required for a login" },
-        });
-      }
-
       const meta = { requestId, ip: clientIp(request.headers), userAgent: request.headers.get("user-agent") };
-      const { agent, login } = await createSalesAgent(scope.importerId, input, actor, meta);
+      const { agent, login, tempPassword } = await createSalesAgent(scope.importerId, input, actor, meta);
 
       try {
         await announce({
@@ -84,8 +78,15 @@ export async function POST(request: NextRequest) {
         console.error("[sales-agents] announce failed", { requestId, error: String(error) });
       }
 
-      return ok({ agent, login }, requestId, 201);
+      // The one-time password is returned ONCE, to the creator, so they
+      // can hand it over in person; it is never stored or shown again.
+      return ok({ agent, login, tempPassword }, requestId, 201);
     } catch (error) {
+      if (error instanceof AgentConflictError) {
+        return fail("CONFLICT", "Some details are already in use — see the highlighted fields", requestId, {
+          fields: error.fields,
+        });
+      }
       if (isUniqueViolation(error)) {
         return fail("CONFLICT", "This importer already has an agent with that mobile, email or PAN", requestId);
       }
