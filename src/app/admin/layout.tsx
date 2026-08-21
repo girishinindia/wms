@@ -8,6 +8,7 @@ import { ForceChangePassword } from "@/components/admin/ProfileForms";
 import { visibleNav } from "@/components/admin/nav";
 import { PREFS_BOOT_SCRIPT } from "@/lib/admin/prefs";
 import { currentActor, grantFor, importerGateFor } from "@/lib/auth/guard";
+import { isAgentOnly } from "@/lib/sales-agents/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,12 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     );
   }
 
-  let items = visibleNav(actor.permissions);
+  /**
+   * A sales agent's whole presence in the panel is their own record, and
+   * that is the dashboard. `agentOnly` is what keeps them admitted while
+   * the "Sales agents" entry — a list of one, themselves — goes away.
+   */
+  let items = visibleNav(actor.permissions, { agentOnly: isAgentOnly(actor) });
 
   /**
    * An importer who has not been verified yet gets exactly one screen:

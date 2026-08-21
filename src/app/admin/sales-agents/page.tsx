@@ -26,18 +26,27 @@ export default async function SalesAgentsPage() {
   const gate = await importerGateFor(guard.actor);
   if (gate.kind === "importer" && !gate.verified) redirect("/admin");
 
+  /**
+   * There is no list for an agent to look at — it would hold one row,
+   * themselves — so the screen is not theirs. Their record is the
+   * dashboard. The sidebar no longer offers this link; this is what
+   * answers the URL typed by hand.
+   */
+  const selfOnly = isAgentOnly(guard.actor);
+  if (selfOnly) redirect("/admin");
+
   const wide = guard.grant.scope === "ALL";
   const importerId = wide ? null : importerIdOf(guard.actor);
   if (!wide && importerId === null) return <Denied what="sales agents" />;
 
   /**
-   * An agent is not a small importer. IMPORTER and SALES_AGENT hold the
-   * same grant at the same scope and `importerIdOf` answers with the
-   * company for both, which listed every colleague to anyone who worked
-   * there. `agentWhere` is the single place that tells them apart, and
-   * the two API routes ask it the same question.
+   * The self-scope stays even though the redirect above means no agent
+   * reaches it. An agent is not a small importer — IMPORTER and
+   * SALES_AGENT hold the same grant at the same scope and `importerIdOf`
+   * answers with the company for both — and a filter that depends on a
+   * redirect one screen up is a filter waiting to be wrong. The two API
+   * routes ask `agentWhere` the same question.
    */
-  const selfOnly = isAgentOnly(guard.actor);
   const rows = await listSalesAgents(
     agentWhere({
       importerId: wide ? null : importerId,
@@ -66,13 +75,11 @@ export default async function SalesAgentsPage() {
   return (
     <>
       <PageHeader
-        title={selfOnly ? "My sales profile" : "Sales agents"}
+        title="Sales agents"
         subtitle={
-          selfOnly
-            ? "Your own record, as your company keeps it."
-            : wide
-              ? "Field sales people across every importer."
-              : "Your field sales people. Each can sign in to the mobile app."
+          wide
+            ? "Field sales people across every importer."
+            : "Your field sales people. Each can sign in to the mobile app."
         }
       />
       <SalesAgentsTable rows={rows} spec={spec} />

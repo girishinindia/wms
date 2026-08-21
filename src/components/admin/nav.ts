@@ -177,7 +177,25 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = ADMIN_NAV.flatMap((node) =>
  */
 export function visibleNav(
   permissions: { permission: string; scope: "OWN" | "WAREHOUSE" | "ALL" }[],
+  options: { agentOnly?: boolean } = {},
 ): AdminNavItem[] {
+  /**
+   * A sales agent has no list to be given. The only screen about them is
+   * their own record, and that record IS the dashboard — a "Sales
+   * agents" page holding a single row of yourself is a page pretending
+   * to be a list.
+   *
+   * Answered here rather than by filtering the entry out below, because
+   * `sales_agent.read` is the ONLY permission an agent earns an entry
+   * from: filter it away and `earned` is empty, which
+   * `admin/layout.tsx` reads as "this account holds nothing" and turns
+   * into a locked-out screen. Tidying a sidebar must not revoke
+   * admission. Same shape the unverified-importer path already uses.
+   */
+  if (options.agentOnly) {
+    return ADMIN_NAV_ITEMS.filter((item) => item.permission === null);
+  }
+
   const wide = new Set(
     permissions.filter((p) => p.scope !== "OWN").map((p) => p.permission),
   );

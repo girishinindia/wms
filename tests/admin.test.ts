@@ -155,6 +155,34 @@ describe("admin navigation: grouping", () => {
     expect(isGroup(group!) && group.children.map((c) => c.href)).toEqual(["/admin/sales-agents"]);
   });
 
+  it("gives a sales agent the dashboard and the bell, and no list of themselves", () => {
+    // A SALES_AGENT holds exactly what an importer holds over sales
+    // agents: `sales_agent.read` at OWN. The permission cannot tell them
+    // apart, so the caller says which one this is.
+    const agent = [
+      { permission: "sales_agent.read", scope: "OWN" as const },
+      { permission: "notification.read", scope: "OWN" as const },
+      { permission: "master.city.read", scope: "ALL" as const },
+    ];
+    expect(visibleNav(agent, { agentOnly: true }).map((i) => i.label)).toEqual([
+      "Dashboard",
+      "Notifications",
+    ]);
+    // The same permissions WITHOUT the flag are an importer, who keeps
+    // the list — the flag is the only thing that separates them.
+    expect(visibleNav(agent).map((i) => i.label)).toContain("Sales agents");
+  });
+
+  it("still admits a sales agent to the panel", () => {
+    // `admin/layout.tsx` reads an empty result as "this account holds
+    // nothing" and locks the account out. Tidying an agent's sidebar
+    // must never do that.
+    expect(visibleNav([{ permission: "sales_agent.read", scope: "OWN" }], { agentOnly: true }).length)
+      .toBeGreaterThan(0);
+    // Including for an agent whose permission list is somehow empty.
+    expect(visibleNav([], { agentOnly: true }).length).toBeGreaterThan(0);
+  });
+
   it("never lets OWN scope earn a platform list", () => {
     // importer.read at OWN is the importer's own record, not the list.
     expect(visibleNav([{ permission: "importer.read", scope: "OWN" }])).toEqual([]);

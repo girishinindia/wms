@@ -207,11 +207,17 @@ async function AgentDashboard({ userId }: { userId: number }) {
       <PageHeader
         title={`${me.firstName} ${me.lastName}`}
         subtitle={`${me.code} · sales agent at ${me.importerName}`}
+        /**
+         * One badge, not two. `status` is the record's state and
+         * `isActive` is the on-off switch — genuinely different things,
+         * and genuinely the same word whenever both are healthy, which
+         * is most of the time. A suspended or closed record says so;
+         * otherwise the switch has the last word.
+         */
         action={
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge value={me.status} />
-            <StatusBadge value={me.isActive ? "ACTIVE" : "INACTIVE"} />
-          </div>
+          <StatusBadge
+            value={me.status !== "ACTIVE" ? me.status : me.isActive ? "ACTIVE" : "INACTIVE"}
+          />
         }
       />
       <Card className="p-6">

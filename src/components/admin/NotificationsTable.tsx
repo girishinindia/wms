@@ -117,7 +117,12 @@ export default function NotificationsTable({
             onClick={() => open(row.original)}
             className="block max-w-xl text-left"
           >
-            <span className={`block ${row.original.readAt ? "text-verdigris-100" : "font-semibold text-verdigris-50"}`}>
+            {/* Bold whatever the read state. Hanging the weight on
+                "unread" left every title on a caught-up list rendering at
+                the same weight as the body beneath it, with nothing to
+                anchor the row. Read still reads differently — the colour
+                steps back, the dot goes, the row dims. */}
+            <span className={`block font-semibold ${row.original.readAt ? "text-verdigris-100" : "text-verdigris-50"}`}>
               {row.original.title}
             </span>
             <span className="mt-0.5 line-clamp-2 block text-xs text-verdigris-200/65">
