@@ -4,12 +4,14 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import { EyeIcon, TrashIcon } from "@/components/icons";
+import { EyeIcon, PencilIcon, TrashIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 
+import Avatar from "./Avatar";
 import DataTable, { SelectAllHeader, SelectRowCell, Switch, type ColumnMeta } from "./DataTable";
+import UserEditDrawer from "./UserEditDrawer";
 import { ConfirmDialog, IconButton, StatusBadge } from "./ui";
 
 export type UserListRow = {
@@ -25,6 +27,7 @@ export type UserListRow = {
   isSuperAdmin: boolean;
   /** The importer an IMPORTER / SALES_AGENT login belongs to. */
   company: string | null;
+  photoUrl: string | null;
 };
 
 /**
@@ -97,8 +100,15 @@ export default function UsersTable({
         accessorKey: "name",
         header: "Name",
         cell: ({ row }) => (
-          <a href={`/admin/users/${row.original.id}`} className="font-medium hover:text-patina">
-            {row.original.name}
+          <a
+            href={`/admin/users/${row.original.id}`}
+            className="inline-flex items-center gap-2 font-medium hover:text-patina"
+          >
+            <Avatar name={row.original.name} photoUrl={row.original.photoUrl} size={26} />
+            {/* The avatar eats into the cell, so the name is told not to
+                wrap — two-line names would push every row taller for the
+                sake of a picture. */}
+            <span className="whitespace-nowrap">{row.original.name}</span>
           </a>
         ),
       },
@@ -189,6 +199,17 @@ export default function UsersTable({
               >
                 <EyeIcon className="h-4 w-4" />
               </a>
+              {canUpdate ? (
+                <UserEditDrawer
+                  userId={r.id}
+                  name={r.name}
+                  email={r.email}
+                  photoUrl={r.photoUrl}
+                  trigger={(open) => (
+                    <IconButton label={`Edit ${r.name}`} onClick={open} icon={<PencilIcon className="h-4 w-4" />} />
+                  )}
+                />
+              ) : null}
               {canDelete && !locked(r) ? (
                 <IconButton label={`Delete ${r.name}`} tone="danger" onClick={() => setConfirm({ ids: [r.id], label: r.name })} icon={<TrashIcon className="h-4 w-4" />} />
               ) : null}

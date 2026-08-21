@@ -18,16 +18,24 @@ export function PageHeader({
   title,
   subtitle,
   action,
+  leading,
 }: {
   title: string;
   subtitle?: string;
   action?: ReactNode;
+  /** Sits to the left of the title — an avatar on a person's page. Kept
+   *  as a slot rather than an `avatar` prop so the header does not have
+   *  to know what a person is. */
+  leading?: ReactNode;
 }) {
   return (
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-verdigris-50">{title}</h1>
-        {subtitle ? <p className="mt-1 text-sm text-verdigris-200/60">{subtitle}</p> : null}
+      <div className="flex items-center gap-3.5">
+        {leading}
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-verdigris-50">{title}</h1>
+          {subtitle ? <p className="mt-1 text-sm text-verdigris-200/60">{subtitle}</p> : null}
+        </div>
       </div>
       {action}
     </div>

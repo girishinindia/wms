@@ -8,6 +8,7 @@ import UserRoles, {
 } from "@/components/admin/UserRoles";
 import UserNameEditor from "@/components/admin/UserNameEditor";
 import UserStatus from "@/components/admin/UserStatus";
+import Avatar from "@/components/admin/Avatar";
 import { Card, Denied, Facts, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { getDb } from "@/db";
 import { grantFor, pageGuard } from "@/lib/auth/guard";
@@ -44,6 +45,7 @@ export default async function UserDetailPage({
       id: number;
       email: string;
       first_name: string;
+      photo_url: string | null;
       last_name: string;
       mobile: string;
       status: string;
@@ -56,7 +58,7 @@ export default async function UserDetailPage({
       created_by_email: string | null;
       is_super: boolean;
     }>(sql`
-      select u.id, u.email::text as email, u.first_name, u.last_name,
+      select u.id, u.email::text as email, u.first_name, u.last_name, u.photo_url,
              u.mobile::text as mobile, u.status::text as status,
              u.email_verified_at is not null as email_verified,
              u.mobile_verified_at is not null as mobile_verified,
@@ -153,6 +155,13 @@ export default async function UserDetailPage({
       <PageHeader
         title={`${user.first_name} ${user.last_name}`}
         subtitle={user.email}
+        leading={
+          <Avatar
+            name={`${user.first_name} ${user.last_name}`}
+            photoUrl={user.photo_url}
+            size={56}
+          />
+        }
         action={
           <div className="flex items-center gap-2">
             {canUpdate ? (

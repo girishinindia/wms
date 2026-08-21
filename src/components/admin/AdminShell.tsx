@@ -39,6 +39,7 @@ import {
   type Theme,
 } from "@/lib/admin/prefs";
 
+import Avatar from "./Avatar";
 import { groupNav, inSection, isGroup, type AdminNavItem } from "./nav";
 import NotificationBell from "./NotificationBell";
 import RouterRecovery, { rememberIntent } from "./RouterRecovery";
@@ -72,6 +73,7 @@ export type AdminUser = {
   name: string;
   email: string;
   roles: string[];
+  photoUrl?: string | null;
 };
 
 /**
@@ -323,8 +325,13 @@ export default function AdminShell({
             title="My profile"
             className="block rounded-lg px-2 py-1 transition-colors hover:bg-verdigris-100/5"
           >
-            <p className="truncate text-sm text-verdigris-100">{user.name}</p>
-            <p className="truncate text-xs text-verdigris-200/45">{user.email}</p>
+            <span className="flex items-center gap-2.5">
+              <Avatar name={user.name} photoUrl={user.photoUrl} size={34} />
+              <span className="min-w-0 flex-1">
+                <p className="truncate text-sm text-verdigris-100">{user.name}</p>
+                <p className="truncate text-xs text-verdigris-200/45">{user.email}</p>
+              </span>
+            </span>
             <p className="mt-1.5 font-mono text-[0.72rem] uppercase tracking-[0.14em] text-verdigris-400">
               {user.roles.join(" · ") || "no role"} · <span className="text-verdigris-300">my profile</span>
             </p>

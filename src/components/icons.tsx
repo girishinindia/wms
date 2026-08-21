@@ -139,6 +139,23 @@ export const PencilIcon = (p: P) => (
   </svg>
 );
 
+/** Choose a photo. It sits on the avatar itself, so it reads as "change
+ *  this picture" rather than as a generic upload button. */
+export const CameraIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2a1 1 0 0 0 .82-.43l.9-1.3A1 1 0 0 1 9.24 5h5.52a1 1 0 0 1 .82.43l.9 1.3a1 1 0 0 0 .82.43h2.2A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-9Z" />
+    <circle cx="12" cy="13" r="3.2" />
+  </svg>
+);
+
+/** A quarter turn. The arrowhead is what says which way it goes. */
+export const RotateIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+    <path d="M20 4v4.5h-4.5" />
+  </svg>
+);
+
 /** Power. Deactivate and reactivate are the same control, so they are
  *  the same glyph with a different tint — not two different pictures. */
 export const PowerIcon = (p: P) => (

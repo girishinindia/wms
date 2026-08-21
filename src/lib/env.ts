@@ -195,6 +195,48 @@ const qstashSchema = z.object({
   JOBS_SECRET: optionalStr,
 });
 
+/**
+ * Bunny Edge Storage — where profile photos live.
+ *
+ * All four are optional so a checkout without them still boots: the
+ * photo endpoints answer "not configured" and nothing else notices.
+ * `BUNNY_STORAGE_KEY` is a write key for the entire zone and must never
+ * reach a browser, which is the whole reason uploads go through our own
+ * route instead of straight from the form to Bunny.
+ */
+const bunnySchema = z.object({
+  /** Storage zone name. The one spelling both conventions agree on. */
+  BUNNY_STORAGE_ZONE: optionalStr,
+
+  /**
+   * The zone AccessKey, under either of the two names this project has
+   * used for it.
+   *
+   * `.env.example` was written around `BUNNY_STORAGE_ACCESS_KEY` /
+   * `BUNNY_STORAGE_HOSTNAME`; the storage tutorial this was built from
+   * uses `BUNNY_STORAGE_KEY` / `BUNNY_STORAGE_URL`. Rather than decide
+   * which deployment is holding the wrong one, both are read and the
+   * first that is set wins. Guessing here means a 401 from Bunny in
+   * production and no obvious reason why.
+   */
+  BUNNY_STORAGE_KEY: optionalStr,
+  BUNNY_STORAGE_ACCESS_KEY: optionalStr,
+
+  /** Endpoint, either whole (`https://sg.storage.bunnycdn.com`) or as a
+   *  hostname, or as a region code the hostname is built from. */
+  BUNNY_STORAGE_URL: optionalStr,
+  BUNNY_STORAGE_HOSTNAME: optionalStr,
+  BUNNY_STORAGE_REGION: optionalStr,
+
+  /** Public pull zone. `NEXT_PUBLIC_` in the older naming — same value,
+   *  and harmless to expose: it is the URL browsers fetch anyway. */
+  BUNNY_CDN_URL: optionalStr,
+  NEXT_PUBLIC_BUNNY_CDN_URL: optionalStr,
+
+  /** Folder every profile photo is written under. */
+  BUNNY_PHOTO_FOLDER: z.string().trim().default("wms/profile-photo"),
+});
+
 // ── reCAPTCHA v3 ──────────────────────────────────────────────────
 const recaptchaSchema = z.object({
   RECAPTCHA_ENABLED: boolFromStr(false),
@@ -288,6 +330,7 @@ export const authEnv = once("auth", () => parse(authSchema, "auth"));
 export const ratelimitEnv = once("rate limit", () => parse(ratelimitSchema, "rate limit"));
 export const cacheEnv = once("cache", () => parse(cacheSchema, "cache"));
 export const qstashEnv = once("QStash", () => parse(qstashSchema, "QStash"));
+export const bunnyEnv = once("Bunny Storage", () => parse(bunnySchema, "Bunny Storage"));
 
 export const recaptchaEnv = once("reCAPTCHA", () => {
   const r = parse(recaptchaSchema, "reCAPTCHA");

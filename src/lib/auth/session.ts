@@ -76,6 +76,12 @@ export type ResolvedSession = {
   email: string;
   firstName: string;
   lastName: string;
+  /** CDN URL of the profile photo, or null for initials. Carried on the
+   *  session because the sidebar draws it on every page, and a second
+   *  query per navigation to fetch one nullable string is a round trip
+   *  nobody would spend on purpose. Changing a photo invalidates the
+   *  actor cache, so this never goes stale. */
+  photoUrl: string | null;
   status: string;
   mustChangePassword: boolean;
   activeRole: string | null;
@@ -106,6 +112,7 @@ export async function resolveSession(token: string | undefined): Promise<Resolve
     email: string;
     first_name: string;
     last_name: string;
+    photo_url: string | null;
     status: string;
     must_change_password: boolean;
     active_role: string | null;
@@ -122,7 +129,7 @@ export async function resolveSession(token: string | undefined): Promise<Resolve
        and s.last_seen_at > now() - make_interval(secs => ${env.AUTH_SESSION_IDLE_TTL})
        and u.deleted_at is null
        and u.status = 'ACTIVE'
-    returning s.id, s.user_id, u.email::text as email, u.first_name, u.last_name,
+    returning s.id, s.user_id, u.email::text as email, u.first_name, u.last_name, u.photo_url,
               u.status::text as status, u.must_change_password, s.active_role::text as active_role,
               s.active_warehouse_id, s.active_importer_id
   `);
@@ -135,6 +142,7 @@ export async function resolveSession(token: string | undefined): Promise<Resolve
     email: row.email,
     firstName: row.first_name,
     lastName: row.last_name,
+    photoUrl: row.photo_url,
     status: row.status,
     mustChangePassword: Boolean(row.must_change_password),
     activeRole: row.active_role,

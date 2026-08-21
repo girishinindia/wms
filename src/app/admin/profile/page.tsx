@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 
+import Avatar from "@/components/admin/Avatar";
+import PhotoCropper from "@/components/admin/PhotoCropper";
 import { ContactChangeForm, NameForm, PasswordForm } from "@/components/admin/ProfileForms";
 import { Card, Denied, PageHeader } from "@/components/admin/ui";
 import { getDb } from "@/db";
@@ -20,9 +22,9 @@ export default async function ProfilePage() {
   if (!actor) return <Denied what="your profile" />;
 
   const rows = await getDb().execute<{
-    first_name: string; last_name: string; email: string; mobile: string;
+    first_name: string; last_name: string; email: string; mobile: string; photo_url: string | null;
   }>(sql`
-    select first_name, last_name, email::text as email, mobile::text as mobile
+    select first_name, last_name, email::text as email, mobile::text as mobile, photo_url
       from wms.users where id = ${actor.session.userId} and deleted_at is null
   `);
   const me = rows[0];
@@ -33,8 +35,25 @@ export default async function ProfilePage() {
       <PageHeader
         title="My profile"
         subtitle={`${me.email} · ${actor.roles.map((r) => r.role).join(" · ") || "no role"}`}
+        leading={
+          <Avatar
+            name={`${me.first_name} ${me.last_name}`}
+            photoUrl={me.photo_url}
+            size={56}
+          />
+        }
       />
       <div className="grid gap-6 xl:grid-cols-2">
+        <Card className="p-6 xl:col-span-2">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-verdigris-300">Photo</h2>
+          <div className="mt-4">
+            <PhotoCropper
+              name={`${me.first_name} ${me.last_name}`}
+              photoUrl={me.photo_url}
+              endpoint="/profile/photo"
+            />
+          </div>
+        </Card>
         <Card className="p-6">
           <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-verdigris-300">Name</h2>
           <div className="mt-4">

@@ -106,6 +106,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           name: `${actor.session.firstName} ${actor.session.lastName}`.trim(),
           email: actor.session.email,
           roles: actor.roles.map((r) => r.role),
+          photoUrl: actor.session.photoUrl,
         }}
       >
         {children}

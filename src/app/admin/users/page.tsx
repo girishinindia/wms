@@ -23,6 +23,7 @@ export default async function UsersPage() {
     id: number;
     email: string;
     first_name: string;
+    photo_url: string | null;
     last_name: string;
     mobile: string;
     status: string;
@@ -33,7 +34,7 @@ export default async function UsersPage() {
     is_super: boolean;
     company: string | null;
   }>(sql`
-    select u.id, u.email::text as email, u.first_name, u.last_name,
+    select u.id, u.email::text as email, u.first_name, u.last_name, u.photo_url,
            u.mobile::text as mobile, u.status::text as status,
            u.email_verified_at is not null as email_verified,
            u.mobile_verified_at is not null as mobile_verified,
@@ -73,6 +74,7 @@ export default async function UsersPage() {
             lastLoginAt: r.last_login_at ? String(r.last_login_at) : null,
             isSuperAdmin: r.is_super,
             company: r.company,
+            photoUrl: r.photo_url,
           }))}
           canUpdate={grantFor(guard.actor, "user.update") !== null}
           canDelete={grantFor(guard.actor, "user.delete") !== null}

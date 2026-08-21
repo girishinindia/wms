@@ -961,6 +961,104 @@ adminPath({
   responses: { 404: errorResponse("No such user.") },
 });
 
+// ── Profile photos ────────────────────────────────────────────────
+//
+// Registered by hand rather than through `adminPath`/`securedPath`,
+// because the request body is not JSON: it is the image itself. The
+// generated client needs to know that, or it will helpfully wrap the
+// bytes in an envelope the route does not parse.
+
+const photoResponse = z
+  .object({ photoUrl: z.string().url(), width: z.number().int(), height: z.number().int() })
+  .openapi("PhotoResponse");
+const photoClearedResponse = z
+  .object({ photoUrl: z.null() })
+  .openapi("PhotoClearedResponse");
+
+const photoPath = (config: {
+  tag: string;
+  path: string;
+  set: string;
+  clear: string;
+  who: string;
+  requires: string;
+  params?: z.AnyZodObject;
+}) => {
+  const common = {
+    tags: [config.tag],
+    security: AUTHENTICATED,
+    ...(config.params ? { request: { params: config.params } } : {}),
+  };
+  registry.registerPath({
+    ...common,
+    method: "post",
+    path: config.path,
+    operationId: config.set,
+    summary: `Set ${config.who} profile photo`,
+    description:
+      `The body is the image itself — \`image/webp\`, at most 400 KB and ` +
+      `512px on each side. The browser crops, rotates and encodes it; the ` +
+      `server reads the actual RIFF/WEBP header rather than believing the ` +
+      `content-type, uploads it to Bunny Storage under ` +
+      `\`wms/profile-photo/\`, swaps the column, and then removes the file ` +
+      `the account used to point at.\n\n**Requires** ${config.requires}.`,
+    request: {
+      ...(config.params ? { params: config.params } : {}),
+      body: {
+        required: true,
+        content: { "image/webp": { schema: { type: "string", format: "binary" } } },
+      },
+    },
+    responses: {
+      200: { description: "Stored.", content: { "application/json": { schema: photoResponse } } },
+      401: errorResponse("No session. Sign in."),
+      403: errorResponse("Not allowed to change this account's photo."),
+      404: errorResponse("No such user."),
+      409: errorResponse("Photo storage is not configured on this environment."),
+      422: errorResponse("Not a WebP, too large, or larger than 512px."),
+    },
+  });
+  registry.registerPath({
+    ...common,
+    method: "delete",
+    path: config.path,
+    operationId: config.clear,
+    summary: `Remove ${config.who} profile photo`,
+    description:
+      `Clears the column and deletes the stored file. Answers 200 when ` +
+      `there was no photo to begin with — the caller's intent is "no ` +
+      `photo", and there already is none.\n\n**Requires** ${config.requires}.`,
+    responses: {
+      200: { description: "Removed.", content: { "application/json": { schema: photoClearedResponse } } },
+      401: errorResponse("No session. Sign in."),
+      403: errorResponse("Not allowed to change this account's photo."),
+      404: errorResponse("No such user."),
+    },
+  });
+};
+
+photoPath({
+  tag: "Profile",
+  path: "/api/v1/profile/photo",
+  set: "setMyPhoto",
+  clear: "clearMyPhoto",
+  who: "my own",
+  requires:
+    "a session and nothing else — a SALES_AGENT holds no `user.update` at " +
+    "any scope, so a permission-keyed route would lock every field agent " +
+    "out of their own picture",
+});
+
+photoPath({
+  tag: "Admin",
+  path: "/api/v1/admin/users/{id}/photo",
+  set: "setUserPhoto",
+  clear: "clearUserPhoto",
+  who: "another account's",
+  requires: "`user.update`; an OWN-scoped grant covers only the caller",
+  params: idParam,
+});
+
 // ── Importer self-service and sales agents ────────────────────────
 //
 // Same envelope, same guard, different tag: these are the endpoints an
