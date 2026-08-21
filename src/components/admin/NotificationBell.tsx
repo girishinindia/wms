@@ -30,6 +30,15 @@ type Item = {
 
 const POLL_MS = 60_000;
 
+/**
+ * The notifications screen fires this after it marks or deletes
+ * anything, so the badge does not sit there wrong for up to a minute.
+ * A window event rather than shared state: the two live in different
+ * trees (the shell and the page) and have nothing else to say to
+ * each other.
+ */
+export const NOTIFICATIONS_CHANGED = "wms:notifications-changed";
+
 function ago(iso: string): string {
   const then = new Date(iso).getTime();
   if (!Number.isFinite(then)) return "";
@@ -68,9 +77,11 @@ export default function NotificationBell() {
     };
     const timer = window.setInterval(tick, POLL_MS);
     document.addEventListener("visibilitychange", tick);
+    window.addEventListener(NOTIFICATIONS_CHANGED, load);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener(NOTIFICATIONS_CHANGED, load);
     };
   }, [load]);
 
@@ -175,6 +186,12 @@ export default function NotificationBell() {
               ))
             )}
           </ul>
+          <a
+            href="/admin/notifications"
+            className="block border-t border-verdigris-300/10 px-4 py-2.5 text-center text-xs font-medium text-verdigris-300 transition-colors hover:bg-verdigris-100/5 hover:text-verdigris-100"
+          >
+            See all notifications
+          </a>
         </div>
       ) : null}
     </div>

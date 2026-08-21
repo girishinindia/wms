@@ -5,7 +5,7 @@ import ImporterLifecycle from "@/components/admin/ImporterLifecycle";
 import ImporterReview, { type CityOption } from "@/components/admin/ImporterReview";
 import { Card, Denied, Facts, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { getDb } from "@/db";
-import { grantFor, pageGuard } from "@/lib/auth/guard";
+import { grantFor, importerIdOf, pageGuard } from "@/lib/auth/guard";
 import { missingFields } from "@/lib/importer/profile";
 import { sql } from "drizzle-orm";
 
@@ -30,6 +30,11 @@ export default async function ImporterDetailPage({
   const { id: rawId } = await params;
   const id = Number(rawId);
   if (!Number.isInteger(id) || id <= 0) notFound();
+  // OWN scope covers exactly one company — the actor's own. Anything
+  // else is somebody else's customer record.
+  if (guard.grant.scope === "OWN" && importerIdOf(guard.actor) !== id) {
+    return <Denied what="that importer" />;
+  }
 
   const [rows, cities] = await Promise.all([
     getDb().execute<{

@@ -1,7 +1,9 @@
+import ImporterCreateDrawer from "@/components/admin/ImporterCreateDrawer";
 import ImportersTable from "@/components/admin/ImportersTable";
 import { Card, Denied, PageHeader } from "@/components/admin/ui";
 import { getDb } from "@/db";
-import { pageGuard } from "@/lib/auth/guard";
+import { loadGeoOptions } from "@/lib/admin/geo";
+import { grantFor, pageGuard } from "@/lib/auth/guard";
 import { sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +23,15 @@ export default async function ImportersPage({
 }) {
   const guard = await pageGuard("importer.read");
   if (!guard.ok) return <Denied what="importers" />;
+  /**
+   * OWN scope is not this screen.
+   *
+   * An IMPORTER genuinely holds `importer.read` — over their own company,
+   * which is their dashboard. The sidebar has always known that, but the
+   * page did not: anyone who typed the URL got the whole list, with every
+   * company's contact email in it. The nav is not an access control.
+   */
+  if (guard.grant.scope === "OWN") return <Denied what="the importer list" />;
 
   const { status } = await searchParams;
   const filter = status?.toUpperCase();
@@ -60,6 +71,10 @@ export default async function ImportersPage({
      limit 200
   `);
 
+  // Only a platform-wide grant means "create any company".
+  const canCreate = grantFor(guard.actor, "importer.create")?.scope === "ALL";
+  const geo = canCreate ? await loadGeoOptions() : { countries: [], states: [], cities: [] };
+
   const tabs = [
     { label: "All", value: null },
     { label: "Submitted for verification", value: "SUBMITTED" },
@@ -74,6 +89,7 @@ export default async function ImportersPage({
       <PageHeader
         title="Importers"
         subtitle="Self-registrations arrive as pending; the importer completes their profile and submits it, then you verify."
+        action={canCreate ? <ImporterCreateDrawer geo={geo} /> : null}
       />
 
       <div className="mb-4 flex flex-wrap gap-2">

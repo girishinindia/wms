@@ -1,0 +1,248 @@
+"use client";
+
+import type { ColumnDef } from "@tanstack/react-table";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+
+import { EyeIcon, TrashIcon } from "@/components/icons";
+import Spinner from "@/components/Spinner";
+import { useToast } from "@/components/Toast";
+import { api } from "@/lib/api/client";
+
+import DataTable, { SelectAllHeader, SelectRowCell, type ColumnMeta } from "./DataTable";
+import { NOTIFICATIONS_CHANGED } from "./NotificationBell";
+import { Card, ConfirmDialog, IconButton } from "./ui";
+
+export type NotificationRow = {
+  id: number;
+  eventKey: string;
+  title: string;
+  body: string;
+  actionUrl: string | null;
+  createdAt: string;
+  readAt: string | null;
+};
+
+/**
+ * Every notification this account has, on the same DataTable as the rest
+ * of the portal: search, 20 a page, multi-select with a bulk bar.
+ *
+ * Delete is a real delete — the row and its delivery records go — so it
+ * always asks first, in the centred dialog, and says what else goes with
+ * it. The audit log keeps the fact that it happened.
+ */
+export default function NotificationsTable({
+  rows,
+  unread,
+}: {
+  rows: NotificationRow[];
+  unread: number;
+}) {
+  const router = useRouter();
+  const toast = useToast();
+  const [busy, setBusy] = useState<"bulk" | number | null>(null);
+  const [confirm, setConfirm] = useState<{ ids: number[] | "all"; label: string } | null>(null);
+
+  /** Keep the header bell honest without waiting for its next poll. */
+  const announceChange = () => window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED));
+
+  async function mark(read: boolean, ids: number[] | "all") {
+    setBusy("bulk");
+    const result = await api<{ marked: number }>("/notifications/read", {
+      body: ids === "all" ? { all: true, read } : { ids, read },
+    });
+    setBusy(null);
+    if (!result.ok) { toast.error(result.error.message); return; }
+    toast.success(`${result.data.marked} marked as ${read ? "read" : "unread"}.`);
+    announceChange();
+    router.refresh();
+  }
+
+  async function remove(ids: number[] | "all") {
+    setBusy("bulk");
+    const result = await api<{ deleted: number }>("/notifications/delete", {
+      body: ids === "all" ? { all: true } : { ids },
+    });
+    setBusy(null);
+    setConfirm(null);
+    if (!result.ok) { toast.error(result.error.message); return; }
+    toast.success(`Deleted ${result.data.deleted}.`);
+    announceChange();
+    router.refresh();
+  }
+
+  /** Opening one marks it read and follows its link, like the bell does. */
+  async function open(row: NotificationRow) {
+    if (!row.readAt) {
+      setBusy(row.id);
+      await api("/notifications/read", { body: { ids: [row.id] } });
+      setBusy(null);
+      announceChange();
+    }
+    if (row.actionUrl && row.actionUrl.startsWith("/")) {
+      window.location.assign(row.actionUrl);
+      return;
+    }
+    router.refresh();
+  }
+
+  const columns = useMemo<ColumnDef<NotificationRow, unknown>[]>(
+    () => [
+      {
+        id: "select",
+        enableSorting: false,
+        header: ({ table }) => <SelectAllHeader table={table} />,
+        cell: ({ row }) => <SelectRowCell row={row} label={row.original.title} />,
+        meta: { width: 2.5 } satisfies ColumnMeta,
+      },
+      {
+        id: "unread",
+        accessorFn: (r) => (r.readAt ? 1 : 0),
+        header: "",
+        enableSorting: true,
+        meta: { width: 2 } satisfies ColumnMeta,
+        cell: ({ row }) =>
+          row.original.readAt ? (
+            <span className="sr-only">Read</span>
+          ) : (
+            <span className="inline-block h-2 w-2 rounded-full bg-amber-400" title="Unread" />
+          ),
+      },
+      {
+        accessorKey: "title",
+        header: "Notification",
+        cell: ({ row }) => (
+          <button
+            type="button"
+            onClick={() => open(row.original)}
+            className="block max-w-xl text-left"
+          >
+            <span className={`block ${row.original.readAt ? "text-verdigris-100" : "font-semibold text-verdigris-50"}`}>
+              {row.original.title}
+            </span>
+            <span className="mt-0.5 line-clamp-2 block text-xs text-verdigris-200/65">
+              {row.original.body}
+            </span>
+          </button>
+        ),
+      },
+      {
+        accessorKey: "eventKey",
+        header: "Event",
+        meta: { className: "whitespace-nowrap", mono: true } satisfies ColumnMeta,
+        cell: ({ getValue }) => (
+          <span className="text-verdigris-200/55">{String(getValue())}</span>
+        ),
+      },
+      {
+        accessorKey: "createdAt",
+        header: "When",
+        meta: { className: "whitespace-nowrap text-xs text-verdigris-200/60" } satisfies ColumnMeta,
+        cell: ({ getValue }) =>
+          new Date(String(getValue())).toLocaleString("en-IN", {
+            dateStyle: "medium",
+            timeStyle: "short",
+            timeZone: "Asia/Kolkata",
+          }),
+      },
+      {
+        id: "actions",
+        header: "",
+        enableSorting: false,
+        meta: { className: "whitespace-nowrap text-right" } satisfies ColumnMeta,
+        cell: ({ row }) => (
+          <span className="inline-flex items-center gap-1.5">
+            <IconButton
+              label={`Open ${row.original.title}`}
+              busy={busy === row.original.id}
+              onClick={() => open(row.original)}
+              icon={<EyeIcon className="h-4 w-4" />}
+            />
+            <IconButton
+              label={`Delete ${row.original.title}`}
+              tone="danger"
+              onClick={() => setConfirm({ ids: [row.original.id], label: "this notification" })}
+              icon={<TrashIcon className="h-4 w-4" />}
+            />
+          </span>
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [busy],
+  );
+
+  const b = "rounded-lg border px-3 py-1 text-xs transition-colors disabled:opacity-40";
+
+  return (
+    <>
+      <Card>
+        <DataTable<NotificationRow>
+          columns={columns}
+          data={rows}
+          label="notifications"
+          searchKeys={["title", "body", "eventKey"]}
+          emptyTitle="Nothing here."
+          emptyHint="Notifications about registrations, approvals and your sales agents land here."
+          rowClassName={(row) => (row.original.readAt ? "opacity-75" : "")}
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              {unread > 0 ? (
+                <button
+                  type="button"
+                  disabled={busy === "bulk"}
+                  onClick={() => mark(true, "all")}
+                  className={`${b} border-verdigris-300/25 text-verdigris-100 hover:border-verdigris-300/50`}
+                >
+                  Mark all read
+                </button>
+              ) : null}
+              {rows.length > 0 ? (
+                <button
+                  type="button"
+                  disabled={busy === "bulk"}
+                  onClick={() => setConfirm({ ids: "all", label: "every notification" })}
+                  className={`${b} border-rose-400/30 text-rose-200 hover:border-rose-400/60`}
+                >
+                  Delete all
+                </button>
+              ) : null}
+            </div>
+          }
+          bulk={(selected, clear) => {
+            const ids = selected.map((r) => r.id);
+            return (
+              <>
+                <button type="button" disabled={busy === "bulk"} onClick={() => mark(true, ids).then(clear)}
+                  className={`${b} border-verdigris-300/25 text-verdigris-100 hover:border-verdigris-300/50`}>
+                  Mark read
+                </button>
+                <button type="button" disabled={busy === "bulk"} onClick={() => mark(false, ids).then(clear)}
+                  className={`${b} border-verdigris-300/25 text-verdigris-100 hover:border-verdigris-300/50`}>
+                  Mark unread
+                </button>
+                <button type="button" disabled={busy === "bulk"}
+                  onClick={() => setConfirm({ ids, label: `${ids.length} notification${ids.length === 1 ? "" : "s"}` })}
+                  className={`${b} border-rose-400/30 text-rose-200 hover:border-rose-400/60`}>
+                  Delete
+                </button>
+                {busy === "bulk" ? <Spinner className="h-3.5 w-3.5" /> : null}
+              </>
+            );
+          }}
+        />
+      </Card>
+
+      {confirm ? (
+        <ConfirmDialog
+          title={`Delete ${confirm.label}?`}
+          message="Gone for good, along with the record of the emails and push messages sent for them. The audit log keeps that this happened, and when."
+          confirmLabel="Delete"
+          busy={busy === "bulk"}
+          onConfirm={() => remove(confirm.ids)}
+          onCancel={() => setConfirm(null)}
+        />
+      ) : null}
+    </>
+  );
+}

@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import {
+  BellIcon,
   BoxIcon,
   BuildingIcon,
   ChartIcon,
@@ -64,6 +65,7 @@ const ICONS = {
   truck: TruckIcon,
   users: UsersIcon,
   building: BuildingIcon,
+  bell: BellIcon,
 } as const;
 
 export type AdminUser = {

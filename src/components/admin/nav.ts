@@ -54,7 +54,8 @@ export type AdminNavIcon =
   | "grid"
   | "truck"
   | "users"
-  | "building";
+  | "building"
+  | "bell";
 
 /** A collapsible section. Its children are ordinary items and are what
  *  `visibleNav` returns — the group itself grants nothing. */
@@ -129,6 +130,16 @@ export const IMPORTER_ITEMS: AdminNavItem[] = [
 
 export const ADMIN_NAV: AdminNavNode[] = [
   { href: "/admin", label: "Dashboard", permission: null, icon: "chart" },
+  /**
+   * Notifications, like the dashboard, has NO permission of its own.
+   *
+   * Keying it on `notification.read` would be the old bug back again:
+   * every role in the matrix holds that at OWN scope, so the entry would
+   * admit anybody with an account to the admin area. It rides along with
+   * whatever else the user earned instead — and everyone who is already
+   * inside can see their own bell.
+   */
+  { href: "/admin/notifications", label: "Notifications", permission: null, icon: "bell" },
   {
     label: "Importers & agents",
     icon: "box",

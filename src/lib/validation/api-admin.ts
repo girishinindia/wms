@@ -153,6 +153,59 @@ export const approveImporterResponseSchema = z
   })
   .openapi("ApproveImporterResponse");
 
+/**
+ * A super admin creating an importer outright, instead of waiting for a
+ * self-registration.
+ *
+ * Only the company name and the contact are required: an admin taking
+ * details over the phone should not be blocked for want of a GSTIN. The
+ * KYC fields are optional, and what is supplied decides where the row
+ * lands — complete means it can be verified on the spot, incomplete
+ * means the importer finishes it themselves through the normal flow.
+ */
+export const createImporterRequestSchema = z
+  .object({
+    companyName: z.string().trim().min(2).max(160),
+    legalName: z.string().trim().min(2).max(160).optional(),
+    tradeName: optional(z.string().trim().max(160)),
+    entityType: z.enum(ENTITY_TYPES).optional(),
+    address: addressText(6, 400).optional(),
+    landmark: optional(addressText(2, 160)),
+    area: optional(addressText(2, 160)),
+    cityId: z.number().int().positive().optional(),
+    pincode: pincode.optional(),
+    gstin: optional(gstin),
+    pan: optional(pan),
+    contactPerson: z.string().trim().min(2).max(120),
+    contactEmail: z.string().trim().email().max(160),
+    contactMobile: z
+      .string()
+      .trim()
+      .regex(/^[6-9][0-9]{9}$/, "Enter a 10-digit Indian mobile number"),
+    alternateMobile: optional(
+      z.string().trim().regex(/^[6-9][0-9]{9}$/, "Enter a 10-digit Indian mobile number"),
+    ),
+    notes: optional(z.string().trim().max(1000)),
+    /** A portal login for the contact person. Default yes — an importer
+     *  with no login cannot do anything. */
+    createLogin: z.boolean().default(true),
+    /** Verify on the spot. Only honoured when the KYC fields are
+     *  complete; the database's own check has the last word. */
+    verifyNow: z.boolean().default(true),
+  })
+  .openapi("CreateImporterRequest");
+
+export const createImporterResponseSchema = z
+  .object({
+    id: z.number().int(),
+    code: z.string(),
+    status: z.string(),
+    kycStatus: z.string(),
+    login: z.string(),
+    tempPassword: z.string().nullable(),
+  })
+  .openapi("CreateImporterResponse");
+
 export const rejectImporterRequestSchema = z
   .object({
     /**

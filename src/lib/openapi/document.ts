@@ -30,6 +30,8 @@ import {
 import {
   approveImporterRequestSchema,
   approveImporterResponseSchema,
+  createImporterRequestSchema,
+  createImporterResponseSchema,
   assignRoleRequestSchema,
   createCitiesRequestSchema,
   createCitiesResponseSchema,
@@ -715,6 +717,30 @@ adminPath({
 });
 
 adminPath({
+  path: "/api/v1/admin/importers",
+  operationId: "createImporter",
+  summary: "Create an importer from the admin side",
+  permission: "importer.create",
+  description:
+    "The counter version of self-registration, for a customer who signed " +
+    "up by phone. Company name and a contact are the only required " +
+    "fields; supply the KYC fields as well and `verifyNow` puts the row " +
+    "straight to ACTIVE / VERIFIED, otherwise it lands PENDING and the " +
+    "importer completes their own profile.\n\nCompany, login and role " +
+    "binding are written in ONE statement, so a duplicate leaves nothing " +
+    "behind. With `createLogin` the contact gets a users row with " +
+    "`must_change_password`, and the temporary password is emailed AND " +
+    "returned once — it is never stored in readable form. " +
+    "`origin` is recorded as CREATED_BY_ADMIN.",
+  request: createImporterRequestSchema,
+  response: createImporterResponseSchema,
+  status: 201,
+  responses: {
+    409: errorResponse("Company name, GSTIN, PAN, email or mobile already registered."),
+  },
+});
+
+adminPath({
   path: "/api/v1/admin/importers/{id}/approve",
   operationId: "approveImporter",
   summary: "Complete the KYC details and activate an importer",
@@ -1129,15 +1155,44 @@ securedPath({
   summary: "My in-app notifications",
   permission: "notification.read",
   description:
-    "Newest first, with the unread count, so a bell needs one call. " +
-    "`?unread=1` returns only unread; `?limit=` up to 50.",
+    "Newest first, with the unread and total counts, so a bell needs one " +
+    "call. `?filter=unread|read` (or the older `?unread=1`) narrows it; " +
+    "`?limit=` up to 300.",
   query: z.object({
     unread: z.string().optional().openapi({ example: "1" }),
+    filter: z.string().optional().openapi({ example: "unread", description: "all | unread | read" }),
     limit: z.string().optional().openapi({ example: "20" }),
   }),
   response: z
-    .object({ unread: z.number().int(), items: z.array(notificationItem) })
+    .object({
+      unread: z.number().int(),
+      total: z.number().int(),
+      items: z.array(notificationItem),
+    })
     .openapi("NotificationListResponse"),
+});
+
+securedPath({
+  tag: "Notifications",
+  path: "/api/v1/notifications/delete",
+  operationId: "deleteNotifications",
+  summary: "Delete my notifications",
+  permission: "notification.read",
+  description:
+    "A real delete: the rows go, and the `notification_delivery` records " +
+    "hanging off them go with them (`on delete cascade`) — the history of " +
+    "which email or push was sent for those notifications is lost. An " +
+    "audit row naming the ids is written first, in a table nothing can " +
+    "delete from, so the act itself stays traceable.\n\nOnly the " +
+    "caller's own rows are ever touched: the recipient is the session's " +
+    "user id, so ids belonging to somebody else match nothing.",
+  request: z
+    .object({
+      ids: z.array(z.number().int().positive()).max(300).optional(),
+      all: z.boolean().optional(),
+    })
+    .openapi("DeleteNotificationsRequest"),
+  response: z.object({ deleted: z.number().int() }).openapi("DeleteNotificationsResponse"),
 });
 
 securedPath({
@@ -1146,11 +1201,14 @@ securedPath({
   operationId: "markNotificationsRead",
   summary: "Mark notifications read",
   permission: "notification.read",
-  description: "Send `{ids:[…]}` or `{all:true}`. Only the caller's own rows are ever touched.",
+  description:
+    "Send `{ids:[…]}` or `{all:true}`, and `read:false` to mark them " +
+    "unread again. Only the caller's own rows are ever touched.",
   request: z
     .object({
-      ids: z.array(z.number().int().positive()).max(200).optional(),
+      ids: z.array(z.number().int().positive()).max(300).optional(),
       all: z.boolean().optional(),
+      read: z.boolean().optional(),
     })
     .openapi("MarkNotificationsReadRequest"),
   response: z.object({ marked: z.number().int() }).openapi("MarkNotificationsReadResponse"),

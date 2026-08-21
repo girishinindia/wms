@@ -42,8 +42,10 @@ describe("admin navigation", () => {
 
   it("does not show the dashboard on its own", () => {
     // The dashboard has no permission of its own. It must never be the
-    // reason somebody is admitted.
+    // reason somebody is admitted — nor may Notifications, which is the
+    // other entry keyed on nothing.
     expect(visibleNav([{ permission: "master.city.read", scope: "ALL" }])).toEqual([]);
+    expect(visibleNav([{ permission: "notification.read", scope: "OWN" }])).toEqual([]);
   });
 
   it("shows the matching entries for a warehouse-scoped set", () => {
@@ -54,9 +56,9 @@ describe("admin navigation", () => {
       { permission: "user.read", scope: "WAREHOUSE" as const },
     ];
     const labels = visibleNav(warehouseAdmin).map((i) => i.label);
-    // Dashboard rides along; cities does not, because adding master data
-    // is not a warehouse admin's job.
-    expect(labels).toEqual(["Dashboard", "Importers", "Users"]);
+    // Dashboard and Notifications ride along; cities does not, because
+    // adding master data is not a warehouse admin's job.
+    expect(labels).toEqual(["Dashboard", "Notifications", "Importers", "Users"]);
   });
 
   it("shows everything to a platform-wide set", () => {
@@ -132,7 +134,7 @@ describe("admin navigation: grouping", () => {
     // No importer entry earned → no "Importers & agents" group; no
     // master entry earned → no "Master" group.
     expect(nodes.some((n) => isGroup(n))).toBe(false);
-    expect(nodes.map((n) => n.label)).toEqual(["Dashboard", "Users"]);
+    expect(nodes.map((n) => n.label)).toEqual(["Dashboard", "Notifications", "Users"]);
   });
 
   it("shows an importer only their own screens, under the importers group", () => {
@@ -146,7 +148,7 @@ describe("admin navigation: grouping", () => {
     const leaves = visibleNav(importer).map((i) => i.label);
     // No "My company" entry: the importer's company profile is their
     // dashboard.
-    expect(leaves).toEqual(["Dashboard", "Sales agents"]);
+    expect(leaves).toEqual(["Dashboard", "Notifications", "Sales agents"]);
     const nodes = groupNav(visibleNav(importer));
     const group = nodes.find((n) => isGroup(n) && n.label === "Importers & agents");
     expect(group).toBeDefined();
@@ -273,6 +275,7 @@ describe("OpenAPI: admin endpoints", () => {
     expect(documented).toEqual([
       "/api/v1/admin/cities",
       "/api/v1/admin/cities/{id}",
+      "/api/v1/admin/importers",
       "/api/v1/admin/importers/{id}/approve",
       "/api/v1/admin/importers/{id}/lifecycle",
       "/api/v1/admin/importers/{id}/reject",
