@@ -1,4 +1,3 @@
-import { sql } from "drizzle-orm";
 import { type NextRequest } from "next/server";
 
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
@@ -6,7 +5,7 @@ import { requirePermission, requireVerifiedImporter } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { announce } from "@/lib/notify/announce";
 import { AgentConflictError, createSalesAgent, listSalesAgents } from "@/lib/sales-agents/ops";
-import { resolveImporterScope } from "@/lib/sales-agents/scope";
+import { agentWhere, resolveImporterScope } from "@/lib/sales-agents/scope";
 import { salesAgentCreateSchema } from "@/lib/validation/api-importer";
 import { isUniqueViolation } from "@/lib/db-errors";
 
@@ -24,8 +23,8 @@ export async function GET(request: NextRequest) {
       const wanted = request.nextUrl.searchParams.get("importerId");
       const scope = resolveImporterScope(actor, grant, wanted ? Number(wanted) : null, requestId);
       if ("response" in scope) return scope.response;
-      const where = scope.importerId === null ? sql`true` : sql`a.importer_id = ${scope.importerId}`;
-      return ok({ agents: await listSalesAgents(where) }, requestId);
+      // An agent's scope is their own row, not their company's list.
+      return ok({ agents: await listSalesAgents(agentWhere(scope)) }, requestId);
     } catch (error) {
       return toResponse(error, requestId);
     }

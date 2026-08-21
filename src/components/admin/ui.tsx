@@ -302,7 +302,11 @@ export function ConfirmDialog({
         role="alertdialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative w-full max-w-md rounded-2xl border bg-ink-850 p-6 card-shadow ${
+        /* `text-left` is not decoration. A dialog opened from a row's
+           action column is a DOM descendant of a `text-right` cell and
+           inherits its alignment; stating it here means the dialog reads
+           the same wherever it was opened from. */
+        className={`relative w-full max-w-md rounded-2xl border bg-ink-850 p-6 text-left card-shadow ${
           tone === "danger" ? "border-rose-400/30" : "border-amber-400/30"
         }`}
       >

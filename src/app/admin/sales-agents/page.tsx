@@ -7,6 +7,7 @@ import { getDb } from "@/db";
 import { loadGeoOptions } from "@/lib/admin/geo";
 import { grantFor, importerGateFor, importerIdOf, pageGuard } from "@/lib/auth/guard";
 import { listSalesAgents } from "@/lib/sales-agents/ops";
+import { agentWhere, isAgentOnly } from "@/lib/sales-agents/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,20 @@ export default async function SalesAgentsPage() {
   const importerId = wide ? null : importerIdOf(guard.actor);
   if (!wide && importerId === null) return <Denied what="sales agents" />;
 
-  const rows = await listSalesAgents(wide ? sql`true` : sql`a.importer_id = ${importerId}`);
+  /**
+   * An agent is not a small importer. IMPORTER and SALES_AGENT hold the
+   * same grant at the same scope and `importerIdOf` answers with the
+   * company for both, which listed every colleague to anyone who worked
+   * there. `agentWhere` is the single place that tells them apart, and
+   * the two API routes ask it the same question.
+   */
+  const selfOnly = isAgentOnly(guard.actor);
+  const rows = await listSalesAgents(
+    agentWhere({
+      importerId: wide ? null : importerId,
+      selfUserId: selfOnly ? guard.actor.session.userId : null,
+    }),
+  );
   const geo = await loadGeoOptions();
   const importers = wide
     ? (
@@ -52,11 +66,13 @@ export default async function SalesAgentsPage() {
   return (
     <>
       <PageHeader
-        title="Sales agents"
+        title={selfOnly ? "My sales profile" : "Sales agents"}
         subtitle={
-          wide
-            ? "Field sales people across every importer."
-            : "Your field sales people. Each can sign in to the mobile app."
+          selfOnly
+            ? "Your own record, as your company keeps it."
+            : wide
+              ? "Field sales people across every importer."
+              : "Your field sales people. Each can sign in to the mobile app."
         }
       />
       <SalesAgentsTable rows={rows} spec={spec} />

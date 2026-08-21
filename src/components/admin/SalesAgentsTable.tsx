@@ -10,6 +10,7 @@ import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 import type { GeoOptions } from "@/lib/admin/geo";
 import type { SalesAgentRow, SalesArea } from "@/lib/sales-agents/ops";
+import { ADULT_YEARS, latestAdultBirthDate } from "@/lib/validation/age";
 
 import DataTable, { SelectAllHeader, SelectRowCell, Switch, type ColumnMeta } from "./DataTable";
 import { Card, ConfirmDialog, FactList, IconButton, StatusBadge } from "./ui";
@@ -396,12 +397,13 @@ function AgentDrawer({
   const err = (k: string) => (errors[k] ? <span className="mt-1 block text-xs text-rose-300">{errors[k]}</span> : null);
   const title = drawer.mode === "create" ? "Add sales agent" : drawer.mode === "edit" ? "Edit sales agent" : "Sales agent";
 
-  const text = (k: string, lbl: string, opts: { type?: string; required?: boolean; mono?: boolean; placeholder?: string; span?: boolean } = {}) => (
+  const text = (k: string, lbl: string, opts: { type?: string; required?: boolean; mono?: boolean; placeholder?: string; span?: boolean; max?: string; hint?: string } = {}) => (
     <label className={`${label} ${opts.span ? "sm:col-span-2" : ""}`}>
       {lbl}{opts.required ? <span className="text-amber-300"> *</span> : null}
       <input type={opts.type ?? "text"} value={draft[k] ?? ""} onChange={(e) => set(k, opts.mono ? e.target.value.toUpperCase() : e.target.value)}
+        max={opts.max}
         placeholder={opts.placeholder} className={`${input} ${tone(k)} ${opts.mono ? "font-mono uppercase" : ""}`} />
-      {err(k)}
+      {err(k) ?? (opts.hint ? <span className="mt-1 block text-xs text-verdigris-200/45">{opts.hint}</span> : null)}
     </label>
   );
   const select = (value: string, onChange: (v: string) => void, options: { id: number | string; name: string }[], opts: { disabled?: boolean; k?: string; placeholder?: string } = {}) => (
@@ -471,7 +473,14 @@ function AgentDrawer({
                 {text("lastName", "Last name", { required: true })}
                 {text("mobile", "Mobile", { required: true, placeholder: "9876543210" })}
                 {text("email", "Email", { type: "email", required: drawer.mode === "create" })}
-                {text("birthDate", "Birth date", { type: "date" })}
+                {/* `max` keeps the picker itself from offering a date that
+                    would make the agent a minor; the schema refuses the
+                    same date if it arrives by any other route. */}
+                {text("birthDate", "Birth date", {
+                  type: "date",
+                  max: latestAdultBirthDate(),
+                  hint: `Must be ${ADULT_YEARS} or older`,
+                })}
                 {text("joiningDate", "Joining date", { type: "date", required: true })}
                 {text("pan", "PAN", { mono: true, placeholder: "AAAAA0000A" })}
               </div>

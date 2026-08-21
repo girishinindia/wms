@@ -4,7 +4,7 @@ import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { requireVerifiedImporter } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { deleteSalesAgent, loadSalesAgent, updateSalesAgent } from "@/lib/sales-agents/ops";
-import { resolveImporterScope } from "@/lib/sales-agents/scope";
+import { agentInScope, resolveImporterScope } from "@/lib/sales-agents/scope";
 import { salesAgentUpdateSchema } from "@/lib/validation/api-importer";
 import { isUniqueViolation } from "@/lib/db-errors";
 
@@ -27,7 +27,9 @@ export async function GET(_: NextRequest, context: { params: Promise<{ id: strin
       if ("response" in found) return found.response;
       const scope = resolveImporterScope(actor, grant, found.agent.importerId, requestId);
       if ("response" in scope) return scope.response;
-      if (scope.importerId !== null && scope.importerId !== found.agent.importerId) {
+      // Not found, rather than forbidden: an id an agent may not read
+      // should not be confirmable by the shape of the refusal.
+      if (!agentInScope(scope, found.agent)) {
         return fail("NOT_FOUND", "No such sales agent", requestId);
       }
       return ok(found.agent, requestId);
@@ -45,7 +47,9 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       if ("response" in found) return found.response;
       const scope = resolveImporterScope(actor, grant, found.agent.importerId, requestId);
       if ("response" in scope) return scope.response;
-      if (scope.importerId !== null && scope.importerId !== found.agent.importerId) {
+      // Not found, rather than forbidden: an id an agent may not read
+      // should not be confirmable by the shape of the refusal.
+      if (!agentInScope(scope, found.agent)) {
         return fail("NOT_FOUND", "No such sales agent", requestId);
       }
 
@@ -81,7 +85,9 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
       if ("response" in found) return found.response;
       const scope = resolveImporterScope(actor, grant, found.agent.importerId, requestId);
       if ("response" in scope) return scope.response;
-      if (scope.importerId !== null && scope.importerId !== found.agent.importerId) {
+      // Not found, rather than forbidden: an id an agent may not read
+      // should not be confirmable by the shape of the refusal.
+      if (!agentInScope(scope, found.agent)) {
         return fail("NOT_FOUND", "No such sales agent", requestId);
       }
       const meta = { requestId, ip: clientIp(request.headers), userAgent: request.headers.get("user-agent") };

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 
 import { XIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
@@ -91,8 +92,8 @@ export default function ImporterCreateDrawer({ geo }: { geo: GeoOptions }) {
   }
 
   const input =
-    "mt-1 w-full rounded-lg border bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50 placeholder:text-verdigris-200/30 focus:outline-none focus:ring-2 focus:ring-patina/40 disabled:opacity-50";
-  const label = "block text-xs font-medium text-verdigris-200/80";
+    "mt-1.5 w-full min-w-0 rounded-lg border bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50 placeholder:text-verdigris-200/30 focus:outline-none focus:ring-2 focus:ring-patina/40 disabled:opacity-50";
+  const label = "block text-xs font-medium leading-5 text-verdigris-200/80";
   const tone = (k: string) => (errors[k] ? "border-rose-400/50" : "border-verdigris-300/15");
   const err = (k: string) =>
     errors[k] ? <span className="mt-1 block text-xs text-rose-300">{errors[k]}</span> : null;
@@ -102,7 +103,7 @@ export default function ImporterCreateDrawer({ geo }: { geo: GeoOptions }) {
     lbl: string,
     opts: { required?: boolean; mono?: boolean; placeholder?: string; span?: boolean; type?: string } = {},
   ) => (
-    <label className={`${label} ${opts.span ? "sm:col-span-2" : ""}`}>
+    <label className={`${label} ${opts.span ? "@lg:col-span-2" : ""}`}>
       {lbl}
       {opts.required ? <span className="text-amber-300"> *</span> : null}
       <input
@@ -145,14 +146,15 @@ export default function ImporterCreateDrawer({ geo }: { geo: GeoOptions }) {
         Add importer
       </button>
 
-      {open ? (
-        <div className="fixed inset-0 z-50 flex justify-end">
+      {open
+        ? createPortal(
+        <div className="fixed inset-0 z-50 flex justify-end text-left">
           <button type="button" aria-label="Close" onClick={() => setOpen(false)} className="flex-1 bg-ink-900/70" />
           <aside
             role="dialog"
             aria-modal="true"
             aria-label="Add importer"
-            className="flex h-full w-full max-w-lg flex-col border-l border-verdigris-300/10 bg-ink-850 shadow-2xl"
+            className="@container flex h-full w-full min-w-0 max-w-[min(42rem,100vw)] flex-col border-l border-verdigris-300/10 bg-ink-850 shadow-2xl"
           >
             <header className="flex items-center justify-between border-b border-verdigris-300/10 px-6 py-4">
               <div>
@@ -175,7 +177,7 @@ export default function ImporterCreateDrawer({ geo }: { geo: GeoOptions }) {
               <form id="importer-create-form" onSubmit={(e) => { e.preventDefault(); void save(); }} className="space-y-5">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-verdigris-300">Company</p>
-                  <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                  <div className="mt-3 grid gap-x-5 gap-y-4 @lg:grid-cols-2">
                     {text("companyName", "Company name", { required: true, span: true })}
                     {text("legalName", "Legal name")}
                     <label className={label}>
@@ -200,7 +202,7 @@ export default function ImporterCreateDrawer({ geo }: { geo: GeoOptions }) {
 
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-verdigris-300">Registered address</p>
-                  <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                  <div className="mt-3 grid gap-x-5 gap-y-4 @lg:grid-cols-2">
                     {text("address", "Address", { span: true })}
                     {text("landmark", "Landmark")}
                     {text("area", "Area / locality")}
@@ -223,7 +225,7 @@ export default function ImporterCreateDrawer({ geo }: { geo: GeoOptions }) {
 
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-verdigris-300">Contact</p>
-                  <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                  <div className="mt-3 grid gap-x-5 gap-y-4 @lg:grid-cols-2">
                     {text("contactPerson", "Contact person", { required: true })}
                     {text("contactEmail", "Email", { required: true, type: "email" })}
                     {text("contactMobile", "Mobile", { required: true, placeholder: "9876543210" })}
@@ -296,11 +298,13 @@ export default function ImporterCreateDrawer({ geo }: { geo: GeoOptions }) {
               </button>
             </footer>
           </aside>
-        </div>
-      ) : null}
+        </div>,
+            document.body,
+          )
+        : null}
 
       {credentials ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 text-left">
           <div className="absolute inset-0 bg-ink-900/70" aria-hidden />
           <div
             role="dialog"

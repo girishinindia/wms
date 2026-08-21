@@ -1,11 +1,13 @@
 import Link from "next/link";
 
 import CompanyProfileForm from "@/components/admin/CompanyProfileForm";
-import { Card, Empty, PageHeader, Stat, StatusBadge } from "@/components/admin/ui";
+import { Card, Empty, FactList, PageHeader, Stat, StatusBadge } from "@/components/admin/ui";
 import { loadGeoOptions } from "@/lib/admin/geo";
 import { loadImporterProfile } from "@/lib/importer/profile";
 import { getDb } from "@/db";
 import { currentActor, importerGateFor } from "@/lib/auth/guard";
+import { listSalesAgents } from "@/lib/sales-agents/ops";
+import { isAgentOnly } from "@/lib/sales-agents/scope";
 import { sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +44,14 @@ export default async function AdminDashboard() {
   // The platform counts below are nobody's business but the operator's.
   const gate = actor ? await importerGateFor(actor) : { kind: "none" as const };
   if (gate.kind === "importer") {
+    /**
+     * A sales agent works FOR the company; they are not the company.
+     * They land in this branch because their role assignment names the
+     * importer they belong to — which is precisely what used to hand
+     * them their employer's whole KYC record, GSTIN and PAN included,
+     * on the first screen after signing in.
+     */
+    if (isAgentOnly(actor!)) return <AgentDashboard userId={actor!.session.userId} />;
     return (
       <ImporterDashboard
         importerId={gate.importerId}
@@ -161,6 +171,71 @@ export default async function AdminDashboard() {
           )}
         </Card>
       ) : null}
+    </>
+  );
+}
+
+/**
+ * A sales agent's dashboard is their own record and nothing else.
+ *
+ * Read-only, deliberately: the agent's employer keeps this record, and
+ * the fields they may change themselves — name, email, mobile, password
+ * — belong to My profile, where each is protected by the flow it needs.
+ * Their company is named, because knowing who you work for is not a
+ * disclosure; its address, GSTIN and PAN are not.
+ */
+async function AgentDashboard({ userId }: { userId: number }) {
+  const [me] = await listSalesAgents(sql`a.user_id = ${userId}`);
+  if (!me) {
+    return (
+      <>
+        <PageHeader title="Dashboard" />
+        <Card>
+          <Empty
+            title="No sales profile yet."
+            hint="Your company has not finished setting up your agent record. They will see it on their own list."
+          />
+        </Card>
+      </>
+    );
+  }
+  const territory = me.salesAreas
+    .map((a) => `${a.cityName}${a.areas.length > 0 ? ` — ${a.areas.join(", ")}` : ""}`)
+    .join(" · ");
+  return (
+    <>
+      <PageHeader
+        title={`${me.firstName} ${me.lastName}`}
+        subtitle={`${me.code} · sales agent at ${me.importerName}`}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge value={me.status} />
+            <StatusBadge value={me.isActive ? "ACTIVE" : "INACTIVE"} />
+          </div>
+        }
+      />
+      <Card className="p-6">
+        <h2 className="mb-4 text-sm font-semibold text-verdigris-50">Your record</h2>
+        <FactList
+          labelWidth="11rem"
+          items={[
+            { label: "Mobile", value: me.mobile, mono: true },
+            { label: "Email", value: me.email ?? "—" },
+            { label: "Joined", value: new Date(me.joiningDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }) },
+            { label: "City", value: me.cityLabel ?? "—" },
+            {
+              label: "Address",
+              value: [me.address, me.landmark, me.area, me.pincode].filter(Boolean).join(", ") || "—",
+            },
+            { label: "Territory", value: territory || "None assigned yet" },
+          ]}
+        />
+        <p className="mt-5 text-xs text-verdigris-200/55">
+          Your company keeps this record. To change your name, sign-in email, mobile or password,
+          use <a href="/admin/profile" className="text-verdigris-300 hover:text-patina">My profile</a>;
+          anything else here is theirs to correct.
+        </p>
+      </Card>
     </>
   );
 }

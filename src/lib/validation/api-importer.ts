@@ -1,5 +1,6 @@
 import { z } from "@/lib/openapi/zod";
 
+import { ADULT_MESSAGE, isAdultBirthDate } from "./age";
 import { addressText, ENTITY_TYPES, gstin, optional, pan, pincode } from "./api-admin";
 
 /**
@@ -85,6 +86,15 @@ const isoDate = z
   .refine((s) => !Number.isNaN(Date.parse(s)), "Not a real date");
 
 /**
+ * A birth date, which is also an age check.
+ *
+ * The database already refuses a birth date on or after the joining
+ * date; it has nothing to say about eighteen, and a form that accepts
+ * today's date as a date of birth is a form nobody checked.
+ */
+const adultBirthDate = isoDate.refine((s) => isAdultBirthDate(s), ADULT_MESSAGE);
+
+/**
  * One territory: a state, a city in it, and the areas of that city the
  * agent covers — because one city is split between several agents by
  * locality. Names are stored beside the ids so the JSON reads on its own
@@ -108,7 +118,7 @@ const salesAgentCore = {
   lastName: z.string().trim().min(1).max(80),
   email: optional(z.string().trim().email().max(160)),
   mobile,
-  birthDate: optional(isoDate),
+  birthDate: optional(adultBirthDate),
   joiningDate: isoDate,
   pan: optional(pan),
   address: optional(addressText(2, 400)),
