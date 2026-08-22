@@ -61,7 +61,7 @@ export function ListToolbar({
   const to = Math.min(list.total, list.page * list.size);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-verdigris-300/10 px-5 py-4">
+    <div className="border-b border-verdigris-300/10 px-5 py-4">
       <h2 className="text-sm font-semibold text-verdigris-50">
         {list.total} {label}
         {list.total > list.size ? (
@@ -71,69 +71,116 @@ export function ListToolbar({
         ) : null}
       </h2>
 
-      <form
-        method="get"
-        action={base}
-        className="flex flex-wrap items-center gap-2"
-        // Any select in here — including ones a server component passed
-        // in as `extraFilters`, which cannot carry handlers of their own
-        // — submits the form the moment it changes.
-        onChange={(e) => {
-          if (e.target instanceof HTMLSelectElement) e.currentTarget.requestSubmit();
-        }}
-      >
-        <Carry list={list} except={["q", "status", "size", ...Object.keys(list.extra)]} />
-        <input
-          type="search"
-          name="q"
-          defaultValue={list.q}
-          placeholder={`Search ${label}`}
-          aria-label={`Search ${label}`}
-          className={`${inputClass} w-44`}
-        />
-        <select
-          name="status"
-          defaultValue={list.status}
-          aria-label="Status"
-          className={selectClass}
+      {/**
+       * Two rows: searching on the first, narrowing on the second.
+       *
+       * A grid rather than two stacked flex rows, because the Add button
+       * has to sit at the end of ROW ONE while staying OUTSIDE the form
+       * — see the note on `action` below. The form is `display: contents`
+       * so its two children are the grid's own items; the form element
+       * itself lays nothing out, but still owns every control in both
+       * rows, so submitting, Enter-to-search and the carried hidden
+       * fields are untouched.
+       *
+       * Column gap is deliberately absent (`gap-y-2` only): the second
+       * column collapses to nothing on a screen with no Add button, and
+       * a column gap would leave the search bar short of the right edge
+       * while row two ran the full width. The Add button brings its own
+       * left margin instead.
+       */}
+      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-y-2">
+        <form
+          method="get"
+          action={base}
+          className="contents"
+          // Any select in here — including ones a server component passed
+          // in as `extraFilters`, which cannot carry handlers of their own
+          // — submits the form the moment it changes.
+          onChange={(e) => {
+            if (e.target instanceof HTMLSelectElement) e.currentTarget.requestSubmit();
+          }}
         >
-          <option value="all" className="bg-ink-850">All</option>
-          <option value="active" className="bg-ink-850">Active</option>
-          <option value="inactive" className="bg-ink-850">Inactive</option>
-        </select>
-        {extraFilters}
-        <select
-          name="size"
-          defaultValue={String(list.size)}
-          aria-label="Rows per page"
-          className={selectClass}
-        >
-          {PAGE_SIZES.map((n) => (
-            <option key={n} value={n} className="bg-ink-850">
-              {n} / page
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          className="rounded-lg border border-verdigris-300/20 px-3 py-1.5 text-sm text-verdigris-100 transition-colors hover:border-verdigris-300/45"
-        >
-          Search
-        </button>
-        {list.q || list.status !== "all" || Object.keys(list.extra).length > 0 ? (
-          <a
-            href={listHref(base, list, {
-              q: "",
-              status: "all",
-              extra: Object.fromEntries(Object.keys(list.extra).map((k) => [k, ""])),
-            })}
-            className="text-xs text-verdigris-200/60 underline-offset-2 hover:text-verdigris-100 hover:underline"
-          >
-            Clear
-          </a>
+          <Carry list={list} except={["q", "status", "size", ...Object.keys(list.extra)]} />
+
+          {/* Row one: the search bar, as wide as the row allows. */}
+          <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-2">
+            <input
+              type="search"
+              name="q"
+              defaultValue={list.q}
+              placeholder={`Search ${label}`}
+              aria-label={`Search ${label}`}
+              className={`${inputClass} min-w-0 flex-1`}
+            />
+            {/* Beside the box, not down with the filters: it is this
+                input's submit button, and Enter does the same thing. */}
+            <button
+              type="submit"
+              className="shrink-0 rounded-lg border border-verdigris-300/20 px-3 py-1.5 text-sm text-verdigris-100 transition-colors hover:border-verdigris-300/45"
+            >
+              Search
+            </button>
+          </div>
+
+          {/* Row two: everything that narrows the list. */}
+          <div className="col-span-full row-start-2 flex flex-wrap items-center gap-2">
+            <select
+              name="status"
+              defaultValue={list.status}
+              aria-label="Status"
+              className={selectClass}
+            >
+              <option value="all" className="bg-ink-850">All</option>
+              <option value="active" className="bg-ink-850">Active</option>
+              <option value="inactive" className="bg-ink-850">Inactive</option>
+            </select>
+            {extraFilters}
+            <select
+              name="size"
+              defaultValue={String(list.size)}
+              aria-label="Rows per page"
+              className={selectClass}
+            >
+              {PAGE_SIZES.map((n) => (
+                <option key={n} value={n} className="bg-ink-850">
+                  {n} / page
+                </option>
+              ))}
+            </select>
+            {list.q || list.status !== "all" || Object.keys(list.extra).length > 0 ? (
+              <a
+                href={listHref(base, list, {
+                  q: "",
+                  status: "all",
+                  extra: Object.fromEntries(Object.keys(list.extra).map((k) => [k, ""])),
+                })}
+                className="text-xs text-verdigris-200/60 underline-offset-2 hover:text-verdigris-100 hover:underline"
+              >
+                Clear
+              </a>
+            ) : null}
+          </div>
+        </form>
+
+        {/**
+         * The Add button — placed into row one, kept out of the form.
+         *
+         * Not a nesting nicety. This form submits itself whenever any
+         * select inside it changes, and `action` is a drawer trigger
+         * whose panel is a REACT child of it. React events travel the
+         * React tree, not the DOM tree, so a portalled drawer is still
+         * inside this form as far as `onChange` is concerned: choosing a
+         * type in the Add-warehouse drawer would submit the toolbar and
+         * reload the page over a half-filled form. A trigger that forgot
+         * `type="button"` would submit it too.
+         *
+         * So it stays a sibling of the form and is put in place by the
+         * grid, which is the only reason this is a grid at all.
+         */}
+        {action ? (
+          <div className="col-start-2 row-start-1 ml-2 flex items-center gap-2">{action}</div>
         ) : null}
-      </form>
-      {action ? <div className="flex items-center gap-2">{action}</div> : null}
+      </div>
     </div>
   );
 }

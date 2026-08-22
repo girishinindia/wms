@@ -2,7 +2,7 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { EyeIcon, PencilIcon, TrashIcon } from "@/components/icons";
 import { useToast } from "@/components/Toast";
@@ -46,11 +46,21 @@ export default function ImportersTable({
   geo,
   canEdit,
   canDelete,
+  action,
 }: {
   rows: ImporterListRow[];
   geo: GeoOptions;
   canEdit: boolean;
   canDelete: boolean;
+  /**
+   * The Add button.
+   *
+   * It used to hang off `PageHeader`, above the status tabs — the one
+   * list in the admin where Add was not beside the search box. Same
+   * button and same drawer; it just sits where every other list keeps
+   * it.
+   */
+  action?: ReactNode;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -203,6 +213,7 @@ export default function ImportersTable({
         columns={columns}
         data={rows}
         label="importers"
+        action={action}
         enableSelection={false}
         searchKeys={["code", "companyName", "contactPerson", "contactEmail", "contactMobile", "status", "kycStatus"]}
         emptyTitle="No importers here."

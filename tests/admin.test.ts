@@ -280,6 +280,59 @@ describe("the sidebar navigates with the browser, not the router", () => {
   });
 });
 
+describe("the list toolbar keeps Add out of the search form", () => {
+  const raw = readFileSync(
+    new URL("../src/components/admin/ListControls.tsx", import.meta.url),
+    "utf8",
+  );
+  const src = raw.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  /**
+   * The toolbar submits itself whenever a select inside the form
+   * changes — that is what makes the filters work without a button. The
+   * `action` slot is a drawer trigger, and a drawer's panel is a REACT
+   * child of it. React events travel the React tree and not the DOM
+   * tree, so even a portalled drawer counts as inside this form:
+   * choosing a type in the Add-warehouse drawer would submit the
+   * toolbar and reload the page over a half-filled form.
+   *
+   * Putting the button on the same row as the search box is exactly the
+   * change that invites someone to move it inside. This is the tripwire.
+   */
+  it("renders the action slot after the form closes, not within it", () => {
+    const form = src.indexOf("<form");
+    const close = src.indexOf("</form>");
+    const slot = src.indexOf("{action ?");
+    expect(form, "the toolbar no longer has a form").toBeGreaterThan(-1);
+    expect(slot, "the action slot moved or was renamed").toBeGreaterThan(-1);
+    expect(slot, "the Add button is inside the search form").toBeGreaterThan(close);
+  });
+
+  it("still lets the form own every control in both rows", () => {
+    // The form lays nothing out — `display: contents` — but it must
+    // still be the ancestor of the search box and of every filter, or
+    // submitting drops half the state.
+    const form = src.slice(src.indexOf("<form"), src.indexOf("</form>"));
+    expect(form).toMatch(/className="contents"/);
+    expect(form).toMatch(/name="q"/);
+    expect(form).toMatch(/name="status"/);
+    expect(form).toMatch(/name="size"/);
+    expect(form).toMatch(/\{extraFilters\}/);
+    expect(form).toMatch(/type="submit"/);
+  });
+
+  it("puts search on the first row and the filters on the second", () => {
+    const searchRow = src.slice(src.indexOf("col-start-1 row-start-1"));
+    expect(searchRow.indexOf('name="q"'), "search is not on the first row").toBeGreaterThan(-1);
+    expect(searchRow.indexOf('name="q"')).toBeLessThan(searchRow.indexOf("col-span-full row-start-2"));
+    // And the Add button shares that first row.
+    expect(src).toMatch(/col-start-2 row-start-1/);
+    // Full width, not the old fixed 176px.
+    expect(src).toMatch(/min-w-0 flex-1/);
+    expect(src).not.toMatch(/w-44/);
+  });
+});
+
 describe("master registry", () => {
   it("refuses a slug that is not in the whitelist", () => {
     expect(resolveResource("users")).toBeNull();

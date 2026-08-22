@@ -121,7 +121,6 @@ export default async function ImportersPage({
       <PageHeader
         title="Importers"
         subtitle="Self-registrations arrive as pending; the importer completes their profile and submits it, then you verify."
-        action={canCreate ? <ImporterCreateDrawer geo={geo} /> : null}
       />
 
       <div className="mb-4 flex flex-wrap gap-2">
@@ -148,6 +147,7 @@ export default async function ImportersPage({
           geo={geo}
           canEdit={canEdit}
           canDelete={canDelete}
+          action={canCreate ? <ImporterCreateDrawer geo={geo} /> : null}
           rows={rows.map((r) => ({
             id: r.id,
             code: r.code,

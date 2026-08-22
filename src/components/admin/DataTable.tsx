@@ -403,22 +403,38 @@ function ClientToolbar<T>({
   const total = table.getPrePaginationRowModel().rows.length;
   const all = table.getCoreRowModel().rows.length;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-verdigris-300/10 px-5 py-4">
+    /**
+     * The same two rows as `ListToolbar`, so a list does not rearrange
+     * itself when you move between screens. These four are filtered in
+     * the browser and have no filter selects of their own, so row two
+     * carries only the page size — a thinner row than the master
+     * screens have, in the same place.
+     *
+     * Plain flex, not the grid the other toolbar needs: there is no form
+     * here to keep the Add button out of. Nothing is submitted; typing
+     * filters the rows already in memory.
+     */
+    <div className="border-b border-verdigris-300/10 px-5 py-4">
       <h2 className="text-sm font-semibold text-verdigris-50">
         {total} {label}
         {total !== all ? (
           <span className="ml-2 font-normal text-verdigris-200/45">of {all}</span>
         ) : null}
       </h2>
-      <div className="flex flex-wrap items-center gap-2">
+
+      <div className="mt-3 flex items-center gap-2">
         <input
           type="search"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={`Search ${label}`}
           aria-label={`Search ${label}`}
-          className={`${inputClass} w-44`}
+          className={`${inputClass} min-w-0 flex-1`}
         />
+        {action ? <div className="flex shrink-0 items-center gap-2">{action}</div> : null}
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         <select
           value={table.getState().pagination.pageSize}
           onChange={(e) => table.setPageSize(Number(e.target.value))}
@@ -431,7 +447,6 @@ function ClientToolbar<T>({
             </option>
           ))}
         </select>
-        {action}
       </div>
     </div>
   );
