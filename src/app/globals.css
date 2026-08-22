@@ -319,3 +319,11 @@ html[data-theme="light"] .switch-off {
 html[data-theme="light"] .switch-off > span {
   background-color: #5b6f6d !important;
 }
+
+/* Edge draws its own reveal control inside every password box. Ours is
+   already there, and two eyes side by side reads as a rendering fault.
+   Chrome and Firefox draw nothing, so this affects only Edge. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}

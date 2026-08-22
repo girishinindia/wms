@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { EyeIcon, EyeOffIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
@@ -22,6 +23,58 @@ const button =
 const tone = (err?: string) => (err ? "border-rose-400/50" : "border-verdigris-300/15");
 const Err = ({ msg }: { msg?: string }) =>
   msg ? <span className="mt-1 block text-xs text-rose-300">{msg}</span> : null;
+
+/**
+ * A password box with an eye, matching the one on the sign-in page.
+ *
+ * These three boxes are hand-rolled rather than built on
+ * `components/Field`, which is where the public forms get theirs — so
+ * the reveal is repeated here rather than shared. Worth it: the
+ * alternative is reworking the whole profile screen onto a different
+ * input component to add one button.
+ */
+function PasswordBox({
+  value,
+  onChange,
+  autoComplete,
+  error,
+  label: text,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  autoComplete: string;
+  error?: string;
+  label: string;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <label className={label}>
+      {text}
+      <span className="relative mt-1 block">
+        <input
+          type={revealed ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete={autoComplete}
+          className={`${input} mt-0 pr-11 ${tone(error)}`}
+        />
+        {/* type="button": this sits in a form, and the default would
+            submit the password change. */}
+        <button
+          type="button"
+          onClick={() => setRevealed((v) => !v)}
+          aria-label={revealed ? `Hide ${text.toLowerCase()}` : `Show ${text.toLowerCase()}`}
+          aria-pressed={revealed}
+          title={revealed ? "Hide" : "Show"}
+          className="absolute inset-y-px right-px grid w-10 place-items-center rounded-r-lg text-verdigris-200/55 transition-colors hover:text-verdigris-50 focus:outline-none focus-visible:text-verdigris-50 focus-visible:ring-2 focus-visible:ring-patina/40"
+        >
+          {revealed ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+        </button>
+      </span>
+      <Err msg={error} />
+    </label>
+  );
+}
 
 export function NameForm({ firstName, lastName }: { firstName: string; lastName: string }) {
   const toast = useToast();
@@ -96,22 +149,28 @@ export function PasswordForm({ forced = false }: { forced?: boolean }) {
   return (
     <form onSubmit={(e) => { e.preventDefault(); void save(); }} className="grid max-w-md gap-4">
       {!forced ? (
-        <label className={label}>
-          Current password
-          <input type="password" value={old} onChange={(e) => setOld(e.target.value)} autoComplete="current-password" className={`${input} ${tone(errors.oldPassword)}`} />
-          <Err msg={errors.oldPassword} />
-        </label>
+        <PasswordBox
+          label="Current password"
+          value={old}
+          onChange={setOld}
+          autoComplete="current-password"
+          error={errors.oldPassword}
+        />
       ) : null}
-      <label className={label}>
-        New password
-        <input type="password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" className={`${input} ${tone(errors.newPassword)}`} />
-        <Err msg={errors.newPassword} />
-      </label>
-      <label className={label}>
-        Confirm new password
-        <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" className={`${input} ${tone(errors.confirmPassword)}`} />
-        <Err msg={errors.confirmPassword} />
-      </label>
+      <PasswordBox
+        label="New password"
+        value={next}
+        onChange={setNext}
+        autoComplete="new-password"
+        error={errors.newPassword}
+      />
+      <PasswordBox
+        label="Confirm new password"
+        value={confirm}
+        onChange={setConfirm}
+        autoComplete="new-password"
+        error={errors.confirmPassword}
+      />
       <p className="text-xs text-verdigris-200/55">
         After the change you are signed out everywhere and sign in with the new password.
       </p>

@@ -209,6 +209,22 @@ export const EyeIcon = (p: P) => (
   </svg>
 );
 
+/**
+ * Hide — the same eye, struck through.
+ *
+ * The eye plus a stroke rather than some different shape, so the reveal
+ * button does not change size or silhouette when it is pressed: one
+ * control in two states, not two controls swapping places.
+ */
+export const EyeOffIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M9.9 5.2A9.9 9.9 0 0 1 12 5c6 0 9.5 7 9.5 7a17.6 17.6 0 0 1-3.4 4.3" />
+    <path d="M6.6 7.4A17.8 17.8 0 0 0 2.5 12s3.5 7 9.5 7a9.8 9.8 0 0 0 3.9-.8" />
+    <path d="M9.9 9.9a2.75 2.75 0 0 0 3.9 3.9" />
+    <path d="M4 3.8 20.2 20" />
+  </svg>
+);
+
 /** Delete — a bin. Only ever offered for a row nothing points at. */
 export const TrashIcon = (p: P) => (
   <svg {...base} {...p}>

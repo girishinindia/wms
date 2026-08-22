@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("password hashing", () => {
@@ -161,5 +163,49 @@ describe("token handling", () => {
     // Differing only in the last character must still be false — and
     // must not throw on the length-equal path.
     expect(safeEqual(a, a.slice(0, 63) + (a.endsWith("0") ? "1" : "0"))).toBe(false);
+  });
+});
+
+/**
+ * The reveal button, which lives in two places.
+ *
+ * Both sit inside a `<form>`, and a `<button>` in a form with no `type`
+ * is a submit button — so the eye would sign you in, or post a
+ * half-typed password change, instead of showing the characters. The
+ * bug is invisible in review and obvious to anyone who clicks it once.
+ */
+describe("showing a password", () => {
+  const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
+
+  const places: [string, string][] = [
+    ["public auth forms", "../src/components/Field.tsx"],
+    ["the profile screen", "../src/components/admin/ProfileForms.tsx"],
+  ];
+
+  for (const [where, path] of places) {
+    it(`never lets the eye submit the form — ${where}`, () => {
+      const src = read(path);
+      const toggles = [...src.matchAll(/<button[\s\S]{0,400}?setRevealed[\s\S]{0,200}?>/g)];
+      expect(toggles.length, "no reveal button found").toBeGreaterThan(0);
+      for (const [tag] of toggles) expect(tag).toMatch(/type="button"/);
+    });
+
+    it(`starts hidden and says which state it is in — ${where}`, () => {
+      const src = read(path);
+      // Never `useState(true)`: a box that opens showing the password
+      // is a shoulder-surfing hazard nobody asked for.
+      expect(src).toMatch(/useState\(false\)/);
+      expect(src).toMatch(/aria-pressed=\{revealed\}/);
+      expect(src).toMatch(/revealed \? "Hide/);
+      // The input's type is what actually changes — not a CSS trick
+      // that leaves the real value in a password field.
+      expect(src).toMatch(/revealed \? "text" : /);
+    });
+  }
+
+  it("leaves room for the eye so it never sits on the text", () => {
+    // Both boxes reserve right padding wide enough for the button.
+    expect(read("../src/components/Field.tsx")).toMatch(/pr-12/);
+    expect(read("../src/components/admin/ProfileForms.tsx")).toMatch(/pr-11/);
   });
 });

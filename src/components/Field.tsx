@@ -1,4 +1,8 @@
-import { forwardRef, type InputHTMLAttributes } from "react";
+"use client";
+
+import { forwardRef, useState, type InputHTMLAttributes } from "react";
+
+import { EyeIcon, EyeOffIcon } from "@/components/icons";
 
 type FieldProps = {
   id: string;
@@ -24,11 +28,22 @@ const bad =
  * Presentational input. Forwards its ref so react-hook-form's
  * `register()` can attach to the DOM node directly (uncontrolled),
  * which is what keeps these forms from re-rendering on every keystroke.
+ *
+ * A `type="password"` field grows an eye that shows what was typed.
+ * It lives here rather than in each form so that every password box in
+ * the product behaves the same way — sign-in, sign-up and both reset
+ * fields — and so nobody has to remember to add it to the next one.
  */
 const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
   { id, label, hint, error, prefix, wrapperClassName, ...rest },
   ref
 ) {
+  const isPassword = rest.type === "password";
+  /** Always starts hidden, and resets on every page load. A revealed
+   *  password that survived a navigation would be a shoulder-surfing
+   *  hazard nobody asked for. */
+  const [revealed, setRevealed] = useState(false);
+
   const describedBy =
     [error ? `${id}-error` : null, hint ? `${id}-hint` : null]
       .filter(Boolean)
@@ -39,10 +54,44 @@ const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
       id={id}
       ref={ref}
       {...rest}
+      // After the spread, so it wins: the field is a password box that
+      // is currently showing its text, not a text box.
+      type={isPassword && revealed ? "text" : rest.type}
       aria-invalid={error ? true : undefined}
       aria-describedby={describedBy}
-      className={`${base} ${error ? bad : ok} ${prefix ? "rounded-l-none" : ""}`}
+      className={`${base} ${error ? bad : ok} ${prefix ? "rounded-l-none" : ""} ${
+        isPassword ? "pr-12" : ""
+      }`}
     />
+  );
+
+  /**
+   * `type="button"`, and that is not cosmetic: every one of these sits
+   * inside a form, and a button without it is a submit button — the eye
+   * would sign you in.
+   */
+  const control = isPassword ? (
+    <div className="relative flex-1">
+      {input}
+      <button
+        type="button"
+        onClick={() => setRevealed((v) => !v)}
+        aria-label={revealed ? "Hide password" : "Show password"}
+        aria-pressed={revealed}
+        aria-controls={id}
+        title={revealed ? "Hide password" : "Show password"}
+        // In the tab order, deliberately. Taking it out with
+        // `tabIndex={-1}` tidies the path from the field to "Sign in"
+        // and leaves a keyboard-only user with no way to reach the
+        // thing at all — a control you cannot operate is worse than one
+        // extra Tab.
+        className="absolute inset-y-px right-px grid w-11 place-items-center rounded-r-xl text-verdigris-200/55 transition-colors hover:text-verdigris-50 focus:outline-none focus-visible:text-verdigris-50 focus-visible:ring-2 focus-visible:ring-patina/40"
+      >
+        {revealed ? <EyeOffIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
+      </button>
+    </div>
+  ) : (
+    input
   );
 
   return (
@@ -69,10 +118,10 @@ const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
           >
             {prefix}
           </span>
-          {input}
+          {control}
         </div>
       ) : (
-        input
+        control
       )}
 
       {error ? (
