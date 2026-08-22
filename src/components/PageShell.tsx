@@ -29,7 +29,11 @@ export default function PageShell({
           />
           <div aria-hidden className="grain-overlay absolute inset-0" />
 
-          <div className="relative mx-auto max-w-[1400px] px-6 pb-20 pt-40">
+          {/* `pt-40` clears the fixed header and stays. `pb` was 80px,
+              which together with the 96px below the rule left 177px of
+              empty band between the intro and the first real thing on
+              the page — most of a laptop screen spent on nothing. */}
+          <div className="relative mx-auto max-w-[1400px] px-6 pb-6 pt-40">
             <p className="font-mono text-xs uppercase tracking-[0.2em] text-verdigris-400">
               {eyebrow}
             </p>
@@ -42,7 +46,10 @@ export default function PageShell({
           </div>
         </section>
 
-        <section className="mx-auto max-w-[1400px] px-6 py-24">
+        {/* Top padding cut with the hero's; the bottom keeps its 96px,
+            which is the breathing room above the footer and was never
+            the problem. */}
+        <section className="mx-auto max-w-[1400px] px-6 pb-24 pt-7">
           {children ?? (
             <div className="card-shadow rounded-2xl border border-verdigris-300/10 bg-ink-850 p-10">
               <p className="text-[15px] leading-relaxed text-verdigris-200/70">
