@@ -148,6 +148,26 @@ export const CameraIcon = (p: P) => (
   </svg>
 );
 
+/** A gallery. The mountain-in-a-frame is the one picture everybody
+ *  already reads as "photos". */
+export const ImageIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="4.5" width="18" height="15" rx="2" />
+    <circle cx="8.5" cy="9.5" r="1.6" />
+    <path d="m3.5 17 4.6-4.3a1.6 1.6 0 0 1 2.2 0L15 17" />
+    <path d="m13.5 15 2.2-2a1.6 1.6 0 0 1 2.2 0l2.6 2.4" />
+  </svg>
+);
+
+/** A warehouse: a shed with a roller door, not a house. */
+export const WarehouseIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M3 10.2 12 5l9 5.2V20H3v-9.8Z" />
+    <path d="M8 20v-6h8v6" />
+    <path d="M8 17h8" />
+  </svg>
+);
+
 /** A quarter turn. The arrowhead is what says which way it goes. */
 export const RotateIcon = (p: P) => (
   <svg {...base} {...p}>

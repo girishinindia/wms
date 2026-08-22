@@ -40,6 +40,21 @@ export type AdminNavItem = {
    * yes there, not the scope that means no.
    */
   own?: boolean;
+  /**
+   * Whether ONLY an ALL-scoped grant earns this entry.
+   *
+   * The mirror image of `own`, and set for the same reason: the sidebar
+   * must ask the question the route asks. The warehouse endpoints go
+   * through `requirePlatformWarehouse`, which refuses a WAREHOUSE-scoped
+   * grant outright — so a WAREHOUSE-scoped `warehouse.create` would earn
+   * a link onto a screen that answers 403 to everything on it.
+   *
+   * Nothing in the shipped matrix holds `warehouse.create` at anything
+   * but ALL, so this changes no behaviour today. It is here because the
+   * exclusion is one `delete from role_permission` in `09_seed.sql`, and
+   * the day that line moves the sidebar should not be what decides.
+   */
+  allOnly?: boolean;
   icon: AdminNavIcon;
 };
 
@@ -55,7 +70,9 @@ export type AdminNavIcon =
   | "truck"
   | "users"
   | "building"
-  | "bell";
+  | "bell"
+  | "warehouse"
+  | "image";
 
 /** A collapsible section. Its children are ordinary items and are what
  *  `visibleNav` returns — the group itself grants nothing. */
@@ -128,6 +145,32 @@ export const IMPORTER_ITEMS: AdminNavItem[] = [
   },
 ];
 
+/**
+ * "Warehouses". The sites themselves, and a gallery per site.
+ *
+ * Keyed on `warehouse.create`, not `warehouse.read` — which SEVEN roles
+ * hold at WAREHOUSE scope, every manager on the floor. Only a super
+ * admin holds `.create`, at any scope. Same reasoning as the master
+ * entries above, and the same trap: the obvious permission is the one
+ * that opens the door to everybody.
+ */
+export const WAREHOUSE_ITEMS: AdminNavItem[] = [
+  {
+    href: "/admin/warehouses",
+    label: "Warehouse",
+    permission: "warehouse.create",
+    allOnly: true,
+    icon: "warehouse",
+  },
+  {
+    href: "/admin/warehouses/gallery",
+    label: "Gallery",
+    permission: "warehouse.create",
+    allOnly: true,
+    icon: "image",
+  },
+];
+
 export const ADMIN_NAV: AdminNavNode[] = [
   { href: "/admin", label: "Dashboard", permission: null, icon: "chart" },
   /**
@@ -145,6 +188,12 @@ export const ADMIN_NAV: AdminNavNode[] = [
     icon: "box",
     match: "/admin/(importers|sales-agents)",
     children: IMPORTER_ITEMS,
+  },
+  {
+    label: "Warehouses",
+    icon: "warehouse",
+    match: "/admin/warehouses",
+    children: WAREHOUSE_ITEMS,
   },
   { href: "/admin/users", label: "Users", permission: "user.read", icon: "shield" },
   {
@@ -199,13 +248,14 @@ export function visibleNav(
   const wide = new Set(
     permissions.filter((p) => p.scope !== "OWN").map((p) => p.permission),
   );
+  const all = new Set(permissions.filter((p) => p.scope === "ALL").map((p) => p.permission));
   const own = new Set(permissions.map((p) => p.permission));
 
-  const earned = ADMIN_NAV_ITEMS.filter(
-    (item) =>
-      item.permission !== null &&
-      (wide.has(item.permission) || (item.own === true && own.has(item.permission))),
-  );
+  const earned = ADMIN_NAV_ITEMS.filter((item) => {
+    if (item.permission === null) return false;
+    if (item.allOnly === true) return all.has(item.permission);
+    return wide.has(item.permission) || (item.own === true && own.has(item.permission));
+  });
   if (earned.length === 0) return [];
 
   // The dashboard rides along, but never on its own.

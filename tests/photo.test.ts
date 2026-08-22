@@ -98,7 +98,11 @@ describe("what counts as a profile photo", () => {
     expect(validatePhoto(vp8(MAX_EDGE, MAX_EDGE))).toEqual({ width: 512, height: 512 });
     expect(() => validatePhoto(vp8(MAX_EDGE + 1, MAX_EDGE))).toThrow(/512px at most/i);
     expect(() => validatePhoto(vp8l(2000, 2000))).toThrow(/512px at most/i);
-    expect(() => validatePhoto(vp8(16, 16))).toThrow(/too small/i);
+    // Below 32px it is a favicon or a mistake, not a face. The reader
+    // is now shared with the warehouse gallery, which has its own floor
+    // — hence a message that names the number rather than one that says
+    // "too small" and leaves the person guessing which number.
+    expect(() => validatePhoto(vp8(16, 16))).toThrow(/at least 32px/i);
   });
 
   it("caps the byte size before anything reaches the CDN", async () => {

@@ -49,6 +49,14 @@ import {
   salesAgentSchema,
   salesAgentUpdateSchema,
 } from "@/lib/validation/api-importer";
+import {
+  createWarehouseSchema,
+  updateWarehouseSchema,
+  warehouseImageListSchema,
+  warehouseImageSchema,
+  warehouseResponseSchema,
+} from "@/lib/validation/api-warehouse";
+import { GALLERY_LIMITS } from "@/lib/images/webp";
 import { errorSchema } from "@/lib/api/respond";
 import { appEnv } from "@/lib/env";
 
@@ -959,6 +967,153 @@ adminPath({
   request: setUserStatusRequestSchema,
   response: okAdminResponseSchema,
   responses: { 404: errorResponse("No such user.") },
+});
+
+// ── Warehouses ────────────────────────────────────────────────────
+//
+// Every one of these refuses a WAREHOUSE-scoped grant, which is the
+// unusual part and the reason they are not just another master table.
+// Seven roles hold `warehouse.read` over the site they work at; none of
+// them may add, edit or retire one. Only a grant at ALL scope — a super
+// admin's — gets through `requirePlatformWarehouse`.
+
+adminPath({
+  path: "/api/v1/admin/warehouses",
+  operationId: "createWarehouse",
+  summary: "Add a warehouse",
+  permission: "warehouse.create at ALL scope",
+  status: 201,
+  description:
+    "`code` is not accepted from the request. The column defaults to " +
+    "`WH-0001` from `warehouse_code_seq`, the way importers and sales " +
+    "agents already get theirs — a hand-typed value in a NOT NULL UNIQUE " +
+    "column is a collision waiting for two people to add a warehouse on " +
+    "the same afternoon.\n\n`usableAreaSqft <= totalAreaSqft` is a CHECK " +
+    "on the table and is answered here first, with the field named, so " +
+    "the database never has to say it. `gmapUrl` is restricted to " +
+    "`http(s)` — the value is rendered as an anchor, and an unchecked " +
+    "string there is a stored redirect.",
+  request: createWarehouseSchema,
+  response: warehouseResponseSchema,
+  responses: { 409: errorResponse("A warehouse with that name already exists.") },
+});
+
+adminPath({
+  path: "/api/v1/admin/warehouses/{id}",
+  operationId: "updateWarehouse",
+  method: "patch",
+  summary: "Correct a warehouse",
+  permission: "warehouse.update at ALL scope",
+  description:
+    "Any subset of the same fields. The booleans carry no default here — " +
+    "a `.default()` on a PATCH schema is non-optional, which would " +
+    "quietly reset every facility checkbox the form did not send. `code` " +
+    "and the soft-delete columns are not editable.",
+  params: idParam,
+  request: updateWarehouseSchema,
+  response: okAdminResponseSchema,
+  responses: {
+    404: errorResponse("No such warehouse."),
+    409: errorResponse("Another warehouse already has that name."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/warehouses/{id}",
+  operationId: "deleteWarehouse",
+  method: "delete",
+  summary: "Retire a warehouse, with a reason",
+  permission: "warehouse.delete at ALL scope",
+  description:
+    "Soft, and refused while anybody is still posted there: a warehouse " +
+    "is not a master row, staff and transporters are attached to it, and " +
+    "removing one out from under a live role assignment takes away " +
+    "somebody's access rather than tidying a list. The reply names what " +
+    "is still attached.\n\nIts gallery photos are deleted for good, " +
+    "files and rows both — an object nothing can reach is an object " +
+    "nobody stops paying for.",
+  params: idParam,
+  request: z
+    .object({ reason: z.string().min(3).max(300) })
+    .openapi("DeleteWarehouseRequest"),
+  response: okAdminResponseSchema,
+  responses: {
+    404: errorResponse("No such warehouse."),
+    409: errorResponse("Staff or transporters are still attached to it."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/warehouses/{id}/images",
+  operationId: "listWarehouseImages",
+  method: "get",
+  summary: "One warehouse's gallery",
+  permission: "warehouse.read at ALL scope",
+  description:
+    "Photographs belong to a site, so there is no all-photos view. " +
+    "Ordered by `sort_order` then id. The storage key is deliberately " +
+    "not returned — the CDN URL is what a client needs, and the key is " +
+    "what a client could use to guess at neighbouring objects.",
+  params: idParam,
+  response: warehouseImageListSchema,
+  responses: { 404: errorResponse("No such warehouse.") },
+});
+
+// The upload is registered by hand: like the profile photo, its request
+// body is the image itself rather than JSON.
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/admin/warehouses/{id}/images",
+  operationId: "addWarehouseImage",
+  tags: ["Admin"],
+  summary: "Add a photo to a warehouse's gallery",
+  security: AUTHENTICATED,
+  description:
+    `The body is the image itself — \`image/webp\`, at most ` +
+    `${Math.round(GALLERY_LIMITS.maxBytes / 1024)} KB and ` +
+    `${GALLERY_LIMITS.maxEdge}px on its longest side. The browser ` +
+    "resizes and re-encodes before sending: a phone photo is four " +
+    "megabytes over the slowest part of the path, and what a gallery " +
+    "needs is a hundred kilobytes.\n\nThe server reads the actual " +
+    "RIFF/WEBP header rather than believing the content-type, stores the " +
+    "object under `wms/gallery/<warehouseId>/`, and only then inserts " +
+    "the row — an insert that fails takes the just-uploaded object with " +
+    "it.\n\n**Requires** `warehouse.update` at ALL scope.",
+  request: {
+    params: idParam,
+    body: {
+      required: true,
+      content: { "image/webp": { schema: { type: "string", format: "binary" } } },
+    },
+  },
+  responses: {
+    201: { description: "Stored.", content: { "application/json": { schema: warehouseImageSchema } } },
+    401: errorResponse("No session. Sign in."),
+    403: errorResponse("Signed in, but not holding the permission at ALL scope."),
+    404: errorResponse("No such warehouse."),
+    409: errorResponse("Photo storage is not configured on this environment."),
+    422: errorResponse("Not a WebP, too large, or larger than the gallery limit."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/warehouses/{id}/images/{imageId}",
+  operationId: "deleteWarehouseImage",
+  method: "delete",
+  summary: "Remove a photo from a gallery",
+  permission: "warehouse.update at ALL scope",
+  description:
+    "Takes the file off storage first and then the row out of the table, " +
+    "so a failure leaves a row pointing at nothing rather than an object " +
+    "nothing points at. Both ids are in the WHERE clause: a photo id " +
+    "belonging to another warehouse matches nothing instead of being " +
+    "deleted from under it.",
+  params: z.object({
+    id: z.string().openapi({ example: "12" }),
+    imageId: z.string().openapi({ example: "34" }),
+  }),
+  response: okAdminResponseSchema,
+  responses: { 404: errorResponse("No such photo on that warehouse.") },
 });
 
 // ── Profile photos ────────────────────────────────────────────────

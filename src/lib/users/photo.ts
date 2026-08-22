@@ -8,6 +8,7 @@ import { getDb } from "@/db";
 import { auditQuietly } from "@/lib/audit";
 import type { Actor } from "@/lib/auth/guard";
 import { invalidateUser } from "@/lib/cache/actor";
+import { ImageError, PROFILE_LIMITS, validateWebp, webpSize as readWebpSize } from "@/lib/images/webp";
 import { configured, deleteObject, keyFromUrl, photoFolder, publicUrl, putObject } from "@/lib/storage/bunny";
 
 /**
@@ -21,11 +22,11 @@ import { configured, deleteObject, keyFromUrl, photoFolder, publicUrl, putObject
  * "the client promised" is not a check.
  */
 
-/** A 512px WebP at q0.82 lands around 20–40 KB. The cap is generous
- *  enough for a busy photograph and far below anything worth hosting. */
-export const MAX_BYTES = 400 * 1024;
-/** What the cropper produces. Bigger means the file did not come from it. */
-export const MAX_EDGE = 512;
+/** The limits, re-exported under the names this module has always used
+ *  so its callers and its tests do not have to care that the reader
+ *  moved to `lib/images/webp.ts` to be shared with the gallery. */
+export const MAX_BYTES = PROFILE_LIMITS.maxBytes;
+export const MAX_EDGE = PROFILE_LIMITS.maxEdge;
 
 export class PhotoError extends Error {
   constructor(
@@ -37,68 +38,23 @@ export class PhotoError extends Error {
   }
 }
 
-const u16 = (b: Uint8Array, at: number) => b[at]! | (b[at + 1]! << 8);
-const u24 = (b: Uint8Array, at: number) => b[at]! | (b[at + 1]! << 8) | (b[at + 2]! << 16);
-const u32 = (b: Uint8Array, at: number) =>
-  (b[at]! | (b[at + 1]! << 8) | (b[at + 2]! << 16) | (b[at + 3]! << 24)) >>> 0;
-const ascii = (b: Uint8Array, at: number, len: number) =>
-  String.fromCharCode(...b.subarray(at, at + len));
-
-/**
- * Read a WebP's real dimensions, or refuse the bytes.
- *
- * WebP is a RIFF container with three payload shapes, and a validator
- * that only knows the lossy one waves through the other two blind. All
- * three are read here:
- *
- *   VP8   simple lossy      14-bit width/height at 26 and 28
- *   VP8L  lossless          both packed into 28 bits at 21
- *   VP8X  extended          canvas size as 24-bit minus-one at 24 and 27
- */
+/** The header reader, under this module's original name. */
 export function webpSize(bytes: Uint8Array): { width: number; height: number } {
-  if (bytes.length < 30) throw new PhotoError("VALIDATION_FAILED", "That file is too small to be an image");
-  if (ascii(bytes, 0, 4) !== "RIFF" || ascii(bytes, 8, 4) !== "WEBP") {
-    throw new PhotoError("VALIDATION_FAILED", "That is not a WebP image");
+  try {
+    return readWebpSize(bytes);
+  } catch (error) {
+    throw new PhotoError("VALIDATION_FAILED", error instanceof Error ? error.message : "Bad image");
   }
-  // The RIFF length must agree with the bytes actually delivered, give
-  // or take the 8-byte header — a mismatch means a truncated or padded file.
-  const declared = u32(bytes, 4) + 8;
-  if (declared > bytes.length) {
-    throw new PhotoError("VALIDATION_FAILED", "That image looks truncated");
-  }
-
-  const kind = ascii(bytes, 12, 4);
-  if (kind === "VP8 ") {
-    if (!(bytes[23] === 0x9d && bytes[24] === 0x01 && bytes[25] === 0x2a)) {
-      throw new PhotoError("VALIDATION_FAILED", "That WebP frame is malformed");
-    }
-    return { width: u16(bytes, 26) & 0x3fff, height: u16(bytes, 28) & 0x3fff };
-  }
-  if (kind === "VP8L") {
-    if (bytes[20] !== 0x2f) throw new PhotoError("VALIDATION_FAILED", "That WebP frame is malformed");
-    const bits = u32(bytes, 21);
-    return { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 };
-  }
-  if (kind === "VP8X") {
-    return { width: u24(bytes, 24) + 1, height: u24(bytes, 27) + 1 };
-  }
-  throw new PhotoError("VALIDATION_FAILED", "That is not a WebP image");
 }
 
-/** Everything checked before a single byte reaches the CDN. */
+/** A profile photo specifically: square-ish, small, 512px at most. */
 export function validatePhoto(bytes: Uint8Array): { width: number; height: number } {
-  if (bytes.length === 0) throw new PhotoError("VALIDATION_FAILED", "No image was sent");
-  if (bytes.length > MAX_BYTES) {
-    throw new PhotoError("VALIDATION_FAILED", `That image is over ${Math.round(MAX_BYTES / 1024)} KB`);
+  try {
+    return validateWebp(bytes, PROFILE_LIMITS);
+  } catch (error) {
+    if (error instanceof ImageError) throw new PhotoError("VALIDATION_FAILED", error.message);
+    throw error;
   }
-  const size = webpSize(bytes);
-  if (size.width < 32 || size.height < 32) {
-    throw new PhotoError("VALIDATION_FAILED", "That image is too small to be a photo");
-  }
-  if (size.width > MAX_EDGE || size.height > MAX_EDGE) {
-    throw new PhotoError("VALIDATION_FAILED", `Photos are ${MAX_EDGE}px at most on each side`);
-  }
-  return size;
 }
 
 /** `wms/profile-photo/u12-3f9a1c7d.webp` — never the uploaded filename,

@@ -7,6 +7,8 @@ import { CameraIcon, RotateIcon, XIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 
+import { loadImageSource, supportsWebp, type ImageSource } from "@/lib/images/client";
+
 import Avatar from "./Avatar";
 
 /**
@@ -31,34 +33,7 @@ const VIEW = 288;
 const OUT = 512;
 const QUALITY = 0.82;
 
-type Source = { image: CanvasImageSource; width: number; height: number };
-
-/** Phone photos carry their orientation in EXIF, and `drawImage` ignores
- *  it — `createImageBitmap` is the one that applies it. Without this a
- *  portrait shot lands on its side and the first thing anybody does is
- *  reach for the rotate button we also provide. */
-async function loadSource(file: File): Promise<Source> {
-  if (typeof createImageBitmap === "function") {
-    try {
-      const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
-      return { image: bitmap, width: bitmap.width, height: bitmap.height };
-    } catch {
-      /* fall through to the <img> path */
-    }
-  }
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new window.Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("That file could not be read as an image"));
-      el.src = url;
-    });
-    return { image: img, width: img.naturalWidth, height: img.naturalHeight };
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
+type Source = ImageSource;
 
 /** Rotated extent of the source, in source pixels. */
 function extent(src: Source, rotation: number) {
@@ -105,19 +80,6 @@ function limits(src: Source, square: number, zoom: number, rotation: number) {
 }
 
 const clamp = (v: number, max: number) => Math.min(max, Math.max(-max, v));
-
-/** Safari only learned `toBlob("image/webp")` in 16.4; anything older
- *  silently hands back a PNG, which the server then refuses. Better to
- *  say so before the crop than after the upload. */
-function supportsWebp(): boolean {
-  try {
-    const c = document.createElement("canvas");
-    c.width = c.height = 1;
-    return c.toDataURL("image/webp").startsWith("data:image/webp");
-  } catch {
-    return false;
-  }
-}
 
 export default function PhotoCropper({
   name,
@@ -179,7 +141,7 @@ export default function PhotoCropper({
       return;
     }
     try {
-      const loaded = await loadSource(file);
+      const loaded = await loadImageSource(file);
       setSrc(loaded);
       setZoom(1);
       setRotation(0);

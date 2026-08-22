@@ -7,6 +7,7 @@ import {
   isGroup,
   MASTER_ITEMS,
   visibleNav,
+  WAREHOUSE_ITEMS,
 } from "@/components/admin/nav";
 import { MASTER_RESOURCES, resolveResource } from "@/lib/admin/master-registry";
 
@@ -54,11 +55,54 @@ describe("admin navigation", () => {
       { permission: "master.city.read", scope: "ALL" as const },
       { permission: "importer.read", scope: "WAREHOUSE" as const },
       { permission: "user.read", scope: "WAREHOUSE" as const },
+      // Real WAREHOUSE_ADMIN rows: they run the site, so they read and
+      // update it. Neither earns the Warehouses section — that is the
+      // register of sites, not the site.
+      { permission: "warehouse.read", scope: "WAREHOUSE" as const },
+      { permission: "warehouse.update", scope: "WAREHOUSE" as const },
     ];
     const labels = visibleNav(warehouseAdmin).map((i) => i.label);
     // Dashboard and Notifications ride along; cities does not, because
     // adding master data is not a warehouse admin's job.
     expect(labels).toEqual(["Dashboard", "Notifications", "Importers", "Users"]);
+  });
+
+  /**
+   * The same trap the master entries fell into, one table over.
+   *
+   * SEVEN roles hold `warehouse.read` — every manager on the floor —
+   * and keying the section on it would put the register of sites, and
+   * the upload form for their photographs, in front of all of them.
+   * Only `.create` is a super admin's alone.
+   */
+  it("keys every warehouse entry on create, never read", () => {
+    for (const item of WAREHOUSE_ITEMS) {
+      expect(item.permission, item.label).toBe("warehouse.create");
+      // And never opts into OWN scope, which is how the importer
+      // entries are (correctly) reached. ALL only — the same question
+      // `requirePlatformWarehouse` asks on every route behind the link.
+      expect(item.own, item.label).toBeUndefined();
+      expect(item.allOnly, item.label).toBe(true);
+    }
+  });
+
+  it("keeps a site's own manager out of the warehouse register", () => {
+    // Everything a WAREHOUSE_ADMIN could hold about warehouses, at the
+    // widest scope they are ever granted.
+    const scoped = ["read", "update", "delete", "create"].map((verb) => ({
+      permission: `warehouse.${verb}`,
+      scope: "WAREHOUSE" as const,
+    }));
+    expect(visibleNav(scoped).map((i) => i.label)).toEqual([]);
+
+    // At ALL scope, the same keys open it — that is the super admin.
+    const platform = scoped.map((p) => ({ ...p, scope: "ALL" as const }));
+    expect(visibleNav(platform).map((i) => i.label)).toEqual([
+      "Dashboard",
+      "Notifications",
+      "Warehouse",
+      "Gallery",
+    ]);
   });
 
   it("shows everything to a platform-wide set", () => {
@@ -316,6 +360,10 @@ describe("OpenAPI: admin endpoints", () => {
       "/api/v1/admin/users/{id}/profile",
       "/api/v1/admin/users/{id}/roles",
       "/api/v1/admin/users/{id}/status",
+      "/api/v1/admin/warehouses",
+      "/api/v1/admin/warehouses/{id}",
+      "/api/v1/admin/warehouses/{id}/images",
+      "/api/v1/admin/warehouses/{id}/images/{imageId}",
     ]);
   });
 
