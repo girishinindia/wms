@@ -72,7 +72,8 @@ export type AdminNavIcon =
   | "building"
   | "bell"
   | "warehouse"
-  | "image";
+  | "image"
+  | "help";
 
 /** A collapsible section. Its children are ordinary items and are what
  *  `visibleNav` returns — the group itself grants nothing. */
@@ -126,6 +127,13 @@ export const MASTER_ITEMS: AdminNavItem[] = [
     label: "Vehicle types",
     permission: "master.vehicle_type.create",
     icon: "truck",
+  },
+  {
+    href: "/admin/master/faq-categories",
+    label: "FAQ categories",
+    permission: "master.faq_category.create",
+    allOnly: true,
+    icon: "help",
   },
 ];
 
@@ -201,6 +209,20 @@ export const ADMIN_NAV: AdminNavNode[] = [
     icon: "database",
     match: "/admin/master",
     children: MASTER_ITEMS,
+  },
+  /**
+   * FAQs, below Master and outside it.
+   *
+   * Keyed on `faq.create`, and `allOnly` like the Warehouses section:
+   * the permission is held by the super admin alone, and the route
+   * behind the link asks the same question the link does.
+   */
+  {
+    href: "/admin/faqs",
+    label: "FAQs",
+    permission: "faq.create",
+    allOnly: true,
+    icon: "help",
   },
 ];
 

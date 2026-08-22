@@ -1,6 +1,7 @@
 import "server-only";
 
 import { sql, type SQL } from "drizzle-orm";
+import { revalidateTag } from "next/cache";
 
 import { getDb } from "@/db";
 import { auditQuietly } from "@/lib/audit";
@@ -17,6 +18,31 @@ import { isForeignKeyViolation } from "@/lib/db-errors";
  * which is why this is a module of its own rather than a corner of the
  * route.
  */
+
+/**
+ * Drop whatever public cache this table feeds, if it feeds one.
+ *
+ * The tag is named by the resource rather than by the route, so the
+ * route stays generic: it drops what the registry declares, and a
+ * resource that feeds nothing public declares nothing. Without this an
+ * edited FAQ would sit behind the five-minute cache and the person who
+ * saved it would reasonably conclude it had not worked.
+ *
+ * Quiet on failure. Outside a request Next can revalidate, this throws,
+ * and a stale cache is not worth failing a save over.
+ */
+export function dropPublicCache(resource: MasterResource): void {
+  if (!resource.publicTag) return;
+  try {
+    revalidateTag(resource.publicTag);
+  } catch (error) {
+    console.error("[master] public cache not dropped", {
+      table: resource.table,
+      tag: resource.publicTag,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
 
 /** `code`, `sort_order` … always from the registry, never from a body. */
 export function identifier(value: string): SQL {

@@ -6,7 +6,7 @@ import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { auditQuietly } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
-import { deleteOne, dependentCounts, identifier } from "@/lib/admin/master-ops";
+import { deleteOne, dependentCounts, dropPublicCache, identifier } from "@/lib/admin/master-ops";
 import { invalidateGeo } from "@/lib/admin/geo";
 import { resolveResource } from "@/lib/admin/master-registry";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -115,6 +115,7 @@ export async function POST(
       });
 
       await invalidateGeo();
+      dropPublicCache(resource);
       return ok({ id: rows[0]?.id ?? 0 }, requestId, 201);
     } catch (error) {
       return translate(error, requestId, await context.params.then((p) => p.resource));
@@ -268,6 +269,7 @@ export async function PATCH(
       });
 
       await invalidateGeo();
+      dropPublicCache(resource);
       return ok({ ok: true as const }, requestId);
     } catch (error) {
       return translate(error, requestId, await context.params.then((p) => p.resource));
@@ -311,6 +313,7 @@ export async function DELETE(
         );
       }
       await invalidateGeo();
+      dropPublicCache(resource);
       return ok({ ok: true as const }, requestId);
     } catch (error) {
       return translate(error, requestId, await context.params.then((p) => p.resource));

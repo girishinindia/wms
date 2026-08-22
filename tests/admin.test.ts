@@ -167,6 +167,7 @@ describe("admin navigation: grouping", () => {
       "Cities",
       "Warehouse types",
       "Vehicle types",
+      "FAQ categories",
     ]);
   });
 
@@ -234,11 +235,23 @@ describe("admin navigation: grouping", () => {
   });
 
   it("has a nav entry for every registry resource, and vice versa", () => {
-    // A screen with no link is unreachable; a link with no screen is a
-    // 404. Cities is in the registry like the other four; its bulk-paste
-    // box is an extra on the page, not a different table.
-    const navSlugs = MASTER_ITEMS.map((i) => i.href.split("/").pop()!);
-    expect(navSlugs.sort()).toEqual(Object.keys(MASTER_RESOURCES).sort());
+    /**
+     * A screen with no link is unreachable; a link with no screen is a
+     * 404. Both directions still hold — but the mapping is no longer
+     * "every registry entry lives under Master". FAQs is a registry
+     * resource with a top-level entry of its own at `/admin/faqs`, so
+     * the check is against every leaf in the nav, matched on the last
+     * path segment.
+     */
+    const navSlugs = ADMIN_NAV_ITEMS.map((i) => i.href.split("/").pop()!);
+    for (const slug of Object.keys(MASTER_RESOURCES)) {
+      expect(navSlugs, `no menu entry reaches /${slug}`).toContain(slug);
+    }
+    // And nothing under Master points at a resource that does not exist.
+    for (const item of MASTER_ITEMS) {
+      const slug = item.href.split("/").pop()!;
+      expect(Object.keys(MASTER_RESOURCES), `${item.href} has no registry entry`).toContain(slug);
+    }
   });
 });
 

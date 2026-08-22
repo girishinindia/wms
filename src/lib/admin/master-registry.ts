@@ -17,7 +17,9 @@ import { z } from "@/lib/openapi/zod";
  * — a value from the request never reaches an identifier position.
  */
 
-export type MasterFieldType = "text" | "number" | "select";
+/** `textarea` is `text` in a taller box — same column, same validation,
+ *  for a field that holds sentences rather than a name. */
+export type MasterFieldType = "text" | "number" | "select" | "textarea";
 
 export type MasterField = {
   /** JSON key, camelCase. */
@@ -38,6 +40,16 @@ export type MasterField = {
   /** Offer this field as a dropdown filter above the table. Only
    *  meaningful for `select` fields. */
   filterable?: boolean;
+  /**
+   * Edit it in the drawer, but keep it out of the list.
+   *
+   * Every field is a table column by default, which is right for a code
+   * and a name and wrong for an FAQ answer: a few hundred words in a
+   * cell wrecks the row height for every other row on the page. Such a
+   * field is also not offered as a sort key — sorting a list by the
+   * text of a paragraph is not a thing anyone wants.
+   */
+  hideInTable?: boolean;
 };
 
 export type MasterDependent = {
@@ -107,7 +119,40 @@ export type MasterResource = {
    * pasted column, never one at a time.
    */
   bulkCreate?: { endpoint: string; label: string; hint: string; placeholder: string };
+  /**
+   * A cache tag on the public site that this table feeds.
+   *
+   * Declared here rather than hard-coded in the route, so the route
+   * stays the generic thing it is: it drops whatever tag the resource
+   * names, and a resource that feeds nothing public names none. Without
+   * it, an edited FAQ would sit behind the five-minute cache and the
+   * person who saved it would reasonably conclude it had not worked.
+   */
+  publicTag?: string;
+  /**
+   * What to call the rows in running text — "3 warehouse types", "Search
+   * warehouse types".
+   *
+   * Defaults to `label.toLowerCase()`, which is right for every ordinary
+   * noun and wrong for an acronym: it turns "FAQs" into "faqs" and the
+   * toolbar reads "1 faqs". Set it only where lowercasing the label
+   * would be a mistake.
+   */
+  listNoun?: string;
 };
+
+/**
+ * English plural, for the two rules that actually come up here.
+ *
+ * `country` → `countries`, `category` → `categories`, everything else
+ * takes an `s`. This replaces a hard-coded special case for "country"
+ * that was doing the first rule for exactly one word — which is how
+ * "All categorys" ended up on the FAQ screen the moment a second
+ * `-y` parent existed.
+ */
+export function pluralise(word: string): string {
+  return /[^aeiou]y$/i.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`;
+}
 
 /** Fixed-width `char` columns pad on write. Trim and upper, or you store
  *  `"IN "` and every comparison against `"IN"` quietly fails. */
@@ -159,6 +204,28 @@ const optionalNumber = (max: number) =>
     (v) => (v === "" || v === null ? undefined : typeof v === "string" ? Number(v) : v),
     z.number().min(0).max(max).optional(),
   );
+
+/**
+ * Sentences, as opposed to the name of a thing.
+ *
+ * `name()` above allows `, . & ( ) / ' -` and nothing else, which is
+ * right for "Cold Storage" and fatal for an FAQ: it has no `?`, so
+ * every question ending the way a question ends would have been
+ * refused. This allows ordinary prose punctuation and refuses the
+ * characters that only turn up when somebody is trying to smuggle
+ * markup into a field that is rendered on a public page.
+ *
+ * The public page escapes everything and renders no HTML regardless —
+ * this is the first of the two, not the only one.
+ */
+const prose = (min: number, max: number) =>
+  z
+    .string()
+    .trim()
+    .min(min)
+    .max(max)
+    .refine((v) => !/[<>]/.test(v), "Angle brackets are not allowed")
+    .refine((v) => /[A-Za-z]/.test(v), "Needs at least one letter");
 
 export const VEHICLE_CATEGORIES = [
   "THREE_WHEELER",
@@ -387,6 +454,116 @@ const city: MasterResource = {
   }),
 };
 
+// ── faq_category ──────────────────────────────────────────────────
+const faqCategory: MasterResource = {
+  slug: "faq-categories",
+  table: "faq_category",
+  label: "FAQ categories",
+  singular: "FAQ category",
+  listNoun: "FAQ categories",
+  permission: "master.faq_category",
+  intro:
+    "The headings the public FAQ page is grouped under. A category with questions in it cannot be deleted — move them first.",
+  hasAudit: true,
+  fields: [
+    { key: "code", column: "code", label: "Code", type: "text", required: true, mono: true, width: 9 },
+    { key: "name", column: "name", label: "Name", type: "text", required: true },
+    { key: "description", column: "description", label: "Description", type: "text" },
+    {
+      key: "sortOrder",
+      column: "sort_order",
+      label: "Order",
+      type: "number",
+      align: "right",
+      width: 5,
+      hint: "Lowest first on the public page.",
+    },
+  ],
+  dependents: [{ table: "faq", column: "faq_category_id", noun: "FAQs" }],
+  conflict: "A FAQ category with that code already exists",
+  publicTag: "public-faqs",
+  orderBy: "sort_order, name",
+  createSchema: withActive({
+    code: codeText(2, 24),
+    name: name(80),
+    description: optionalText(300),
+    sortOrder: optionalNumber(9999),
+  }),
+  updateSchema: withActive({
+    code: codeText(2, 24).optional(),
+    name: name(80).optional(),
+    description: optionalText(300),
+    sortOrder: optionalNumber(9999),
+  }),
+};
+
+// ── faq ───────────────────────────────────────────────────────────
+/**
+ * Not `master.faq` — plain `faq`.
+ *
+ * The seed grants `master.%.read` to every role, because anybody
+ * filling in an address needs the city list. An FAQ is not that, and
+ * naming the resource `master.*` would have quietly handed every role
+ * in the system read access the day the permission rows were created.
+ */
+const faq: MasterResource = {
+  slug: "faqs",
+  table: "faq",
+  label: "FAQs",
+  singular: "FAQ",
+  listNoun: "FAQs",
+  permission: "faq",
+  intro:
+    "What appears on the public FAQ page, grouped by category. Answers are shown as plain text — blank lines become paragraphs, and nothing is rendered as markup.",
+  hasAudit: true,
+  fields: [
+    { key: "question", column: "question", label: "Question", type: "text", required: true },
+    {
+      key: "answer",
+      column: "answer",
+      label: "Answer",
+      type: "textarea",
+      required: true,
+      // In the drawer, never as a column: a few hundred words in a
+      // table cell ruins the row height for every other row.
+      hideInTable: true,
+      hint: "Plain text. Leave a blank line between paragraphs.",
+    },
+    {
+      key: "sortOrder",
+      column: "sort_order",
+      label: "Order",
+      type: "number",
+      align: "right",
+      width: 5,
+      hint: "Lowest first within the category.",
+    },
+  ],
+  parent: {
+    key: "faqCategoryId",
+    column: "faq_category_id",
+    label: "Category",
+    table: "faq_category",
+    labelColumn: "name",
+  },
+  dependents: [],
+  conflict: "That category already has this question",
+  publicTag: "public-faqs",
+  orderBy: "sort_order, id",
+  createSchema: withActive({
+    faqCategoryId: z.number().int().positive(),
+    question: prose(5, 300),
+    answer: prose(5, 4000),
+    sortOrder: optionalNumber(9999),
+  }),
+  updateSchema: withActive({
+    faqCategoryId: z.number().int().positive().optional(),
+    question: prose(5, 300).optional(),
+    answer: prose(5, 4000).optional(),
+    sortOrder: optionalNumber(9999),
+  }),
+};
+
 /**
  * The whitelist.
  *
@@ -399,6 +576,8 @@ export const MASTER_RESOURCES = Object.freeze({
   cities: city,
   "warehouse-types": warehouseType,
   "vehicle-types": vehicleType,
+  "faq-categories": faqCategory,
+  faqs: faq,
 } as const);
 
 export type MasterSlug = keyof typeof MASTER_RESOURCES;

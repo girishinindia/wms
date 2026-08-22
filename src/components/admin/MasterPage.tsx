@@ -13,7 +13,7 @@ import {
   parseListQuery,
   type RawSearchParams,
 } from "@/lib/admin/listing";
-import { resolveResource } from "@/lib/admin/master-registry";
+import { pluralise, resolveResource } from "@/lib/admin/master-registry";
 import { grantFor, pageGuard } from "@/lib/auth/guard";
 
 /**
@@ -59,13 +59,18 @@ export default async function MasterPage({
    */
   const sortable = [
     ...(resource.parent ? ["parent"] : []),
-    ...resource.fields.map((f) => f.key),
+    // A `hideInTable` field has no header to click, and sorting a list
+    // by the text of a paragraph is not something anybody wants.
+    ...resource.fields.filter((f) => !f.hideInTable).map((f) => f.key),
     "status",
   ];
   const selectFilters = resource.fields.filter((f) => f.type === "select" && f.filterable);
   const query = parseListQuery(searchParams ?? {}, {
     sortable,
-    defaultSort: resource.fields.find((f) => f.key === "name")?.key ?? resource.fields[0]!.key,
+    defaultSort:
+      resource.fields.find((f) => f.key === "name")?.key ??
+      resource.fields.find((f) => !f.hideInTable)?.key ??
+      resource.fields[0]!.key,
     extraKeys: [
       ...(resource.parent ? ["parent"] : []),
       "inuse",
@@ -230,6 +235,7 @@ export default async function MasterPage({
           groupLabel: resource.parent.groupBy?.label,
         }
       : null,
+    listNoun: resource.listNoun,
     dependentNoun: resource.dependents[0]?.noun ?? "records",
     canCreate: grantFor(guard.actor, `${resource.permission}.create`) !== null,
     canUpdate: grantFor(guard.actor, `${resource.permission}.update`) !== null,
@@ -250,7 +256,7 @@ export default async function MasterPage({
           className={selectClass}
         >
           <option value="" className="bg-ink-850">
-            All {resource.parent.label.toLowerCase() === "country" ? "countries" : `${resource.parent.label.toLowerCase()}s`}
+            All {pluralise(resource.parent.label.toLowerCase())}
           </option>
           {resource.parent.groupBy
             ? [...new Map(parentOptions.map((o) => [o.groupId, o.groupLabel])).entries()].map(

@@ -225,6 +225,15 @@ export const EyeOffIcon = (p: P) => (
   </svg>
 );
 
+/** FAQs — a question mark in a circle. */
+export const HelpIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="9.25" />
+    <path d="M9.4 9.3a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.2-2.6 4" />
+    <path d="M12 17.2h.01" />
+  </svg>
+);
+
 /** Delete — a bin. Only ever offered for a row nothing points at. */
 export const TrashIcon = (p: P) => (
   <svg {...base} {...p}>

@@ -7,7 +7,7 @@ import { clientIp } from "@/lib/auth/ratelimit";
 import { invalidateGeo } from "@/lib/admin/geo";
 import { resolveResource } from "@/lib/admin/master-registry";
 
-import { deleteOne, setActive } from "@/lib/admin/master-ops";
+import { deleteOne, dropPublicCache, setActive } from "@/lib/admin/master-ops";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,6 +89,7 @@ export async function POST(
       }
 
       await invalidateGeo();
+      dropPublicCache(resource);
       return ok({ action, done, skipped, notes }, requestId);
     } catch (error) {
       return toResponse(error, requestId);

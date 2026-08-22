@@ -52,6 +52,9 @@ export type MasterSpec = {
   slug: string;
   label: string;
   singular: string;
+  /** What to call the rows in running text. Defaults to the lowercased
+   *  label, which turns "FAQs" into "faqs" — hence the override. */
+  listNoun?: string;
   fields: MasterField[];
   parent?: {
     key: string;
@@ -293,6 +296,9 @@ export default function MasterTable({
     }
 
     for (const f of spec.fields) {
+      // Editable in the drawer, absent from the list — see `hideInTable`
+      // in the registry. An FAQ answer belongs in a form, not a cell.
+      if (f.hideInTable) continue;
       cols.push({
         id: f.key,
         accessorFn: (r) => r.values[f.key],
@@ -380,7 +386,7 @@ export default function MasterTable({
           data={rows}
           list={list}
           base={base}
-          label={spec.label.toLowerCase()}
+          label={spec.listNoun ?? spec.label.toLowerCase()}
           filters={filters}
           enableSelection={spec.canUpdate || spec.canDelete}
           emptyTitle={filtered ? "Nothing matches that search." : `No ${spec.label.toLowerCase()} yet.`}
@@ -673,13 +679,28 @@ function MasterDrawer({
                   {f.label}{f.required && !view ? " *" : ""}
                 </label>
                 {view ? (
-                  <p className={`mt-1 text-sm text-verdigris-50 ${f.mono ? "font-mono" : ""}`}>
+                  <p
+                    className={`mt-1 text-sm text-verdigris-50 ${f.mono ? "font-mono" : ""} ${
+                      // Sentences keep the line breaks they were typed
+                      // with; a name has none to keep.
+                      f.type === "textarea" ? "whitespace-pre-wrap leading-relaxed" : ""
+                    }`}
+                  >
                     {row?.values[f.key] === null || row?.values[f.key] === undefined || row?.values[f.key] === ""
                       ? "—"
                       : f.type === "select"
                         ? String(row.values[f.key]).toLowerCase().replace(/_/g, " ")
                         : String(row!.values[f.key])}
                   </p>
+                ) : f.type === "textarea" ? (
+                  <textarea
+                    id={`f-${f.key}`}
+                    rows={8}
+                    value={draft[f.key] ?? ""}
+                    placeholder={f.hint}
+                    onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
+                    className={`${input} ${tone(f.key)} resize-y leading-relaxed`}
+                  />
                 ) : f.type === "select" ? (
                   <select
                     id={`f-${f.key}`}

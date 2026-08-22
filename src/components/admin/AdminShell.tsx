@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   BellIcon,
   ImageIcon,
+  HelpIcon,
   WarehouseIcon,
   BoxIcon,
   BuildingIcon,
@@ -71,6 +72,7 @@ const ICONS = {
   bell: BellIcon,
   warehouse: WarehouseIcon,
   image: ImageIcon,
+  help: HelpIcon,
 } as const;
 
 export type AdminUser = {
