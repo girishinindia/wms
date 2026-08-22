@@ -81,6 +81,88 @@ describe("what counts as a gallery photo", () => {
   });
 });
 
+describe("what the public may read", () => {
+  const src = readFileSync(new URL("../src/lib/warehouses/public.ts", import.meta.url), "utf8");
+  /** Comments explain at length what is withheld and why, so they have
+   *  to come out before asserting that it is. */
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  /**
+   * The whole public site reads through this one file, and it names its
+   * columns by hand. That is the design: a column added to
+   * `wms.warehouse` next year stays private until somebody comes here
+   * and decides otherwise, instead of appearing on a public page the
+   * day it ships. A `select *` would quietly end that.
+   */
+  it("never selects a column it did not name", () => {
+    expect(code).not.toMatch(/select\s+\*/i);
+    expect(code).not.toMatch(/\bw\.\*/);
+    // Nor spreads a raw row into the returned shape.
+    expect(code).not.toMatch(/\.\.\.r\b/);
+    expect(code).not.toMatch(/\.\.\.row\b/);
+  });
+
+  it("withholds the fields that would embarrass somebody", () => {
+    // Free text one operator wrote for another: rent, a landlord
+    // dispute, who holds the keys.
+    expect(code).not.toMatch(/\bnotes\b/);
+    // Internal user ids and an edit history are a map of who did what.
+    expect(code).not.toMatch(/created_by|updated_by|deleted_by/);
+    expect(code).not.toMatch(/created_at|updated_at/);
+    // The CDN URL is what a browser needs; the key is what somebody
+    // would use to guess at the objects either side of it.
+    expect(code).not.toMatch(/storage_key/);
+  });
+
+  it("publishes no phone number and no email address", () => {
+    // A person's own mobile on an indexed page is scraped within days,
+    // and is personal data under the DPDP Act. The enquiry form reaches
+    // the same person.
+    expect(code).not.toMatch(/contact_mobile|alternate_mobile/);
+    expect(code).not.toMatch(/\bemail\b/i);
+    // The name alone is fine — it is who to ask for.
+    expect(code).toMatch(/contact_person/);
+  });
+
+  it("shows only sites that are switched on and not deleted", () => {
+    expect(code).toMatch(/w\.is_active = true and w\.deleted_at is null/);
+
+    /**
+     * Every query that reads the warehouse table goes through that one
+     * predicate rather than spelling it out again, so none can be
+     * forgotten. Checked per SQL block, not by counting: one is applied
+     * as `${VISIBLE}` inline and one is pushed onto a `where` array, and
+     * a count would call the second one missing.
+     */
+    const blocks = [...code.matchAll(/sql`([\s\S]*?)`/g)].map((m) => m[1]!);
+    const warehouseReads = blocks.filter((b) => /from wms\.warehouse\b/.test(b));
+    expect(warehouseReads.length).toBeGreaterThan(0);
+    for (const b of warehouseReads) {
+      const inline = b.includes("${VISIBLE}");
+      // The list query builds `where` from an array seeded with VISIBLE.
+      const viaArray = /\$\{sql\.join\(where/.test(b) && /const where[^\n]*\[VISIBLE/.test(code);
+      expect(inline || viaArray, `an unguarded read: ${b.trim().slice(0, 70)}`).toBe(true);
+    }
+  });
+
+  it("keeps a map link to http(s), since it becomes an href", () => {
+    // Checked at the form and again here: an unchecked value there is a
+    // stored redirect with an audience.
+    expect(code).toMatch(/\^\\?\/?\(?https\?/);
+  });
+
+  it("hands the public pages no way to reach the row directly", () => {
+    for (const page of [
+      "../src/app/warehouses/page.tsx",
+      "../src/app/warehouses/[code]/page.tsx",
+    ]) {
+      const p = readFileSync(new URL(page, import.meta.url), "utf8");
+      expect(p, page).not.toMatch(/wms\.warehouse/);
+      expect(p, page).toMatch(/@\/lib\/warehouses\/public/);
+    }
+  });
+});
+
 describe("who the area belongs to", () => {
   const guard = readFileSync(new URL("../src/lib/warehouses/guard.ts", import.meta.url), "utf8");
 

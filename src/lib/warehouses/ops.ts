@@ -3,8 +3,10 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 
 import { sql, type SQL } from "drizzle-orm";
+import { revalidatePath, revalidateTag } from "next/cache";
 
 import { getDb } from "@/db";
+import { PUBLIC_WAREHOUSE_TAG } from "@/lib/warehouses/public";
 import { auditQuietly } from "@/lib/audit";
 import type { Actor } from "@/lib/auth/guard";
 import { GALLERY_LIMITS, ImageError, validateWebp } from "@/lib/images/webp";
@@ -106,6 +108,36 @@ async function checkReferences(input: { cityId?: number; warehouseTypeId?: numbe
   }
 }
 
+/**
+ * Drop the cached public reads after a change.
+ *
+ * The public pages cache their queries for five minutes, which is what
+ * keeps crawler traffic off the database. Without this, an operator who
+ * fixes a wrong address or adds a photograph sees the old page and
+ * reasonably concludes the save did not work.
+ *
+ * The TAG is the one that matters — the data is cached in
+ * `lib/warehouses/public`, so dropping the rendered pages alone would
+ * re-render them from the same stale rows. The two path calls clear the
+ * rendered output as well; `"page"` on the second covers every path
+ * matching the dynamic route, so the photo handlers do not need to look
+ * up a code they were never given.
+ *
+ * Wrapped, and quiet: outside a request Next can revalidate this
+ * throws, and a stale cache is not worth failing a save over.
+ */
+function refreshPublicSite(): void {
+  try {
+    revalidateTag(PUBLIC_WAREHOUSE_TAG);
+    revalidatePath("/warehouses");
+    revalidatePath("/warehouses/[code]", "page");
+  } catch (error) {
+    console.error("[warehouse] public pages not revalidated", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function createWarehouse(
   input: Record<string, unknown>,
   actor: Actor,
@@ -146,6 +178,7 @@ export async function createWarehouse(
     userAgent: meta.userAgent,
     requestId: meta.requestId,
   });
+  refreshPublicSite();
   return { id: Number(row.id), code: row.code };
 }
 
@@ -201,6 +234,7 @@ export async function updateWarehouse(
     userAgent: meta.userAgent,
     requestId: meta.requestId,
   });
+  refreshPublicSite();
 }
 
 /** "2 staff, 1 transporter" — or "" when nothing points at the row. */
@@ -279,6 +313,7 @@ export async function deleteWarehouse(id: number, actor: Actor, meta: Meta, reas
     userAgent: meta.userAgent,
     requestId: meta.requestId,
   });
+  refreshPublicSite();
 }
 
 // ── Gallery ───────────────────────────────────────────────────────
@@ -413,6 +448,8 @@ export async function addWarehouseImage(
     requestId: meta.requestId,
   });
 
+  refreshPublicSite();
+
   return {
     id: Number(r.id),
     warehouseId,
@@ -472,4 +509,5 @@ export async function deleteWarehouseImage(
     userAgent: meta.userAgent,
     requestId: meta.requestId,
   });
+  refreshPublicSite();
 }
