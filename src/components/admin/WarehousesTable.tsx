@@ -9,8 +9,8 @@ import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 import type { ListState } from "@/lib/admin/listing";
 
-import DataTable, { SelectAllHeader, SelectRowCell, type ColumnMeta } from "./DataTable";
-import { Card, ConfirmDialog, IconButton, StatusBadge } from "./ui";
+import DataTable, { SelectAllHeader, SelectRowCell, Switch, type ColumnMeta } from "./DataTable";
+import { Card, ConfirmDialog, IconButton } from "./ui";
 import WarehouseDrawer, { type WarehouseValues } from "./WarehouseDrawer";
 
 export type TypeOption = { id: number; name: string };
@@ -59,6 +59,34 @@ export default function WarehousesTable({
   const [confirm, setConfirm] = useState<{ id: number; label: string; inUse: string } | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
+  /** Which row's switch is mid-flight. Separate from `busy`, which
+   *  belongs to the delete dialog. */
+  const [toggling, setToggling] = useState<number | null>(null);
+
+  /**
+   * Switch a site on or off from the list, the way the master screens do.
+   *
+   * Worth knowing what this now does: `is_active` is also the gate on the
+   * public website, so switching a warehouse off takes its page down and
+   * removes it from /warehouses. The toast says so — it is not a change
+   * anybody should have to discover.
+   */
+  async function toggle(row: WarehouseRow) {
+    setToggling(row.id);
+    const result = await api<{ ok: true }>(`/admin/warehouses/${row.id}`, {
+      method: "PATCH",
+      body: { isActive: !row.isActive },
+    });
+    setToggling(null);
+    if (!result.ok) {
+      toast.error(result.error.message);
+      return;
+    }
+    toast.success(
+      row.isActive ? `${row.name} deactivated — it is off the public site now.` : `${row.name} activated.`,
+    );
+    router.refresh();
+  }
 
   async function remove() {
     if (!confirm) return;
@@ -114,10 +142,32 @@ export default function WarehousesTable({
           </span>
         ),
       },
-      { accessorKey: "typeName", header: "Type", cell: ({ getValue }) => String(getValue() ?? "—") },
-      { accessorKey: "cityLabel", header: "City", cell: ({ getValue }) => String(getValue() ?? "—") },
+      /**
+       * `id`, not `accessorKey` — and that is a fix, not a style choice.
+       *
+       * In server mode the sort link is built from `column.id`, and the
+       * page only accepts the keys in its `sortable` list: type, city,
+       * status. Keyed off the field names these columns emitted
+       * `sort=typeName`, `sort=cityLabel` and `sort=isActive`, which
+       * `parseListQuery` does not recognise, so it fell back to the
+       * default and clicking those three headers did nothing at all —
+       * silently, because the URL still changed.
+       */
       {
-        accessorKey: "totalAreaSqft",
+        id: "type",
+        accessorFn: (r) => r.typeName,
+        header: "Type",
+        cell: ({ getValue }) => String(getValue() ?? "—"),
+      },
+      {
+        id: "city",
+        accessorFn: (r) => r.cityLabel,
+        header: "City",
+        cell: ({ getValue }) => String(getValue() ?? "—"),
+      },
+      {
+        id: "totalAreaSqft",
+        accessorFn: (r) => r.totalAreaSqft,
         header: "Total sqft",
         meta: { align: "right", mono: true } satisfies ColumnMeta,
         cell: ({ getValue }) => {
@@ -126,9 +176,21 @@ export default function WarehousesTable({
         },
       },
       {
-        accessorKey: "isActive",
-        header: "Status",
-        cell: ({ row }) => <StatusBadge value={row.original.isActive ? "ACTIVE" : "INACTIVE"} />,
+        id: "status",
+        accessorFn: (r) => r.isActive,
+        header: "Active",
+        cell: ({ row }) => (
+          <Switch
+            checked={row.original.isActive}
+            busy={toggling === row.original.id}
+            label={
+              row.original.isActive
+                ? `Deactivate ${row.original.name}`
+                : `Activate ${row.original.name}`
+            }
+            onChange={() => toggle(row.original)}
+          />
+        ),
       },
       {
         id: "actions",
@@ -179,7 +241,10 @@ export default function WarehousesTable({
         },
       },
     ],
-    [types, cities],
+    // `toggle` is rebuilt every render and would defeat the memo; the
+    // row id it is mid-flight on is what actually has to re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [types, cities, toggling],
   );
 
   const filtered = list.q !== "" || list.status !== "all" || Object.keys(list.extra).length > 0;

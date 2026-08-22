@@ -10,7 +10,7 @@ import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 
 import type { CityOption, TypeOption, WarehouseRow } from "./WarehousesTable";
-import { FactList } from "./ui";
+import { FactList, StatusBadge } from "./ui";
 
 /**
  * Add, correct or read one warehouse.
@@ -86,7 +86,6 @@ export default function WarehouseDrawer({
   const [flags, setFlags] = useState(
     warehouse?.flags ?? { hasRacking: true, hasCctv: false, hasWeighbridge: false },
   );
-  const [isActive, setIsActive] = useState(warehouse?.isActive ?? true);
   const [countryId, setCountryId] = useState(warehouse?.countryId ?? "");
   const [stateId, setStateId] = useState(warehouse?.stateId ?? "");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -116,7 +115,6 @@ export default function WarehouseDrawer({
   function close() {
     setDraft(initial);
     setFlags(warehouse?.flags ?? { hasRacking: true, hasCctv: false, hasWeighbridge: false });
-    setIsActive(warehouse?.isActive ?? true);
     setCountryId(warehouse?.countryId ?? "");
     setStateId(warehouse?.stateId ?? "");
     setErrors({});
@@ -137,7 +135,15 @@ export default function WarehouseDrawer({
         const shapedValue = shaped(k, v);
         if (shapedValue !== null) body[k] = shapedValue;
       }
-      Object.assign(body, flags, { isActive });
+      /**
+       * `isActive` is not sent, and there is no checkbox for it.
+       *
+       * A new site is active — the column defaults that way and the
+       * schema agrees. Switching one off is the toggle in the list,
+       * the same as every master screen: one control, in one place,
+       * that cannot disagree with the row beside it.
+       */
+      Object.assign(body, flags);
     } else {
       for (const key of Object.keys(initial) as (keyof WarehouseValues)[]) {
         if ((draft[key] ?? "").trim() === (initial[key] ?? "").trim()) continue;
@@ -146,7 +152,6 @@ export default function WarehouseDrawer({
       for (const [k, v] of Object.entries(flags)) {
         if (warehouse && warehouse.flags[k as keyof typeof flags] !== v) body[k] = v;
       }
-      if (warehouse && warehouse.isActive !== isActive) body.isActive = isActive;
       if (Object.keys(body).length === 0) {
         toast.error("Nothing has changed yet.");
         return;
@@ -306,6 +311,14 @@ export default function WarehouseDrawer({
                               "—"
                             ),
                           },
+                          /* The edit form no longer carries an Active
+                             checkbox, so this is where you read the
+                             state without leaving the drawer. Changing
+                             it is the switch in the list. */
+                          {
+                            label: "Status",
+                            value: <StatusBadge value={warehouse.isActive ? "ACTIVE" : "INACTIVE"} />,
+                          },
                           { label: "In use by", value: warehouse.inUse || "nobody yet" },
                           { label: "Notes", value: initial.notes || "—" },
                         ]}
@@ -337,15 +350,6 @@ export default function WarehouseDrawer({
                               ))}
                             </select>
                             {err("warehouseTypeId")}
-                          </label>
-                          <label className="mt-6 flex items-center gap-2 text-sm text-verdigris-100">
-                            <input
-                              type="checkbox"
-                              checked={isActive}
-                              onChange={(e) => setIsActive(e.target.checked)}
-                              className="h-4 w-4 accent-verdigris-400"
-                            />
-                            Active
                           </label>
                         </div>
                       </div>
