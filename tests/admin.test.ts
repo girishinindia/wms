@@ -64,7 +64,11 @@ describe("admin navigation", () => {
     const labels = visibleNav(warehouseAdmin).map((i) => i.label);
     // Dashboard and Notifications ride along; cities does not, because
     // adding master data is not a warehouse admin's job.
-    expect(labels).toEqual(["Dashboard", "Notifications", "Importers", "Users"]);
+    //
+    // The order is `ADMIN_NAV`'s: Users sits in "Users & Roles" above
+    // "Importers & agents". Asserted as an ordered list on purpose —
+    // this is the array the sidebar renders from.
+    expect(labels).toEqual(["Dashboard", "Notifications", "Users", "Importers"]);
   });
 
   /**
@@ -177,10 +181,69 @@ describe("admin navigation: grouping", () => {
       { permission: "user.read", scope: "WAREHOUSE" as const },
     ];
     const nodes = groupNav(visibleNav(warehouseAdmin));
-    // No importer entry earned → no "Importers & agents" group; no
-    // master entry earned → no "Master" group.
-    expect(nodes.some((n) => isGroup(n))).toBe(false);
-    expect(nodes.map((n) => n.label)).toEqual(["Dashboard", "Notifications", "Users"]);
+    // Nothing earned inside Importers & agents, Master, Warehouses or
+    // Transporters & Vehicles, so none of them is here at all. A section
+    // header that opens onto nothing reads as a broken page, not as a
+    // permission boundary.
+    expect(nodes.map((n) => n.label)).toEqual(["Dashboard", "Notifications", "Users & Roles"]);
+  });
+
+  it("keeps a group that earned some of its children, holding only those", () => {
+    /**
+     * The other half of the same rule, and the one a warehouse admin
+     * actually meets: they hold `user.read` but not `role.read`, so
+     * "Users & Roles" opens onto Users alone.
+     *
+     * Worth its own test because the two entries in that section are
+     * deliberately keyed differently — `role.read` is `allOnly` because
+     * `role_permission` has no warehouse column, `user.read` is not —
+     * and a partially-earned group is exactly what that produces.
+     */
+    const nodes = groupNav(visibleNav([{ permission: "user.read", scope: "WAREHOUSE" }]));
+    const group = nodes.find((n) => isGroup(n) && n.label === "Users & Roles");
+    expect(group).toBeDefined();
+    expect(isGroup(group!) && group.children.map((c) => c.href)).toEqual(["/admin/users"]);
+
+    // A super admin, who holds both, gets both.
+    const full = groupNav(visibleNav(SUPER_ADMIN)).find(
+      (n) => isGroup(n) && n.label === "Users & Roles",
+    );
+    expect(isGroup(full!) && full.children.map((c) => c.href)).toEqual([
+      "/admin/users",
+      "/admin/roles",
+    ]);
+  });
+
+  it("renders the sections in the order the sidebar shows them", () => {
+    // The customer's order. `ADMIN_NAV` is the single source of it, and
+    // `groupNav` walks that array — so this is the list, top to bottom.
+    expect(groupNav(visibleNav(SUPER_ADMIN)).map((n) => n.label)).toEqual([
+      "Dashboard",
+      "Master",
+      "Notifications",
+      "Users & Roles",
+      "Warehouses",
+      "Transporters & Vehicles",
+      "Importers & agents",
+      "Expenses",
+      "FAQs",
+    ]);
+  });
+
+  it("counts unread on the notifications entry, and nowhere else", () => {
+    /**
+     * The badge is declared here as a NAME rather than a number, because
+     * this module is imported by the server layout and must stay free of
+     * JSX and of anything that reads state. `AdminShell` maps the name
+     * onto the hook.
+     *
+     * Exactly one entry carries it: a second would mean a second
+     * subscriber to the same store showing a count of somebody else's
+     * thing.
+     */
+    const badged = ADMIN_NAV_ITEMS.filter((i) => i.badge !== undefined);
+    expect(badged.map((i) => i.href)).toEqual(["/admin/notifications"]);
+    expect(badged[0]!.badge).toBe("notifications");
   });
 
   it("shows an importer only their own screens, under the importers group", () => {
@@ -280,6 +343,57 @@ describe("the sidebar navigates with the browser, not the router", () => {
     expect(shell).not.toMatch(/from "next\/link"/);
     expect(shell).not.toMatch(/<Link\b/);
     expect(shell).toMatch(/<a\b[\s\S]*href=\{item\.href\}/);
+  });
+
+  /**
+   * A bare `{label}` inside a flex row is an ANONYMOUS flex item: it
+   * shrinks to its content width, and the moment the text wraps to a
+   * second line it centres inside that box. "Transporters & Vehicles"
+   * was the first label long enough to hit it — measured at 68px from
+   * the button's left edge against 40px for every other row, on two
+   * lines, centred.
+   *
+   * Both places that draw a nav label need the same guard, and the
+   * group button is the one that was wrong.
+   */
+  it("gives every nav label a box of its own, so a long one still aligns left", () => {
+    const labelSpan = /<span className="min-w-0 flex-1 text-left">\{(item|node)\.label\}<\/span>/g;
+    expect(shell.match(labelSpan)).toHaveLength(2);
+    // And no bare label left behind in either row.
+    expect(shell).not.toMatch(/shrink-0"\s*\/>\s*\{item\.label\}/);
+    expect(shell).not.toMatch(/\}\)\(\)\}\s*\{node\.label\}/);
+  });
+
+  it("keeps one poller for the unread count, not one per badge", () => {
+    /**
+     * The bell in the header and the badge in the sidebar show the same
+     * number. Two owners would mean two timers, two requests a minute,
+     * and two counts that disagree for up to a minute after anything is
+     * marked read — so the fetch and the timer live in
+     * `lib/notifications/unread` and both components subscribe.
+     */
+    const bell = readFileSync(
+      new URL("../src/components/admin/NotificationBell.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(bell).not.toMatch(/setInterval/);
+    expect(bell).toMatch(/useNotifications\(\)/);
+    expect(shell).toMatch(/useUnreadCount\(\)/);
+
+    const store = readFileSync(
+      new URL("../src/lib/notifications/unread.ts", import.meta.url),
+      "utf8",
+    );
+    // One timer, started by the first subscriber and stopped by the last.
+    expect(store.match(/setInterval/g)).toHaveLength(1);
+    expect(store).toMatch(/listeners\.size === 0/);
+    /**
+     * `getServerSnapshot` must return the SAME object every call. A
+     * fresh literal there is a new reference on every render, which
+     * `useSyncExternalStore` reads as "changed" — an infinite loop that
+     * only shows up in SSR.
+     */
+    expect(store).toMatch(/getServerSnapshot = \(\) => EMPTY/);
   });
 
   it("carries no stray control characters", () => {

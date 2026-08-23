@@ -1,43 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { BellIcon } from "@/components/icons";
 import { api } from "@/lib/api/client";
+import {
+  markAllReadLocally,
+  markOneReadLocally,
+  NOTIFICATIONS_CHANGED,
+  type NotificationItem as Item,
+  useNotifications,
+} from "@/lib/notifications/unread";
 
 /**
  * The bell in the admin header.
  *
- * Reads `/notifications` on mount and every minute while the tab is
- * visible, shows the unread count, and lists the newest ten in a
- * dropdown. Opening an item marks it read and follows its action URL —
- * a super admin clicks "profile submitted" and lands on the importer.
+ * Shows the unread count and lists the newest ten in a dropdown.
+ * Opening an item marks it read and follows its action URL — a super
+ * admin clicks "profile submitted" and lands on the importer.
  *
- * Polling, not a socket: the volume here is a handful a day, and a
- * once-a-minute GET on a pooled connection costs nothing. It also stops
- * when the tab is hidden, so a forgotten window does not keep asking.
+ * The polling used to live here. It now lives in
+ * `lib/notifications/unread`, because the sidebar shows the same number
+ * and two owners meant two timers, two requests a minute and two counts
+ * that disagreed for up to a minute after anything was marked read.
+ * This component reads that store; the dropdown's open/closed state is
+ * the only state it still keeps of its own.
  */
 
-type Item = {
-  id: number;
-  eventKey: string;
-  title: string;
-  body: string;
-  actionUrl: string | null;
-  createdAt: string;
-  readAt: string | null;
-};
-
-const POLL_MS = 60_000;
-
-/**
- * The notifications screen fires this after it marks or deletes
- * anything, so the badge does not sit there wrong for up to a minute.
- * A window event rather than shared state: the two live in different
- * trees (the shell and the page) and have nothing else to say to
- * each other.
- */
-export const NOTIFICATIONS_CHANGED = "wms:notifications-changed";
+/** Re-exported: the notifications SCREEN fires this after it marks or
+ *  deletes anything, and imports it from here. Moving the constant
+ *  without leaving this behind would have broken that quietly — the
+ *  screen would still build, and the badge would just go stale. */
+export { NOTIFICATIONS_CHANGED };
 
 function ago(iso: string): string {
   const then = new Date(iso).getTime();
@@ -54,36 +48,8 @@ function ago(iso: string): string {
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
-  const [unread, setUnread] = useState(0);
-  const [items, setItems] = useState<Item[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const { unread, items, loaded } = useNotifications();
   const wrap = useRef<HTMLDivElement>(null);
-
-  const load = useCallback(async () => {
-    const result = await api<{ unread: number; items: Item[] }>("/notifications?limit=10", {
-      method: "GET",
-    });
-    if (result.ok) {
-      setUnread(result.data.unread);
-      setItems(result.data.items);
-    }
-    setLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    void load();
-    const tick = () => {
-      if (document.visibilityState === "visible") void load();
-    };
-    const timer = window.setInterval(tick, POLL_MS);
-    document.addEventListener("visibilitychange", tick);
-    window.addEventListener(NOTIFICATIONS_CHANGED, load);
-    return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", tick);
-      window.removeEventListener(NOTIFICATIONS_CHANGED, load);
-    };
-  }, [load]);
 
   // Click outside closes.
   useEffect(() => {
@@ -97,18 +63,16 @@ export default function NotificationBell() {
 
   async function markAll() {
     const result = await api<{ marked: number }>("/notifications/read", { body: { all: true } });
-    if (result.ok) {
-      setUnread(0);
-      setItems((list) => list.map((i) => ({ ...i, readAt: i.readAt ?? new Date().toISOString() })));
-    }
+    // Written to the shared store, so the sidebar badge clears in the
+    // same tick rather than a poll later.
+    if (result.ok) markAllReadLocally();
   }
 
   async function openItem(item: Item) {
     if (!item.readAt) {
       // Optimistic; the server call follows. A misfire only means the dot
       // comes back on the next poll.
-      setUnread((n) => Math.max(0, n - 1));
-      setItems((list) => list.map((i) => (i.id === item.id ? { ...i, readAt: new Date().toISOString() } : i)));
+      markOneReadLocally(item.id);
       void api("/notifications/read", { body: { ids: [item.id] } });
     }
     if (item.actionUrl && item.actionUrl.startsWith("/")) {

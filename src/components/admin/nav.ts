@@ -56,6 +56,15 @@ export type AdminNavItem = {
    */
   allOnly?: boolean;
   icon: AdminNavIcon;
+  /**
+   * A live counter to draw beside the label.
+   *
+   * A NAME, not a number: this file is imported by the server layout and
+   * has to stay free of JSX and of anything that reads state. The shell
+   * maps the name onto a hook and renders the pill; here it is only the
+   * statement that this entry has something to count.
+   */
+  badge?: "notifications";
 };
 
 export type AdminNavIcon =
@@ -221,8 +230,48 @@ export const TRANSPORT_ITEMS: AdminNavItem[] = [
   },
 ];
 
+/**
+ * "Users & Roles". The accounts, and what the roles they hold mean.
+ *
+ * One section because they are one job: you arrive at Roles from a
+ * question about a person, and at a person from a question about a
+ * role. Two top-level entries side by side said they were unrelated.
+ *
+ * `allOnly` on `role.read`, and not on `user.read`: `role_permission`
+ * has no warehouse column, so editing STORAGE_MANAGER changes it at
+ * every site in the company. That is a platform decision. Managing a
+ * user is not — a warehouse admin does it for their own people — so the
+ * two entries in this one section are deliberately keyed differently.
+ */
+export const USERS_ITEMS: AdminNavItem[] = [
+  { href: "/admin/users", label: "Users", permission: "user.read", icon: "shield" },
+  {
+    href: "/admin/roles",
+    label: "Roles",
+    permission: "role.read",
+    allOnly: true,
+    icon: "key",
+  },
+];
+
+/**
+ * The sidebar, in order.
+ *
+ * The order is the customer's, and it is only an ordering: every
+ * `permission`, `own` and `allOnly` below is unchanged from where it
+ * sat before. Worth saying because `visibleNav` derives from this array
+ * and three callers outside the sidebar read it — but all three ask
+ * only whether the result is EMPTY, never what comes first, so moving
+ * rows around cannot change who is admitted or where signing in lands.
+ */
 export const ADMIN_NAV: AdminNavNode[] = [
   { href: "/admin", label: "Dashboard", permission: null, icon: "chart" },
+  {
+    label: "Master",
+    icon: "database",
+    match: "/admin/master",
+    children: MASTER_ITEMS,
+  },
   /**
    * Notifications, like the dashboard, has NO permission of its own.
    *
@@ -232,12 +281,18 @@ export const ADMIN_NAV: AdminNavNode[] = [
    * whatever else the user earned instead — and everyone who is already
    * inside can see their own bell.
    */
-  { href: "/admin/notifications", label: "Notifications", permission: null, icon: "bell" },
   {
-    label: "Importers & agents",
-    icon: "box",
-    match: "/admin/(importers|sales-agents)",
-    children: IMPORTER_ITEMS,
+    href: "/admin/notifications",
+    label: "Notifications",
+    permission: null,
+    icon: "bell",
+    badge: "notifications",
+  },
+  {
+    label: "Users & Roles",
+    icon: "shield",
+    match: "/admin/(users|roles)",
+    children: USERS_ITEMS,
   },
   {
     label: "Warehouses",
@@ -245,28 +300,17 @@ export const ADMIN_NAV: AdminNavNode[] = [
     match: "/admin/warehouses",
     children: WAREHOUSE_ITEMS,
   },
-  { href: "/admin/users", label: "Users", permission: "user.read", icon: "shield" },
-  /**
-   * Roles, directly under Users — it is user administration, and the
-   * menu is long enough already.
-   *
-   * `allOnly` on `role.read`: `role_permission` has no warehouse column,
-   * so editing STORAGE_MANAGER changes it at every site in the company.
-   * That is a platform decision, and the route asks the same question
-   * the link does.
-   */
   {
-    href: "/admin/roles",
-    label: "Roles",
-    permission: "role.read",
-    allOnly: true,
-    icon: "key",
+    label: "Transporters & Vehicles",
+    icon: "truck",
+    match: "/admin/(transporters|vehicles)",
+    children: TRANSPORT_ITEMS,
   },
   {
-    label: "Master",
-    icon: "database",
-    match: "/admin/master",
-    children: MASTER_ITEMS,
+    label: "Importers & agents",
+    icon: "box",
+    match: "/admin/(importers|sales-agents)",
+    children: IMPORTER_ITEMS,
   },
   /**
    * Expenses, above FAQs and outside Master.
@@ -282,14 +326,8 @@ export const ADMIN_NAV: AdminNavNode[] = [
     permission: "expense.read",
     icon: "rupee",
   },
-  {
-    label: "Transporters & Vehicles",
-    icon: "truck",
-    match: "/admin/(transporters|vehicles)",
-    children: TRANSPORT_ITEMS,
-  },
   /**
-   * FAQs, below Master and outside it.
+   * FAQs, last.
    *
    * Keyed on `faq.create`, and `allOnly` like the Warehouses section:
    * the permission is held by the super admin alone, and the route

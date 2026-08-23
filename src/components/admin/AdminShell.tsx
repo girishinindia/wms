@@ -45,6 +45,8 @@ import {
 } from "@/lib/admin/prefs";
 
 import Avatar from "./Avatar";
+import { useUnreadCount } from "@/lib/notifications/unread";
+
 import { groupNav, inSection, isGroup, type AdminNavItem } from "./nav";
 import NotificationBell from "./NotificationBell";
 import RouterRecovery, { rememberIntent } from "./RouterRecovery";
@@ -98,6 +100,38 @@ export type ImporterLock = {
   kycStatus: string;
   status: string;
 };
+
+/**
+ * The unread count beside the sidebar's Notifications entry.
+ *
+ * Its own component so that only this pill re-renders when the number
+ * moves — putting the hook in `AdminShell` would re-render the whole
+ * shell, sidebar and page frame included, once a minute forever.
+ *
+ * It reads the same store the header bell reads, so the two can never
+ * disagree and marking everything read clears both in the same tick
+ * without a second request.
+ */
+function UnreadBadge() {
+  const unread = useUnreadCount();
+  if (unread <= 0) return null;
+  return (
+    <>
+      {/* The real count, read aloud. "99+" is a drawing, not a number,
+          so the spoken version always gives the figure itself. */}
+      <span className="sr-only">{unread} unread</span>
+      <span
+        // `tabular-nums` so the pill does not jitter in width as the
+        // count changes; hidden from the reader because the line above
+        // already said it, and better.
+        aria-hidden
+        className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-amber-400 px-1.5 text-[0.7rem] font-bold tabular-nums text-ink-900"
+      >
+        {unread > 99 ? "99+" : unread}
+      </span>
+    </>
+  );
+}
 
 export default function AdminShell({
   items,
@@ -236,7 +270,20 @@ export default function AdminShell({
         }`}
       >
         <Icon className={nested ? "h-3.5 w-3.5 shrink-0" : "h-4 w-4 shrink-0"} />
-        {item.label}
+        {/*
+          The label needs a box of its own.
+
+          As a bare text node it is an ANONYMOUS flex item: it shrinks to
+          its content width and, the moment the text wraps to a second
+          line, centres itself inside that box. "Transporters & Vehicles"
+          started 28px further right than every other row and sat
+          centred. `flex-1` takes the leftover width so the text starts
+          where every other label starts, `text-left` kills the centring,
+          `min-w-0` lets it wrap without shoving a trailing badge out of
+          the row.
+        */}
+        <span className="min-w-0 flex-1 text-left">{item.label}</span>
+        {item.badge === "notifications" ? <UnreadBadge /> : null}
       </a>
     );
   }
@@ -300,7 +347,8 @@ export default function AdminShell({
                     const Icon = ICONS[node.icon];
                     return <Icon className="h-4 w-4 shrink-0" />;
                   })()}
-                  {node.label}
+                  {/* Same anonymous-flex-item trap as in `renderItem`. */}
+                  <span className="min-w-0 flex-1 text-left">{node.label}</span>
                   <svg
                     aria-hidden
                     viewBox="0 0 24 24"
@@ -309,7 +357,7 @@ export default function AdminShell({
                     strokeWidth={1.5}
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className={`ml-auto h-3.5 w-3.5 transition-transform ${
+                    className={`h-3.5 w-3.5 shrink-0 transition-transform ${
                       isOpen(node.label, node.match) ? "rotate-180" : ""
                     }`}
                   >
