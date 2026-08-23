@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { DEFAULT_PAGE_SIZE, listHref, PAGE_SIZES, type ListState } from "@/lib/admin/listing";
+import { countLabel, DEFAULT_PAGE_SIZE, listHref, PAGE_SIZES, type ListState } from "@/lib/admin/listing";
 
 /**
  * The controls every paginated admin list shares.
@@ -46,6 +46,7 @@ export function ListToolbar({
   label,
   extraFilters,
   action,
+  singular,
 }: {
   base: string;
   list: ListState;
@@ -56,6 +57,8 @@ export function ListToolbar({
   extraFilters?: ReactNode;
   /** Right-hand slot — usually the Add button. */
   action?: ReactNode;
+  /** "transporter", for the count line when there is exactly one. */
+  singular?: string;
 }) {
   const from = list.total === 0 ? 0 : (list.page - 1) * list.size + 1;
   const to = Math.min(list.total, list.page * list.size);
@@ -63,7 +66,7 @@ export function ListToolbar({
   return (
     <div className="border-b border-verdigris-300/10 px-5 py-4">
       <h2 className="text-sm font-semibold text-verdigris-50">
-        {list.total} {label}
+        {countLabel(list.total, label, singular)}
         {list.total > list.size ? (
           <span className="ml-2 font-normal text-verdigris-200/45">
             showing {from}–{to}

@@ -30,7 +30,16 @@ import { z } from "@/lib/openapi/zod";
  * `money` is an INTEGER number of paise in the database and rupees on
  * the screen. Both conversions live in `lib/money.ts`.
  */
-export type MasterFieldType = "text" | "number" | "select" | "textarea" | "date" | "money";
+export type MasterFieldType =
+  | "text"
+  | "number"
+  | "select"
+  | "textarea"
+  | "date"
+  | "money"
+  /** A tick. `blacklisted` on a transporter — not the same question as
+   *  the Active switch, which asks whether the row is in use at all. */
+  | "boolean";
 
 export type MasterField = {
   /** JSON key, camelCase. */
@@ -88,6 +97,16 @@ export type MasterResource = {
     key: string;
     column: string;
     label: string;
+    /**
+     * The row can exist without one.
+     *
+     * Every parent was required until a transporter's city, which is
+     * genuinely optional — plenty of carriers are added from a phone
+     * call before anybody knows where their office is. The create route
+     * used to look the parent up unconditionally, which turned a
+     * missing city into `where id =` and a 500.
+     */
+    optional?: boolean;
     /** Where the options come from. Also a literal. */
     table: string;
     /** Column to show in the option. */
@@ -166,12 +185,93 @@ export type MasterResource = {
    */
   scope?: {
     key: string;
-    column: string;
+    /** The column on THIS table, when the link is direct. An expense
+     *  carries its own `warehouse_id`. */
+    column?: string;
     label: string;
     table: string;
     labelColumn: string;
     /** Shown in the picker beside the label — "WH-0001 · Bhiwandi". */
     codeColumn?: string;
+    /**
+     * When the link is NOT a column on this table.
+     *
+     * A transporter has no warehouse: it serves several, through
+     * `warehouse_transporter`. A vehicle is one hop further still —
+     * its site comes from its owner. So "mine" is an EXISTS against a
+     * join table rather than a column comparison:
+     *
+     *   exists (select 1 from <table> j
+     *            where j.<linkColumn> = m.<localColumn>
+     *              and j.<scopeColumn> in (…the caller's own sites))
+     *
+     * `localColumn` is `id` for the owning table and the foreign key for
+     * anything hanging off it.
+     */
+    via?: {
+      table: string;
+      linkColumn: string;
+      localColumn: string;
+      scopeColumn: string;
+    };
+    /** The scope is chosen through `pivot` rather than a single picker,
+     *  so the drawer must not render a second one. */
+    pickedByPivot?: boolean;
+  };
+  /**
+   * Extra foreign keys that are neither the parent nor the scope.
+   *
+   * A vehicle needs three relations — its transporter (the parent, and
+   * what scopes it), its type, and the site it reaches through the
+   * transporter. `parent` and `scope` are only two.
+   */
+  links?: {
+    key: string;
+    column: string;
+    label: string;
+    table: string;
+    labelColumn: string;
+    required?: boolean;
+    /** Offer it as a dropdown filter above the table. */
+    filterable?: boolean;
+  }[];
+  /**
+   * A many-to-many the drawer edits inline.
+   *
+   * Which warehouses a transporter serves. The ids arrive in the same
+   * request body as the row (`key`), so a create writes the row and its
+   * links in one go — a separate endpoint would leave a window where a
+   * scoped user had made a carrier they could not yet see.
+   */
+  pivot?: {
+    key: string;
+    table: string;
+    /** Column pointing back at this row. */
+    localColumn: string;
+    /** Column pointing at the option. */
+    optionColumn: string;
+    optionTable: string;
+    optionLabelColumn: string;
+    optionCodeColumn?: string;
+    label: string;
+    hint: string;
+    /** The options are narrowed to the caller's own sites, like the
+     *  list is. A scoped caller must pick at least one. */
+    scopedByActor?: boolean;
+  };
+  /**
+   * The Active switch, when the table has no `is_active` boolean.
+   *
+   * `transporter` and `vehicle` both carry the `record_status` enum
+   * instead. Adding a boolean beside it would be two columns that can
+   * disagree about whether a lorry is on the road; this maps the switch
+   * onto the column that is already the truth, and which
+   * `vehicle_active_idx` is already built on.
+   */
+  statusColumn?: {
+    column: string;
+    activeValue: string;
+    inactiveValue: string;
   };
   /**
    * Never remove the row, whatever the delete button says.
@@ -307,6 +407,59 @@ const prose = (min: number, max: number) =>
     .refine((v) => !/[<>]/.test(v), "Angle brackets are not allowed")
     .refine((v) => /[A-Za-z]/.test(v), "Needs at least one letter");
 
+/** Mirrors `vehicle_fuel_type_check` exactly. */
+export const FUEL_TYPES = ["DIESEL", "PETROL", "CNG", "LNG", "ELECTRIC", "HYBRID"] as const;
+
+/**
+ * A ten-digit Indian mobile, matching the `mobile_in` domain.
+ *
+ * The column is `char(10)`, which PADS on write — so a value that
+ * reached it with a stray space would be stored as `"98765432 1"` and
+ * every later comparison against the real number would quietly fail.
+ */
+const mobile = () =>
+  z
+    .string()
+    .trim()
+    .regex(/^[6-9][0-9]{9}$/, "Enter a 10-digit Indian mobile number");
+
+/** Same shape the importer screens validate, so a GSTIN is refused here
+ *  with a field message rather than by the database with a 500. */
+const gstinValue = () =>
+  z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(
+      /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/,
+      "That does not look like a valid GSTIN",
+    );
+
+const panValue = () =>
+  z.string().trim().toUpperCase().regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, "That does not look like a valid PAN");
+
+/** Mirrors the `pincode_in` domain: six digits, not starting with zero. */
+const pincodeValue = () =>
+  z.string().trim().regex(/^[1-9][0-9]{5}$/, "Pincode must be 6 digits and cannot start with 0");
+
+/**
+ * An Indian number plate, normalised.
+ *
+ * Spaces and dashes are stripped rather than refused — people read a
+ * plate as "MH 04 AB 1234" and type it that way, and the column is
+ * `varchar(13)` with a unique index, so "MH04AB1234" and "MH 04 AB 1234"
+ * would otherwise be two different lorries.
+ */
+const registration = () =>
+  z.preprocess(
+    (v) => (typeof v === "string" ? v.replace(/[\s-]/g, "").toUpperCase() : v),
+    z
+      .string()
+      .min(6, "That is too short for a registration number")
+      .max(13)
+      .regex(/^[A-Z0-9]+$/, "Letters and digits only"),
+  );
+
 /** Mirrors the CHECK on `expense.payment_mode` exactly. */
 export const PAYMENT_MODES = [
   "CASH",
@@ -382,6 +535,26 @@ const isoDate = (opts: { notFuture?: boolean } = {}) => {
 
 const withActive = <T extends z.ZodRawShape>(shape: T) =>
   z.object({ ...shape, isActive: z.boolean().optional() });
+
+/**
+ * Blacklisting needs a reason, and the reason is the point.
+ *
+ * `transporter_check` says the same thing, and reaching it on its own
+ * came back as "That value is not allowed here (transporter check)" —
+ * true, unhelpful, and attached to no field. Here it lands under the box
+ * the person has to fill in.
+ */
+const needsBlacklistReason = <T extends z.ZodTypeAny>(schema: T) =>
+  schema.superRefine((v: unknown, ctx: z.RefinementCtx) => {
+    const value = v as { blacklisted?: boolean; blacklistReason?: string };
+    if (value.blacklisted === true && !(value.blacklistReason ?? "").trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["blacklistReason"],
+        message: "Say why this carrier is being blacklisted",
+      });
+    }
+  });
 
 // ── country ───────────────────────────────────────────────────────
 const country: MasterResource = {
@@ -707,6 +880,271 @@ const faq: MasterResource = {
   }),
 };
 
+// ── transporter ───────────────────────────────────────────────────
+/**
+ * The carrier register. Not users — nobody signs in as a transporter;
+ * these are reference records about the companies that move goods.
+ *
+ * Three things make it the most demanding entry here, and all three are
+ * properties the table already had before this screen existed:
+ *
+ *   1. No `is_active` — `status` is the `record_status` enum, so the
+ *      Active switch maps onto it (`statusColumn`).
+ *   2. No `warehouse_id` — a carrier serves several sites through
+ *      `warehouse_transporter`, so "mine" is an EXISTS (`scope.via`)
+ *      and the sites are chosen as a set (`pivot`).
+ *   3. `blacklisted` is its own fact, with a CHECK insisting on a
+ *      reason. A blacklisted carrier is not merely inactive; it is one
+ *      somebody decided not to use again, and the reason is the point.
+ */
+const transporter: MasterResource = {
+  slug: "transporters",
+  table: "transporter",
+  label: "Transporters",
+  singular: "transporter",
+  listNoun: "transporters",
+  permission: "transporter",
+  intro:
+    "The companies that move goods for you. Reference records only — a transporter is not a login. Each one is linked to the warehouses it serves, and that link is what decides who can see it.",
+  hasAudit: true,
+  fields: [
+    { key: "code", column: "code", label: "Code", type: "text", required: true, mono: true, width: 9 },
+    { key: "name", column: "name", label: "Name", type: "text", required: true },
+    { key: "legalName", column: "legal_name", label: "Legal name", type: "text", hideInTable: true },
+    { key: "contactPerson", column: "contact_person", label: "Contact", type: "text", required: true },
+    { key: "contactMobile", column: "contact_mobile", label: "Mobile", type: "text", required: true, mono: true, width: 9 },
+    { key: "alternateMobile", column: "alternate_mobile", label: "Alternate mobile", type: "text", mono: true, hideInTable: true },
+    { key: "contactEmail", column: "contact_email", label: "Email", type: "text", hideInTable: true },
+    { key: "officePhone", column: "office_phone", label: "Office phone", type: "text", hideInTable: true },
+    { key: "gstin", column: "gstin", label: "GSTIN", type: "text", mono: true, width: 13 },
+    { key: "pan", column: "pan", label: "PAN", type: "text", mono: true, hideInTable: true },
+    { key: "website", column: "website", label: "Website", type: "text", hideInTable: true },
+    { key: "address", column: "address", label: "Address", type: "textarea", hideInTable: true },
+    { key: "pincode", column: "pincode", label: "Pincode", type: "text", mono: true, hideInTable: true },
+    {
+      key: "blacklisted",
+      column: "blacklisted",
+      label: "Blacklisted",
+      type: "boolean",
+      width: 7,
+      hint: "Stop using this carrier. A reason is required.",
+    },
+    {
+      key: "blacklistReason",
+      column: "blacklist_reason",
+      label: "Why blacklisted",
+      type: "textarea",
+      hideInTable: true,
+      hint: "Required whenever the tick above is on — the table refuses the row otherwise.",
+    },
+    { key: "notes", column: "notes", label: "Notes", type: "textarea", hideInTable: true },
+  ],
+  parent: {
+    key: "cityId",
+    column: "city_id",
+    label: "City",
+    optional: true,
+    table: "city",
+    labelColumn: "name",
+    groupBy: { column: "state_id", table: "state", labelColumn: "name", label: "State" },
+  },
+  scope: {
+    key: "warehouseIds",
+    label: "Warehouse",
+    table: "warehouse",
+    labelColumn: "name",
+    codeColumn: "code",
+    via: {
+      table: "warehouse_transporter",
+      linkColumn: "transporter_id",
+      localColumn: "id",
+      scopeColumn: "warehouse_id",
+    },
+    pickedByPivot: true,
+  },
+  pivot: {
+    key: "warehouseIds",
+    table: "warehouse_transporter",
+    localColumn: "transporter_id",
+    optionColumn: "warehouse_id",
+    optionTable: "warehouse",
+    optionLabelColumn: "name",
+    optionCodeColumn: "code",
+    label: "Serves",
+    hint: "Which sites this carrier works for. It is also who can see the record.",
+    scopedByActor: true,
+  },
+  statusColumn: { column: "status", activeValue: "ACTIVE", inactiveValue: "SUSPENDED" },
+  softDeleteOnly: true,
+  dependents: [{ table: "vehicle", column: "transporter_id", noun: "vehicles" }],
+  conflict: "A transporter with that code or GSTIN already exists",
+  orderBy: "name",
+  createSchema: needsBlacklistReason(withActive({
+    cityId: blankOptional(z.number().int().positive()),
+    code: codeText(2, 24),
+    name: name(120),
+    legalName: optionalText(160),
+    contactPerson: name(120),
+    contactMobile: mobile(),
+    alternateMobile: blankOptional(mobile()),
+    contactEmail: blankOptional(z.string().trim().toLowerCase().email("Enter a valid email address").max(160)),
+    officePhone: blankOptional(z.string().trim().regex(/^[0-9+\-\s()]{6,15}$/, "That does not look like a phone number")),
+    gstin: blankOptional(gstinValue()),
+    pan: blankOptional(panValue()),
+    website: blankOptional(z.string().trim().url("Enter a full address, starting http:// or https://").max(200)),
+    address: blankOptional(prose(4, 400)),
+    pincode: blankOptional(pincodeValue()),
+    blacklisted: z.boolean().optional(),
+    blacklistReason: blankOptional(prose(5, 300)),
+    notes: blankOptional(prose(2, 1000)),
+    warehouseIds: z.array(z.number().int().positive()).max(200).optional(),
+  })),
+  updateSchema: needsBlacklistReason(withActive({
+    cityId: blankOptional(z.number().int().positive()),
+    code: codeText(2, 24).optional(),
+    name: name(120).optional(),
+    legalName: optionalText(160),
+    contactPerson: name(120).optional(),
+    contactMobile: mobile().optional(),
+    alternateMobile: blankOptional(mobile()),
+    contactEmail: blankOptional(z.string().trim().toLowerCase().email("Enter a valid email address").max(160)),
+    officePhone: blankOptional(z.string().trim().regex(/^[0-9+\-\s()]{6,15}$/, "That does not look like a phone number")),
+    gstin: blankOptional(gstinValue()),
+    pan: blankOptional(panValue()),
+    website: blankOptional(z.string().trim().url("Enter a full address, starting http:// or https://").max(200)),
+    address: blankOptional(prose(4, 400)),
+    pincode: blankOptional(pincodeValue()),
+    blacklisted: z.boolean().optional(),
+    blacklistReason: blankOptional(prose(5, 300)),
+    notes: blankOptional(prose(2, 1000)),
+    warehouseIds: z.array(z.number().int().positive()).max(200).optional(),
+  })),
+};
+
+// ── vehicle ───────────────────────────────────────────────────────
+/**
+ * One row per lorry. Its site comes from its owner, which is why the
+ * scope is two hops rather than one and why there is no warehouse
+ * picker on the form: choosing the transporter chooses the sites.
+ *
+ * The capacity columns are the vehicle's OWN, not the type's — two
+ * lorries of the same type are not always loaded the same, and a
+ * dispatch is planned against the actual vehicle.
+ */
+const vehicle: MasterResource = {
+  slug: "vehicles",
+  table: "vehicle",
+  label: "Vehicles",
+  singular: "vehicle",
+  listNoun: "vehicles",
+  permission: "vehicle",
+  intro:
+    "Every lorry on the register, and who owns it. A vehicle is visible to whoever can see its transporter.",
+  hasAudit: true,
+  fields: [
+    {
+      key: "registrationNumber",
+      column: "registration_number",
+      label: "Registration",
+      type: "text",
+      required: true,
+      mono: true,
+      width: 12,
+      hint: "MH04AB1234 — no spaces.",
+    },
+    { key: "model", column: "model", label: "Model", type: "text" },
+    {
+      key: "fuelType",
+      column: "fuel_type",
+      label: "Fuel",
+      type: "select",
+      options: FUEL_TYPES,
+      filterable: true,
+      width: 8,
+    },
+    { key: "capacityKg", column: "capacity_kg", label: "Kg", type: "number", align: "right", width: 6 },
+    { key: "capacityCbm", column: "capacity_cbm", label: "Cbm", type: "number", align: "right", width: 5 },
+    { key: "axleCount", column: "axle_count", label: "Axles", type: "number", align: "right", width: 4 },
+    { key: "lengthFt", column: "length_ft", label: "L ft", type: "number", align: "right", hideInTable: true },
+    { key: "widthFt", column: "width_ft", label: "W ft", type: "number", align: "right", hideInTable: true },
+    { key: "heightFt", column: "height_ft", label: "H ft", type: "number", align: "right", hideInTable: true },
+    { key: "chassisNumber", column: "chassis_number", label: "Chassis", type: "text", mono: true, hideInTable: true },
+    { key: "engineNumber", column: "engine_number", label: "Engine", type: "text", mono: true, hideInTable: true },
+    { key: "notes", column: "notes", label: "Notes", type: "textarea", hideInTable: true },
+  ],
+  parent: {
+    key: "transporterId",
+    column: "transporter_id",
+    label: "Transporter",
+    table: "transporter",
+    labelColumn: "name",
+  },
+  links: [
+    {
+      key: "vehicleTypeId",
+      column: "vehicle_type_id",
+      label: "Type",
+      table: "vehicle_type",
+      labelColumn: "name",
+      required: true,
+      filterable: true,
+    },
+  ],
+  scope: {
+    key: "warehouseIds",
+    label: "Warehouse",
+    table: "warehouse",
+    labelColumn: "name",
+    codeColumn: "code",
+    // Two hops: vehicle → its transporter → the sites that transporter
+    // serves. `localColumn` is the foreign key rather than `id`.
+    via: {
+      table: "warehouse_transporter",
+      linkColumn: "transporter_id",
+      localColumn: "transporter_id",
+      scopeColumn: "warehouse_id",
+    },
+    pickedByPivot: true,
+  },
+  statusColumn: { column: "status", activeValue: "ACTIVE", inactiveValue: "SUSPENDED" },
+  softDeleteOnly: true,
+  dependents: [],
+  conflict: "A vehicle with that registration number already exists",
+  orderBy: "registration_number",
+  createSchema: withActive({
+    transporterId: z.number().int().positive(),
+    vehicleTypeId: z.number().int().positive(),
+    registrationNumber: registration(),
+    model: optionalText(80),
+    fuelType: blankOptional(z.enum(FUEL_TYPES)),
+    capacityKg: optionalNumber(100_000),
+    capacityCbm: optionalNumber(500),
+    axleCount: optionalNumber(12),
+    lengthFt: optionalNumber(80),
+    widthFt: optionalNumber(20),
+    heightFt: optionalNumber(20),
+    chassisNumber: blankOptional(codeText(5, 25)),
+    engineNumber: blankOptional(codeText(5, 25)),
+    notes: blankOptional(prose(2, 1000)),
+  }),
+  updateSchema: withActive({
+    transporterId: z.number().int().positive().optional(),
+    vehicleTypeId: z.number().int().positive().optional(),
+    registrationNumber: registration().optional(),
+    model: optionalText(80),
+    fuelType: blankOptional(z.enum(FUEL_TYPES)),
+    capacityKg: optionalNumber(100_000),
+    capacityCbm: optionalNumber(500),
+    axleCount: optionalNumber(12),
+    lengthFt: optionalNumber(80),
+    widthFt: optionalNumber(20),
+    heightFt: optionalNumber(20),
+    chassisNumber: blankOptional(codeText(5, 25)),
+    engineNumber: blankOptional(codeText(5, 25)),
+    notes: blankOptional(prose(2, 1000)),
+  }),
+};
+
 // ── expense category ──────────────────────────────────────────────
 /**
  * A twin of `faqCategory`, and named `master.expense_category` for the
@@ -894,9 +1332,34 @@ export const MASTER_RESOURCES = Object.freeze({
   faqs: faq,
   "expense-categories": expenseCategory,
   expenses: expense,
+  transporters: transporter,
+  vehicles: vehicle,
 } as const);
 
 export type MasterSlug = keyof typeof MASTER_RESOURCES;
+
+/**
+ * How a given TABLE says it is active.
+ *
+ * The parent and link pickers filter on "active", and until now every
+ * table they pointed at had a boolean `is_active`. `transporter` does
+ * not — it carries the `record_status` enum — so a vehicle's transporter
+ * picker asked for a column that is not there and came back as a 500.
+ *
+ * Answered from the registry rather than from a second list: a table
+ * that is itself a resource already says which column holds the answer.
+ */
+export function activeColumnFor(table: string): { column: string; activeValue: string } | null {
+  for (const resource of Object.values(MASTER_RESOURCES)) {
+    if (resource.table === table && resource.statusColumn) {
+      return {
+        column: resource.statusColumn.column,
+        activeValue: resource.statusColumn.activeValue,
+      };
+    }
+  }
+  return null;
+}
 
 export function resolveResource(slug: string): MasterResource | null {
   return Object.prototype.hasOwnProperty.call(MASTER_RESOURCES, slug)

@@ -139,3 +139,32 @@ export function listHref(
   const s = params.toString();
   return s ? `${base}?${s}` : base;
 }
+
+/**
+ * "1 transporter", "3 transporters".
+ *
+ * The count line always said the plural, which reads as a typo at
+ * exactly the moment a list is easiest to read — one row. Singularising
+ * is not `label.slice(0, -1)`: "countries" and "FAQs" both break that
+ * way, and `singular` from the registry is the real answer when the
+ * caller has one.
+ */
+export function countLabel(total: number, plural: string, singular?: string): string {
+  if (total !== 1) return `${total} ${plural}`;
+  if (singular) return `1 ${singular}`;
+
+  /**
+   * The fallback, and it is deliberately dumb.
+   *
+   * English cannot be undone from the plural alone: "boxes" loses two
+   * letters and "expenses" loses one, and nothing in the word says
+   * which. A cleverer rule got "expenses" wrong. So: `-ies` → `-y`,
+   * which is unambiguous, otherwise drop a trailing `s`.
+   *
+   * Every master screen passes `singular` from the registry, so this
+   * only ever runs for a caller that did not — and a caller with an
+   * awkward noun should pass one rather than hope.
+   */
+  if (/ies$/i.test(plural)) return `1 ${plural.slice(0, -3)}y`;
+  return /s$/.test(plural) ? `1 ${plural.slice(0, -1)}` : `1 ${plural}`;
+}

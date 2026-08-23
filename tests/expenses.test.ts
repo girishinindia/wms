@@ -147,14 +147,39 @@ describe("the registry entry says what makes an expense different", () => {
     expect(e.attachments?.endpoint).toContain("{id}");
   });
 
-  it("leaves every other resource on the old path", async () => {
+  it("leaves the plain master tables on the old path", async () => {
+    const { MASTER_RESOURCES } = await import("@/lib/admin/master-registry");
+    /**
+     * Named rather than "everything except expenses", because
+     * transporters and vehicles later opted into `scope` and
+     * `softDeleteOnly` for reasons of their own. The invariant worth
+     * keeping is about THESE seven: a country that quietly grew a
+     * warehouse scope would vanish from everybody's screen.
+     */
+    for (const slug of [
+      "countries",
+      "states",
+      "cities",
+      "warehouse-types",
+      "vehicle-types",
+      "faq-categories",
+      "faqs",
+      "expense-categories",
+    ] as const) {
+      const r = MASTER_RESOURCES[slug];
+      expect(r.scope, slug).toBeUndefined();
+      expect(r.softDeleteOnly, slug).toBeUndefined();
+      expect(r.approval, slug).toBeUndefined();
+      expect(r.attachments, slug).toBeUndefined();
+      expect(r.statusColumn, slug).toBeUndefined();
+      expect(r.pivot, slug).toBeUndefined();
+    }
+  });
+
+  it("keeps approval and attachments to expenses alone", async () => {
     const { MASTER_RESOURCES } = await import("@/lib/admin/master-registry");
     for (const [slug, r] of Object.entries(MASTER_RESOURCES)) {
       if (slug === "expenses") continue;
-      // The four new capabilities are opt-in. A country that suddenly
-      // grew a warehouse scope would vanish from everybody's screen.
-      expect(r.scope, slug).toBeUndefined();
-      expect(r.softDeleteOnly, slug).toBeUndefined();
       expect(r.approval, slug).toBeUndefined();
       expect(r.attachments, slug).toBeUndefined();
     }
@@ -225,9 +250,15 @@ describe("approval", () => {
 describe("one branch cannot reach into another's books", () => {
   it("checks the scope on create, on update and on delete", () => {
     const source = code("src/app/api/v1/admin/master/[resource]/route.ts");
-    // Three calls: the body on create, the existing row on update (plus
-    // the row it is being moved to), and the existing row on delete.
-    expect((source.match(/outsideScope\(/g) ?? []).length).toBeGreaterThanOrEqual(5);
+    /**
+     * Two helpers, because there are two questions. `outsideScope` takes
+     * a warehouse id out of the REQUEST — a create, or a move.
+     * `outsideRowScope` asks where an existing ROW currently sits, which
+     * is the only way to ask it for a transporter: it has no warehouse
+     * column at all, only links.
+     */
+    expect((source.match(/outsideScope\(/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect((source.match(/outsideRowScope\(/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 
   it("measures against the caller's own assignments, never the request", () => {

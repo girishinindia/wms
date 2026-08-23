@@ -16,7 +16,7 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { ChevronIcon } from "@/components/icons";
-import { DEFAULT_PAGE_SIZE, listHref, PAGE_SIZES, type ListState } from "@/lib/admin/listing";
+import { countLabel, DEFAULT_PAGE_SIZE, listHref, PAGE_SIZES, type ListState } from "@/lib/admin/listing";
 
 import { ListToolbar, Pager } from "./ListControls";
 import { Empty } from "./ui";
@@ -56,6 +56,8 @@ export type DataTableProps<T> = {
   base?: string;
   /** Plural noun: "countries". */
   label: string;
+  /** Singular, for the count line when there is exactly one row. */
+  singular?: string;
   /** Extra filter controls (server mode: rendered inside the GET form). */
   filters?: ReactNode;
   /** Right-hand toolbar slot — usually the Add button. */
@@ -87,6 +89,7 @@ export default function DataTable<T>({
   list,
   base,
   label,
+  singular,
   filters,
   action,
   bulk,
@@ -160,11 +163,12 @@ export default function DataTable<T>({
   return (
     <div>
       {serverMode ? (
-        <ListToolbar base={base!} list={list!} label={label} extraFilters={filters} action={action} />
+        <ListToolbar base={base!} list={list!} label={label} singular={singular} extraFilters={filters} action={action} />
       ) : (
         <ClientToolbar
           table={table}
           label={label}
+          singular={singular}
           value={globalFilter}
           onChange={setGlobalFilter}
           action={action}
@@ -390,12 +394,14 @@ const inputClass =
 function ClientToolbar<T>({
   table,
   label,
+  singular,
   value,
   onChange,
   action,
 }: {
   table: Table<T>;
   label: string;
+  singular?: string;
   value: string;
   onChange: (v: string) => void;
   action?: ReactNode;
@@ -416,7 +422,7 @@ function ClientToolbar<T>({
      */
     <div className="border-b border-verdigris-300/10 px-5 py-4">
       <h2 className="text-sm font-semibold text-verdigris-50">
-        {total} {label}
+        {countLabel(total, label, singular)}
         {total !== all ? (
           <span className="ml-2 font-normal text-verdigris-200/45">of {all}</span>
         ) : null}

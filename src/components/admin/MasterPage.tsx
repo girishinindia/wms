@@ -13,7 +13,7 @@ import {
   parseListQuery,
   type RawSearchParams,
 } from "@/lib/admin/listing";
-import { pluralise, resolveResource } from "@/lib/admin/master-registry";
+import { activeColumnFor, pluralise, resolveResource, type MasterResource } from "@/lib/admin/master-registry";
 import { grantFor, pageGuard } from "@/lib/auth/guard";
 import { actorWarehouseIds } from "@/lib/users/authority";
 
@@ -34,6 +34,43 @@ function identifier(value: string): SQL {
     throw new Error(`Refusing to use '${value}' as an identifier`);
   }
   return sql.raw(value);
+}
+
+/**
+ * "Is this row live?", whichever column holds the answer.
+ *
+ * Most tables carry a boolean `is_active`. `transporter` and `vehicle`
+ * carry the `record_status` enum instead, and adding a boolean beside it
+ * would be two columns that can disagree about whether a lorry is on the
+ * road. One expression, used by the filter, the sort and the row.
+ */
+function activeExpr(resource: MasterResource): SQL {
+  return resource.statusColumn
+    ? sql`(m.${identifier(resource.statusColumn.column)} = ${resource.statusColumn.activeValue})`
+    : sql`m.is_active`;
+}
+
+/**
+ * The rows this caller may see, when the resource is scoped.
+ *
+ * Direct (`scope.column`) is an expense's own `warehouse_id`. `via` is
+ * a carrier, which has none: it serves several sites through
+ * `warehouse_transporter`, so membership is an EXISTS. A vehicle is one
+ * hop further and reaches the join table through its transporter, which
+ * is the only difference between the two — `localColumn`.
+ */
+function scopeCondition(resource: MasterResource, sites: SQL): SQL | null {
+  const scope = resource.scope;
+  if (!scope) return null;
+  if (scope.via) {
+    return sql`exists (
+      select 1 from wms.${identifier(scope.via.table)} j
+       where j.${identifier(scope.via.linkColumn)} = m.${identifier(scope.via.localColumn)}
+         and j.${identifier(scope.via.scopeColumn)} in (${sites})
+         and j.deleted_at is null
+    )`;
+  }
+  return scope.column ? sql`m.${identifier(scope.column)} in (${sites})` : null;
 }
 
 const selectClass =
@@ -60,8 +97,9 @@ export default async function MasterPage({
    */
   const sortable = [
     ...(resource.parent ? ["parent"] : []),
-    ...(resource.scope ? ["scope"] : []),
+    ...(resource.scope && !resource.scope.pickedByPivot ? ["scope"] : []),
     ...(resource.approval ? ["approval"] : []),
+    ...(resource.links ?? []).map((l) => l.key),
     // A `hideInTable` field has no header to click, and sorting a list
     // by the text of a paragraph is not something anybody wants.
     ...resource.fields.filter((f) => !f.hideInTable).map((f) => f.key),
@@ -92,19 +130,22 @@ export default async function MasterPage({
       ...(resource.parent ? ["parent"] : []),
       ...(resource.scope ? ["scope"] : []),
       ...(resource.approval ? ["approval"] : []),
+      ...(resource.links ?? []).filter((l) => l.filterable).map((l) => l.key),
       "inuse",
       ...selectFilters.map((f) => f.key),
     ],
   });
 
   const orderColumn = (() => {
-    if (query.sort === "status") return sql`m.is_active`;
+    if (query.sort === "status") return activeExpr(resource);
     if (query.sort === "parent" && resource.parent) {
       return sql`p.${identifier(resource.parent.labelColumn)}`;
     }
-    if (query.sort === "scope" && resource.scope) {
+    if (query.sort === "scope" && resource.scope?.column) {
       return sql`s.${identifier(resource.scope.labelColumn)}`;
     }
+    const link = (resource.links ?? []).find((l) => l.key === query.sort);
+    if (link) return sql`l_${sql.raw(link.key.replace(/[^a-z0-9]/gi, "").toLowerCase())}.${identifier(link.labelColumn)}`;
     if (query.sort === "approval" && resource.approval) {
       return sql`m.${identifier(resource.approval.column)}`;
     }
@@ -135,13 +176,16 @@ export default async function MasterPage({
         : sql`m.${identifier(f.column)}::text`,
     ),
     ...(resource.parent ? [sql`p.${identifier(resource.parent.labelColumn)}::text`] : []),
-    ...(resource.scope ? [sql`s.${identifier(resource.scope.labelColumn)}::text`] : []),
+    ...(resource.scope?.column ? [sql`s.${identifier(resource.scope.labelColumn)}::text`] : []),
+    ...(resource.links ?? []).map(
+      (l) => sql`${sql.raw(`l_${l.key.replace(/[^a-z0-9]/gi, "").toLowerCase()}`)}.${identifier(l.labelColumn)}::text`,
+    ),
   ];
 
   const parentFilter = Number.parseInt(query.extra.parent ?? "", 10);
   const conditions: SQL[] = [sql`m.deleted_at is null`];
-  if (query.status === "active") conditions.push(sql`m.is_active`);
-  if (query.status === "inactive") conditions.push(sql`not m.is_active`);
+  if (query.status === "active") conditions.push(activeExpr(resource));
+  if (query.status === "inactive") conditions.push(sql`not ${activeExpr(resource)}`);
   if (resource.parent && Number.isFinite(parentFilter)) {
     conditions.push(sql`m.${identifier(resource.parent.column)} = ${parentFilter}`);
   }
@@ -152,19 +196,28 @@ export default async function MasterPage({
    * scoped reader with no assignments must see NOTHING, and a missing
    * clause would have shown them everything.
    */
+  const siteList = (ids: number[]) =>
+    ids.length > 0
+      ? sql.join(
+          ids.map((id) => sql`${id}`),
+          sql`, `,
+        )
+      : sql`null`;
+
   if (resource.scope && !wideRead) {
-    const sites =
-      mySites.length > 0
-        ? sql.join(
-            mySites.map((id) => sql`${id}`),
-            sql`, `,
-          )
-        : sql`null`;
-    conditions.push(sql`m.${identifier(resource.scope.column)} in (${sites})`);
+    const narrowed = scopeCondition(resource, siteList(mySites));
+    if (narrowed) conditions.push(narrowed);
   }
   const scopeFilter = Number.parseInt(query.extra.scope ?? "", 10);
   if (resource.scope && Number.isFinite(scopeFilter)) {
-    conditions.push(sql`m.${identifier(resource.scope.column)} = ${scopeFilter}`);
+    // The filter is one site out of the ones already allowed — never a
+    // way to widen what the clause above narrowed.
+    const one = scopeCondition(resource, sql`${scopeFilter}`);
+    if (one) conditions.push(one);
+  }
+  for (const l of resource.links ?? []) {
+    const v = Number.parseInt(query.extra[l.key] ?? "", 10);
+    if (Number.isFinite(v)) conditions.push(sql`m.${identifier(l.column)} = ${v}`);
   }
   if (resource.approval && query.extra.approval) {
     const wanted = query.extra.approval.toUpperCase();
@@ -198,9 +251,22 @@ export default async function MasterPage({
           : sql``
       }
       ${
-        resource.scope
+        resource.scope?.column
           ? sql`left join wms.${identifier(resource.scope.table)} s
                   on s.id = m.${identifier(resource.scope.column)}`
+          : sql``
+      }
+      ${
+        (resource.links ?? []).length
+          ? sql.join(
+              (resource.links ?? []).map(
+                (l) => sql`left join wms.${identifier(l.table)}
+                             ${sql.raw(`l_${l.key.replace(/[^a-z0-9]/gi, "").toLowerCase()}`)}
+                             on ${sql.raw(`l_${l.key.replace(/[^a-z0-9]/gi, "").toLowerCase()}`)}.id
+                                = m.${identifier(l.column)}`,
+              ),
+              sql` `,
+            )
           : sql``
       }
      where ${where}`;
@@ -226,7 +292,7 @@ export default async function MasterPage({
   const offset = (list.page - 1) * list.size;
 
   const rows = await getDb().execute<Record<string, unknown>>(sql`
-    select m.id, m.is_active, m.created_at, m.updated_at,
+    select m.id, ${activeExpr(resource)} as is_active, m.created_at, m.updated_at,
            ${sql.join(selected, sql`, `)},
            (${inUseTotal}) as in_use
            ${perDependent.length ? sql`, ${sql.join(perDependent, sql`, `)}` : sql``}
@@ -237,13 +303,47 @@ export default async function MasterPage({
                : sql``
            }
            ${
-             resource.scope
+             resource.scope?.column
                ? sql`, m.${identifier(resource.scope.column)} as scope_id,
                       ${
                         resource.scope.codeColumn
                           ? sql`(s.${identifier(resource.scope.codeColumn)} || ' · ' || s.${identifier(resource.scope.labelColumn)})`
                           : sql`s.${identifier(resource.scope.labelColumn)}`
                       } as scope_label`
+               : sql``
+           }
+           ${
+             (resource.links ?? []).length
+               ? sql`, ${sql.join(
+                   (resource.links ?? []).map((l) => {
+                     const a = sql.raw(`l_${l.key.replace(/[^a-z0-9]/gi, "").toLowerCase()}`);
+                     return sql`m.${identifier(l.column)} as ${identifier(`${l.column}_id`)},
+                                ${a}.${identifier(l.labelColumn)}::text as ${identifier(`${l.column}_label`)}`;
+                   }),
+                   sql`, `,
+                 )}`
+               : sql``
+           }
+           ${
+             resource.pivot
+               ? sql`, array(
+                       select j.${identifier(resource.pivot.optionColumn)}
+                         from wms.${identifier(resource.pivot.table)} j
+                        where j.${identifier(resource.pivot.localColumn)} = m.id
+                          and j.deleted_at is null
+                        order by 1
+                     ) as pivot_ids,
+                     (select string_agg(
+                               ${
+                                 resource.pivot.optionCodeColumn
+                                   ? sql`o.${identifier(resource.pivot.optionCodeColumn)}`
+                                   : sql`o.${identifier(resource.pivot.optionLabelColumn)}`
+                               }, ', ' order by 1)
+                        from wms.${identifier(resource.pivot.table)} j
+                        join wms.${identifier(resource.pivot.optionTable)} o
+                          on o.id = j.${identifier(resource.pivot.optionColumn)}
+                       where j.${identifier(resource.pivot.localColumn)} = m.id
+                         and j.deleted_at is null) as pivot_label`
                : sql``
            }
            ${
@@ -282,7 +382,16 @@ export default async function MasterPage({
                         on g.id = o.${identifier(resource.parent.groupBy.column)}`
                 : sql``
             }
-           where o.is_active and o.deleted_at is null
+           where ${
+             (() => {
+               // A picker's table may say "active" with a status enum
+               // rather than a boolean — see `activeColumnFor`.
+               const a = activeColumnFor(resource.parent!.table);
+               return a
+                 ? sql`o.${identifier(a.column)} = ${a.activeValue}`
+                 : sql`o.is_active`;
+             })()
+           } and o.deleted_at is null
            order by ${resource.parent.groupBy ? sql`g.${identifier(resource.parent.groupBy.labelColumn)}, ` : sql``}
                     o.${identifier(resource.parent.labelColumn)}
         `)
@@ -301,16 +410,16 @@ export default async function MasterPage({
    * produces a 403 — the route checks this again against their own
    * assignments, so this is about not lying to them, not about safety.
    */
-  const scopeOptions: ParentOption[] = resource.scope
+  const scopeOptions: ParentOption[] = resource.scope?.column
     ? (
         await getDb().execute<{ id: number; label: string }>(sql`
           select o.id,
                  ${
-                   resource.scope.codeColumn
-                     ? sql`(o.${identifier(resource.scope.codeColumn)} || ' · ' || o.${identifier(resource.scope.labelColumn)})`
-                     : sql`o.${identifier(resource.scope.labelColumn)}`
+                   resource.scope!.codeColumn
+                     ? sql`(o.${identifier(resource.scope!.codeColumn!)} || ' · ' || o.${identifier(resource.scope!.labelColumn)})`
+                     : sql`o.${identifier(resource.scope!.labelColumn)}`
                  }::text as label
-            from wms.${identifier(resource.scope.table)} o
+            from wms.${identifier(resource.scope!.table)} o
            where o.is_active and o.deleted_at is null
              and (${wideRead} or o.id in (${
                mySites.length > 0
@@ -320,6 +429,51 @@ export default async function MasterPage({
                    )
                  : sql`null`
              }))
+           order by 2
+           limit 300
+        `)
+      ).map((r) => ({ id: Number(r.id), label: r.label }))
+    : [];
+
+  /** The extra FK pickers — a vehicle's type. Sequential, never
+   *  Promise.all: see src/db/index.ts on pipelining. */
+  const linkOptions: Record<string, ParentOption[]> = {};
+  for (const l of resource.links ?? []) {
+    const opts = await getDb().execute<{ id: number; label: string }>(sql`
+      select o.id, o.${identifier(l.labelColumn)}::text as label
+        from wms.${identifier(l.table)} o
+       where o.deleted_at is null
+         and ${
+           (() => {
+             const a = activeColumnFor(l.table);
+             return a ? sql`o.${identifier(a.column)} = ${a.activeValue}` : sql`o.is_active`;
+           })()
+         }
+       order by 2
+       limit 500
+    `);
+    linkOptions[l.key] = opts.map((o) => ({ id: Number(o.id), label: o.label }));
+  }
+
+  /**
+   * The "Serves" options, narrowed the same way the list is.
+   *
+   * Offering a site the caller cannot write to would be a tick that
+   * produces a 403 — and worse, a scoped user could link a carrier to a
+   * branch they have nothing to do with. The route re-checks it.
+   */
+  const pivotOptions: ParentOption[] = resource.pivot
+    ? (
+        await getDb().execute<{ id: number; label: string }>(sql`
+          select o.id,
+                 ${
+                   resource.pivot.optionCodeColumn
+                     ? sql`(o.${identifier(resource.pivot.optionCodeColumn)} || ' · ' || o.${identifier(resource.pivot.optionLabelColumn)})`
+                     : sql`o.${identifier(resource.pivot.optionLabelColumn)}`
+                 }::text as label
+            from wms.${identifier(resource.pivot.optionTable)} o
+           where o.is_active and o.deleted_at is null
+             and (${!resource.pivot.scopedByActor || wideRead} or o.id in (${siteList(mySites)}))
            order by 2
            limit 300
         `)
@@ -338,6 +492,14 @@ export default async function MasterPage({
     parentLabel: (r.parent_label as string | null) ?? null,
     scopeId: r.scope_id === undefined ? null : Number(r.scope_id),
     scopeLabel: (r.scope_label as string | null) ?? null,
+    linkIds: Object.fromEntries(
+      (resource.links ?? []).map((l) => [l.key, r[`${l.column}_id`] === null || r[`${l.column}_id`] === undefined ? null : Number(r[`${l.column}_id`])]),
+    ),
+    linkLabels: Object.fromEntries(
+      (resource.links ?? []).map((l) => [l.key, (r[`${l.column}_label`] as string | null) ?? null]),
+    ),
+    pivotIds: Array.isArray(r.pivot_ids) ? (r.pivot_ids as unknown[]).map(Number) : [],
+    pivotLabel: (r.pivot_label as string | null) ?? null,
     approvalStatus: (r.approval_status as string | null) ?? null,
     approvalNote: (r.approval_note as string | null) ?? null,
     approvedBy: (r.approved_by_name as string | null) ?? null,
@@ -355,7 +517,9 @@ export default async function MasterPage({
             ? null
             : f.type === "number" || f.type === "money"
               ? Number(raw)
-              : String(raw).trim();
+              : f.type === "boolean"
+                ? (raw === true || raw === "true" ? "true" : "false")
+                : String(raw).trim();
         return [f.key, value];
       }),
     ),
@@ -372,11 +536,33 @@ export default async function MasterPage({
           label: resource.parent.label,
           options: parentOptions,
           groupLabel: resource.parent.groupBy?.label,
+          optional: resource.parent.optional === true,
         }
       : null,
     listNoun: resource.listNoun,
-    scope: resource.scope
-      ? { key: resource.scope.key, label: resource.scope.label, options: scopeOptions }
+    // A scope chosen through the pivot has no picker of its own; the
+    // "Serves" list IS the choice.
+    scope:
+      resource.scope && !resource.scope.pickedByPivot
+        ? { key: resource.scope.key, label: resource.scope.label, options: scopeOptions }
+        : null,
+    links: (resource.links ?? []).map((l) => ({
+      key: l.key,
+      label: l.label,
+      required: l.required === true,
+      options: linkOptions[l.key] ?? [],
+    })),
+    pivot: resource.pivot
+      ? {
+          key: resource.pivot.key,
+          label: resource.pivot.label,
+          hint: resource.pivot.hint,
+          options: pivotOptions,
+          // A caller who cannot see every site must attach the row to at
+          // least one of theirs, or they would create a record that
+          // vanishes from their own list the moment it is saved.
+          required: resource.pivot.scopedByActor === true && !wideRead,
+        }
       : null,
     approval: resource.approval
       ? {
@@ -430,7 +616,7 @@ export default async function MasterPage({
               ))}
         </select>
       ) : null}
-      {resource.scope && scopeOptions.length > 1 ? (
+      {resource.scope && (resource.pivot ? pivotOptions : scopeOptions).length > 1 ? (
         <select
           name="scope"
           defaultValue={query.extra.scope ?? ""}
@@ -440,13 +626,33 @@ export default async function MasterPage({
           <option value="" className="bg-ink-850">
             All {pluralise(resource.scope.label.toLowerCase())}
           </option>
-          {scopeOptions.map((o) => (
+          {(resource.pivot ? pivotOptions : scopeOptions).map((o) => (
             <option key={o.id} value={o.id} className="bg-ink-850">
               {o.label}
             </option>
           ))}
         </select>
       ) : null}
+      {(resource.links ?? [])
+        .filter((l) => l.filterable && (linkOptions[l.key] ?? []).length > 1)
+        .map((l) => (
+          <select
+            key={l.key}
+            name={l.key}
+            defaultValue={query.extra[l.key] ?? ""}
+            aria-label={l.label}
+            className={selectClass}
+          >
+            <option value="" className="bg-ink-850">
+              All {pluralise(l.label.toLowerCase())}
+            </option>
+            {(linkOptions[l.key] ?? []).map((o) => (
+              <option key={o.id} value={o.id} className="bg-ink-850">
+                {o.label}
+              </option>
+            ))}
+          </select>
+        ))}
       {resource.approval ? (
         <select
           name="approval"

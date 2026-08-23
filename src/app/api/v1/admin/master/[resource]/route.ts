@@ -8,7 +8,7 @@ import { grantFor, requirePermission, type Actor } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { deleteOne, dependentCounts, dropPublicCache, identifier } from "@/lib/admin/master-ops";
 import { invalidateGeo } from "@/lib/admin/geo";
-import { resolveResource, type MasterResource } from "@/lib/admin/master-registry";
+import { activeColumnFor, resolveResource, type MasterResource } from "@/lib/admin/master-registry";
 import { announceSubmitted } from "@/lib/expenses/ops";
 import { actorWarehouseIds } from "@/lib/users/authority";
 import { constraintNameOf, isCheckViolation, isUniqueViolation } from "@/lib/db-errors";
@@ -66,10 +66,17 @@ export async function POST(
 
       // A row under a parent that is switched off would be invisible the
       // moment it was created. Checked here so it reads as a field error.
-      if (resource.parent) {
+      if (resource.parent && input[resource.parent.key] !== undefined) {
         const parentId = input[resource.parent.key];
+        const parentActive = activeColumnFor(resource.parent.table);
         const parentRow = await getDb().execute<{ id: number; is_active: boolean }>(sql`
-          select id, is_active from wms.${identifier(resource.parent.table)}
+          select id,
+                 ${
+                   parentActive
+                     ? sql`(${identifier(parentActive.column)} = ${parentActive.activeValue})`
+                     : sql`is_active`
+                 } as is_active
+            from wms.${identifier(resource.parent.table)}
            where id = ${parentId} and deleted_at is null
         `);
         if (parentRow.length === 0 || !parentRow[0]!.is_active) {
@@ -79,8 +86,18 @@ export async function POST(
         }
       }
 
-      // The site has to be one of the caller's before a row exists for it.
-      if (resource.scope) {
+      /**
+       * The site has to be one of the caller's before a row exists for it.
+       *
+       * Three shapes, because three tables link to a warehouse three
+       * different ways:
+       *
+       *   direct   the row carries `warehouse_id` — an expense
+       *   pivot    the row is linked to a SET of sites — a transporter
+       *   via      the row inherits its sites from its parent — a
+       *            vehicle, through the transporter that owns it
+       */
+      if (resource.scope?.column) {
         const refusal = outsideScope(resource, actor, input[resource.scope.key]);
         if (refusal) {
           return fail("FORBIDDEN", refusal, requestId, {
@@ -98,16 +115,72 @@ export async function POST(
         }
       }
 
+      const pivotWanted = resource.pivot
+        ? ((input[resource.pivot.key] as number[] | undefined) ?? [])
+        : [];
+
+      if (resource.pivot && !wideScope(resource, actor)) {
+        const mine = actorWarehouseIds(actor);
+        // Without at least one of their own sites, a scoped caller would
+        // save a row that vanishes from their own list on the next load.
+        if (pivotWanted.length === 0) {
+          return fail("VALIDATION_FAILED", `Choose at least one ${resource.scope?.label.toLowerCase() ?? "site"}`, requestId, {
+            fields: { [resource.pivot.key]: "Pick at least one" },
+          });
+        }
+        if (pivotWanted.some((id) => !mine.includes(id))) {
+          return fail("FORBIDDEN", "You can only link this to a warehouse you are assigned to", requestId, {
+            fields: { [resource.pivot.key]: "Not one of yours" },
+          });
+        }
+      }
+
+      // A vehicle's sites are its transporter's. Checked against the
+      // parent rather than the body, because the body never names one.
+      if (resource.scope?.via && !resource.pivot && resource.parent) {
+        const parentId = Number(input[resource.parent.key]);
+        const mine = actorWarehouseIds(actor);
+        if (!wideScope(resource, actor)) {
+          const rows = await getDb().execute<{ site: number }>(sql`
+            select j.${identifier(resource.scope.via.scopeColumn)} as site
+              from wms.${identifier(resource.scope.via.table)} j
+             where j.${identifier(resource.scope.via.linkColumn)} = ${parentId}
+               and j.deleted_at is null
+          `);
+          if (!rows.some((r) => mine.includes(Number(r.site)))) {
+            return fail(
+              "FORBIDDEN",
+              `That ${resource.parent.label.toLowerCase()} does not serve a warehouse you are assigned to`,
+              requestId,
+              { fields: { [resource.parent.key]: "Not one of yours" } },
+            );
+          }
+        }
+      }
+
       const columns: SQL[] = [];
       const values: SQL[] = [];
 
-      if (resource.parent) {
+      if (resource.parent && input[resource.parent.key] !== undefined) {
         columns.push(identifier(resource.parent.column));
         values.push(sql`${input[resource.parent.key]}`);
       }
-      if (resource.scope) {
+      if (resource.scope?.column) {
         columns.push(identifier(resource.scope.column));
         values.push(sql`${input[resource.scope.key]}`);
+      }
+      for (const l of resource.links ?? []) {
+        if (input[l.key] === undefined) continue;
+        columns.push(identifier(l.column));
+        values.push(sql`${input[l.key]}`);
+      }
+      if (resource.statusColumn && input.isActive !== undefined) {
+        // The Active switch, onto the column that already holds the
+        // answer. `is_active` is not a column on these tables.
+        columns.push(identifier(resource.statusColumn.column));
+        values.push(
+          sql`${input.isActive === false ? resource.statusColumn.inactiveValue : resource.statusColumn.activeValue}`,
+        );
       }
 
       /**
@@ -161,6 +234,10 @@ export async function POST(
         userAgent: request.headers.get("user-agent"),
         requestId,
       });
+
+      if (resource.pivot && rows[0]?.id) {
+        await writePivot(resource, actor, Number(rows[0].id), pivotWanted);
+      }
 
       // Somebody has to be told it is waiting. Nobody has to be told
       // about an entry that was approved as it was typed.
@@ -229,9 +306,14 @@ export async function PATCH(
        * version of editing it in place.
        */
       if (resource.scope) {
-        const here = outsideScope(resource, actor, before[0]![resource.scope.column]);
+        // Where the row is NOW, whichever way it is linked.
+        const here = await outsideRowScope(resource, actor, id);
         if (here) return fail("FORBIDDEN", here, requestId);
-        if (input[resource.scope.key] !== undefined) {
+
+        // And where it is being moved to, when the scope is a column on
+        // the row. Checking only the incoming site would let one branch
+        // pull another's record across into its own books.
+        if (resource.scope.column && input[resource.scope.key] !== undefined) {
           const there = outsideScope(resource, actor, input[resource.scope.key]);
           if (there) {
             return fail("FORBIDDEN", there, requestId, {
@@ -241,13 +323,49 @@ export async function PATCH(
         }
       }
 
+      const pivotWanted =
+        resource.pivot && input[resource.pivot.key] !== undefined
+          ? ((input[resource.pivot.key] as number[] | undefined) ?? [])
+          : null;
+
+      /**
+       * On an edit, only what is being ADDED is checked.
+       *
+       * The drawer submits the whole set, and a scoped caller's set
+       * necessarily includes links to branches they cannot see — those
+       * ids came back on the row and are simply carried through. The
+       * first cut refused them, which meant a site-2 manager could never
+       * unhook a shared carrier from site 2: their own submission was
+       * rejected for containing sites 1 and 5.
+       *
+       * `writePivot` is what keeps the other branches safe: it deletes
+       * only links to sites the caller holds, so a carry-through id is
+       * untouched either way.
+       */
+      if (resource.pivot && pivotWanted !== null && !wideScope(resource, actor)) {
+        const mine = actorWarehouseIds(actor);
+        const existing = await sitesOfRow(resource, id);
+        const added = pivotWanted.filter((wid) => !existing.includes(wid));
+        if (added.some((wid) => !mine.includes(wid))) {
+          return fail("FORBIDDEN", "You can only link this to a warehouse you are assigned to", requestId, {
+            fields: { [resource.pivot.key]: "Not one of yours" },
+          });
+        }
+        // No "at least one" here, unlike create: unhooking a carrier
+        // from your own branch is a real thing to want, and the row
+        // leaving your list afterwards is the point of doing it.
+      }
+
       /**
        * Switching a row off is the one change with consequences beyond
        * the row, so it is the one that gets counted first. Everything
        * pointing at it keeps working; what breaks is every picker that
        * filters on `is_active`, and nobody connects the two later.
        */
-      if (input.isActive === false && before[0]!.is_active === true) {
+      const wasActive = resource.statusColumn
+        ? before[0]![resource.statusColumn.column] === resource.statusColumn.activeValue
+        : before[0]!.is_active === true;
+      if (input.isActive === false && wasActive) {
         const counts = await getDb().execute<Record<string, number>>(sql`
           select ${sql.join(
             dependentCounts(resource, sql`${id}`).map((c, i) => sql`${c}::int as c${sql.raw(String(i))}`),
@@ -277,8 +395,15 @@ export async function PATCH(
       // Moving a row to another parent (a city to another state). Same
       // active-parent rule as create.
       if (resource.parent && input[resource.parent.key] !== undefined) {
+        const parentActive = activeColumnFor(resource.parent.table);
         const parentRow = await getDb().execute<{ id: number; is_active: boolean }>(sql`
-          select id, is_active from wms.${identifier(resource.parent.table)}
+          select id,
+                 ${
+                   parentActive
+                     ? sql`(${identifier(parentActive.column)} = ${parentActive.activeValue})`
+                     : sql`is_active`
+                 } as is_active
+            from wms.${identifier(resource.parent.table)}
            where id = ${input[resource.parent.key]} and deleted_at is null
         `);
         if (parentRow.length === 0 || !parentRow[0]!.is_active) {
@@ -288,8 +413,12 @@ export async function PATCH(
         }
         sets.push(sql`${identifier(resource.parent.column)} = ${input[resource.parent.key]}`);
       }
-      if (resource.scope && input[resource.scope.key] !== undefined) {
+      if (resource.scope?.column && input[resource.scope.key] !== undefined) {
         sets.push(sql`${identifier(resource.scope.column)} = ${input[resource.scope.key]}`);
+      }
+      for (const l of resource.links ?? []) {
+        if (input[l.key] === undefined) continue;
+        sets.push(sql`${identifier(l.column)} = ${input[l.key]}`);
       }
 
       /**
@@ -313,18 +442,38 @@ export async function PATCH(
       }
 
       if (input.isActive !== undefined) {
-        sets.push(sql`${identifier("is_active")} = ${input.isActive}`);
+        sets.push(
+          resource.statusColumn
+            ? sql`${identifier(resource.statusColumn.column)} = ${
+                input.isActive === false
+                  ? resource.statusColumn.inactiveValue
+                  : resource.statusColumn.activeValue
+              }`
+            : sql`${identifier("is_active")} = ${input.isActive}`,
+        );
       }
-      if (sets.length === 0) return fail("VALIDATION_FAILED", "Nothing to change", requestId);
+      /**
+       * Changing only the links IS a change.
+       *
+       * `sets` counts column updates, and a caller who ticked a site and
+       * touched nothing else produces none — so unhooking a carrier from
+       * a branch came back "Nothing to change" while the links sat
+       * exactly where they were.
+       */
+      if (sets.length === 0 && pivotWanted === null) {
+        return fail("VALIDATION_FAILED", "Nothing to change", requestId);
+      }
       sets.push(sql`${identifier("updated_by")} = ${actor.session.userId}`);
 
-      const rows = await getDb().execute<{ id: number }>(sql`
-        update wms.${identifier(resource.table)}
-           set ${sql.join(sets, sql`, `)}
-         where id = ${id} and deleted_at is null
-        returning id
-      `);
-      if (rows.length === 0) return fail("NOT_FOUND", `No such ${resource.singular}`, requestId);
+      if (sets.length > 0) {
+        const rows = await getDb().execute<{ id: number }>(sql`
+          update wms.${identifier(resource.table)}
+             set ${sql.join(sets, sql`, `)}
+           where id = ${id} and deleted_at is null
+          returning id
+        `);
+        if (rows.length === 0) return fail("NOT_FOUND", `No such ${resource.singular}`, requestId);
+      }
 
       /**
        * Both sides of the diff in the same key space.
@@ -349,7 +498,7 @@ export async function PATCH(
               ? Number(raw)
               : String(raw).trim();
       }
-      if (input.isActive !== undefined) touched.isActive = before[0]!.is_active;
+      if (input.isActive !== undefined) touched.isActive = wasActive;
       if (resource.parent && input[resource.parent.key] !== undefined) {
         touched[resource.parent.key] = before[0]![resource.parent.column] ?? null;
       }
@@ -369,6 +518,10 @@ export async function PATCH(
         userAgent: request.headers.get("user-agent"),
         requestId,
       });
+
+      if (resource.pivot && pivotWanted !== null) {
+        await writePivot(resource, actor, id, pivotWanted);
+      }
 
       if (resubmit) {
         await announceSubmitted(id, actor, {
@@ -408,13 +561,7 @@ export async function DELETE(
       }
 
       if (resource.scope) {
-        const row = await getDb().execute<Record<string, unknown>>(sql`
-          select ${identifier(resource.scope.column)} as site
-            from wms.${identifier(resource.table)}
-           where id = ${id} and deleted_at is null
-        `);
-        if (row.length === 0) return fail("NOT_FOUND", `No such ${resource.singular}`, requestId);
-        const refusal = outsideScope(resource, actor, row[0]!.site);
+        const refusal = await outsideRowScope(resource, actor, id);
         if (refusal) return fail("FORBIDDEN", refusal, requestId);
       }
 
@@ -457,15 +604,135 @@ function outsideScope(
   warehouseId: unknown,
 ): string | null {
   if (!resource.scope) return null;
-  const grant = grantFor(actor, `${resource.permission}.create`);
-  const readGrant = grantFor(actor, `${resource.permission}.update`);
-  if (grant?.scope === "ALL" || readGrant?.scope === "ALL") return null;
+  if (wideScope(resource, actor)) return null;
 
   const id = Number(warehouseId);
   if (!Number.isInteger(id)) return `Choose a ${resource.scope.label.toLowerCase()}`;
   return actorWarehouseIds(actor).includes(id)
     ? null
     : `You can only do this for a ${resource.scope.label.toLowerCase()} you are assigned to`;
+}
+
+/** Does this caller hold the resource platform-wide? */
+function wideScope(resource: MasterResource, actor: Actor): boolean {
+  return (
+    grantFor(actor, `${resource.permission}.create`)?.scope === "ALL" ||
+    grantFor(actor, `${resource.permission}.update`)?.scope === "ALL"
+  );
+}
+
+/**
+ * Which sites a row currently belongs to.
+ *
+ * Direct is the column on the row. `via` is the join table: a carrier's
+ * own links, or — one hop further — the links of the transporter a
+ * vehicle belongs to. Returns an empty array for a row attached to
+ * nothing, which is a real state and is deliberately NOT treated as
+ * "belongs to everyone".
+ */
+async function sitesOfRow(resource: MasterResource, rowId: number): Promise<number[]> {
+  const scope = resource.scope;
+  if (!scope) return [];
+  if (scope.via) {
+    const rows = await getDb().execute<{ site: number }>(sql`
+      select j.${identifier(scope.via.scopeColumn)} as site
+        from wms.${identifier(resource.table)} m
+        join wms.${identifier(scope.via.table)} j
+          on j.${identifier(scope.via.linkColumn)} = m.${identifier(scope.via.localColumn)}
+       where m.id = ${rowId} and m.deleted_at is null and j.deleted_at is null
+    `);
+    return rows.map((r) => Number(r.site));
+  }
+  if (!scope.column) return [];
+  const rows = await getDb().execute<{ site: number | null }>(sql`
+    select ${identifier(scope.column)} as site from wms.${identifier(resource.table)}
+     where id = ${rowId} and deleted_at is null
+  `);
+  const site = rows[0]?.site;
+  return site === null || site === undefined ? [] : [Number(site)];
+}
+
+/**
+ * May this caller act on an existing row?
+ *
+ * The question the grant cannot answer: a WAREHOUSE-scoped grant with no
+ * warehouse named on the request is let through by `requirePermission`,
+ * and here the warehouse is a property of the ROW.
+ */
+async function outsideRowScope(
+  resource: MasterResource,
+  actor: Actor,
+  rowId: number,
+): Promise<string | null> {
+  if (!resource.scope) return null;
+  if (wideScope(resource, actor)) return null;
+  const mine = actorWarehouseIds(actor);
+  const sites = await sitesOfRow(resource, rowId);
+  return sites.some((id) => mine.includes(id))
+    ? null
+    : `That ${resource.singular} is not linked to a ${resource.scope.label.toLowerCase()} you are assigned to`;
+}
+
+/**
+ * Replace the many-to-many for one row.
+ *
+ * Written as delete-then-insert inside one statement pair rather than a
+ * diff: the set is small, the table is a plain link with no history of
+ * its own, and a diff would need three round trips to say the same
+ * thing. A scoped caller may only ever remove links to THEIR sites —
+ * otherwise saving a carrier from one branch would silently unhook it
+ * from another's.
+ */
+async function writePivot(
+  resource: MasterResource,
+  actor: Actor,
+  rowId: number,
+  wanted: number[],
+): Promise<void> {
+  const pivot = resource.pivot;
+  if (!pivot) return;
+  const wide = wideScope(resource, actor);
+  const mine = actorWarehouseIds(actor);
+  const allowed = wide ? wanted : wanted.filter((id) => mine.includes(id));
+
+  const removable = wide
+    ? sql`true`
+    : mine.length > 0
+      ? sql`j.${identifier(pivot.optionColumn)} in (${sql.join(
+          mine.map((id) => sql`${id}`),
+          sql`, `,
+        )})`
+      : sql`false`;
+
+  await getDb().execute(sql`
+    delete from wms.${identifier(pivot.table)} j
+     where j.${identifier(pivot.localColumn)} = ${rowId}
+       and ${removable}
+       ${
+         allowed.length > 0
+           ? sql`and j.${identifier(pivot.optionColumn)} not in (${sql.join(
+               allowed.map((id) => sql`${id}`),
+               sql`, `,
+             )})`
+           : sql``
+       }
+  `);
+
+  if (allowed.length === 0) return;
+  await getDb().execute(sql`
+    insert into wms.${identifier(pivot.table)}
+      (${identifier(pivot.localColumn)}, ${identifier(pivot.optionColumn)})
+    select ${rowId}, v.id
+      from (values ${sql.join(
+        allowed.map((id) => sql`(${id}::bigint)`),
+        sql`, `,
+      )}) as v(id)
+     where not exists (
+       select 1 from wms.${identifier(pivot.table)} x
+        where x.${identifier(pivot.localColumn)} = ${rowId}
+          and x.${identifier(pivot.optionColumn)} = v.id
+     )
+  `);
 }
 
 /**

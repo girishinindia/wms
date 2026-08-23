@@ -190,6 +190,36 @@ export const WAREHOUSE_ITEMS: AdminNavItem[] = [
   },
 ];
 
+/**
+ * "Transporters & Vehicles". The carriers, and their lorries.
+ *
+ * Keyed on `.create`, and the reason is the same trap the master
+ * entries fell into one table over: `transporter.read` and
+ * `vehicle.read` were granted to IMPORTER and SALES_AGENT at ALL scope
+ * by the seed, so an entry keyed on read would have put the carrier
+ * register — contact mobiles, GSTIN, PAN — in every customer's sidebar.
+ * (Migration 24 revokes those two grants as well; the menu is not the
+ * control, the grant is. This is the second line of the same defence.)
+ *
+ * NOT `allOnly`, unlike Warehouses and the master entries: two of the
+ * four roles that are meant to be here hold their grant at WAREHOUSE
+ * scope, and `allOnly` would shut out exactly the people it is for.
+ */
+export const TRANSPORT_ITEMS: AdminNavItem[] = [
+  {
+    href: "/admin/transporters",
+    label: "Transporters",
+    permission: "transporter.create",
+    icon: "truck",
+  },
+  {
+    href: "/admin/vehicles",
+    label: "Vehicles",
+    permission: "vehicle.create",
+    icon: "truck",
+  },
+];
+
 export const ADMIN_NAV: AdminNavNode[] = [
   { href: "/admin", label: "Dashboard", permission: null, icon: "chart" },
   /**
@@ -234,6 +264,12 @@ export const ADMIN_NAV: AdminNavNode[] = [
     label: "Expenses",
     permission: "expense.read",
     icon: "rupee",
+  },
+  {
+    label: "Transporters & Vehicles",
+    icon: "truck",
+    match: "/admin/(transporters|vehicles)",
+    children: TRANSPORT_ITEMS,
   },
   /**
    * FAQs, below Master and outside it.

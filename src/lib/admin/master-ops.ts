@@ -118,7 +118,15 @@ export async function deleteOne(
   if (resource.softDeleteOnly) {
     await getDb().execute(sql`
       update wms.${identifier(resource.table)}
-         set deleted_at = now(), deleted_by = ${actor.session.userId}, is_active = false
+         set deleted_at = now(), deleted_by = ${actor.session.userId},
+             ${
+               // Not every table has `is_active`: transporter and vehicle
+               // carry the `record_status` enum instead, and naming a
+               // column that is not there is a 500 on the delete button.
+               resource.statusColumn
+                 ? sql`${identifier(resource.statusColumn.column)} = ${resource.statusColumn.inactiveValue}`
+                 : sql`is_active = false`
+             }
        where id = ${id} and deleted_at is null
     `);
   } else {
@@ -137,7 +145,9 @@ export async function deleteOne(
   const snapshot: Record<string, unknown> = {};
   for (const field of resource.fields) snapshot[field.key] = before[0]![field.column] ?? null;
   if (resource.parent) snapshot[resource.parent.key] = before[0]![resource.parent.column] ?? null;
-  snapshot.isActive = before[0]!.is_active;
+  snapshot.isActive = resource.statusColumn
+    ? before[0]![resource.statusColumn.column] === resource.statusColumn.activeValue
+    : before[0]!.is_active;
 
   await auditQuietly({
     action: `${resource.permission}.deleted`,

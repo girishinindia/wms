@@ -47,6 +47,13 @@ export type MasterRow = {
    *  warehouse. Also what decides who sees the row. */
   scopeId?: number | null;
   scopeLabel?: string | null;
+  /** Extra foreign keys — a vehicle's type — keyed by field key. */
+  linkIds?: Record<string, number | null>;
+  linkLabels?: Record<string, string | null>;
+  /** The many-to-many the drawer edits: which warehouses a carrier
+   *  serves, and a short label for the cell. */
+  pivotIds?: number[];
+  pivotLabel?: string | null;
   approvalStatus?: string | null;
   approvalNote?: string | null;
   approvedBy?: string | null;
@@ -73,6 +80,8 @@ export type MasterSpec = {
     options: ParentOption[];
     /** "Country" when the options are grouped one level up. */
     groupLabel?: string;
+    /** The row can exist without one — a carrier with no city yet. */
+    optional?: boolean;
   } | null;
   /** A second picker, and the row's home. See `scope` in the registry. */
   scope?: {
@@ -83,6 +92,15 @@ export type MasterSpec = {
   /** Present when rows need a decision. `canDecide` is about THIS
    *  viewer; the route asks the same question again. */
   approval?: { canDecide: boolean } | null;
+  links?: { key: string; label: string; required: boolean; options: ParentOption[] }[];
+  pivot?: {
+    key: string;
+    label: string;
+    hint: string;
+    options: ParentOption[];
+    /** True when the caller cannot see every option and must pick one. */
+    required: boolean;
+  } | null;
   attachments?: { endpoint: string; label: string; hint: string; accept: string } | null;
   /** Delete cancels the row instead of removing it. */
   softDeleteOnly?: boolean;
@@ -125,6 +143,15 @@ const asDraft = (row: MasterRow | null, spec: MasterSpec): Draft => {
     // Stored in paise, edited in rupees.
     d[f.key] = f.type === "money" ? paiseToInput(Number(v)) : String(v);
   }
+  for (const l of spec.links ?? []) {
+    const current = row?.linkIds?.[l.key];
+    d[l.key] = current ? String(current) : "";
+  }
+  if (spec.pivot) {
+    // A comma-joined list of ids: `Draft` is Record<string, string>, and
+    // one shape for every field keeps `payload` honest.
+    d[spec.pivot.key] = (row?.pivotIds ?? []).join(",");
+  }
   if (spec.parent) d[spec.parent.key] = row?.parentId ? String(row.parentId) : "";
   if (spec.scope) {
     d[spec.scope.key] = row?.scopeId
@@ -143,6 +170,10 @@ function payload(draft: Draft, spec: MasterSpec): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const field of spec.fields) {
     const raw = draft[field.key] ?? "";
+    if (field.type === "boolean") {
+      out[field.key] = raw === "true";
+      continue;
+    }
     if (raw === "") continue;
     // `money` stays a string on purpose: `inputToPaise` on the server is
     // the single rounding rule, and turning it into a float here would
@@ -151,6 +182,17 @@ function payload(draft: Draft, spec: MasterSpec): Record<string, unknown> {
   }
   if (spec.parent && draft[spec.parent.key]) out[spec.parent.key] = Number(draft[spec.parent.key]);
   if (spec.scope && draft[spec.scope.key]) out[spec.scope.key] = Number(draft[spec.scope.key]);
+  for (const l of spec.links ?? []) {
+    if (draft[l.key]) out[l.key] = Number(draft[l.key]);
+  }
+  if (spec.pivot) {
+    // Always sent, even empty: an untouched key means "leave it alone",
+    // and clearing every site has to be expressible.
+    out[spec.pivot.key] = (draft[spec.pivot.key] ?? "")
+      .split(",")
+      .map((v) => Number(v))
+      .filter((n) => Number.isInteger(n) && n > 0);
+  }
   return out;
 }
 
@@ -207,7 +249,7 @@ export default function MasterTable({
     setBusy("drawer");
     setErrors({});
     const body = payload(draft, spec);
-    if (spec.parent && drawer.mode === "create" && !body[spec.parent.key]) {
+    if (spec.parent && !spec.parent.optional && drawer.mode === "create" && !body[spec.parent.key]) {
       setBusy(null);
       setErrors({ [spec.parent.key]: `Choose a ${spec.parent.label.toLowerCase()}` });
       return;
@@ -215,6 +257,24 @@ export default function MasterTable({
     if (spec.scope && drawer.mode === "create" && !body[spec.scope.key]) {
       setBusy(null);
       setErrors({ [spec.scope.key]: `Choose a ${spec.scope.label.toLowerCase()}` });
+      return;
+    }
+    for (const l of spec.links ?? []) {
+      if (l.required && drawer.mode === "create" && !body[l.key]) {
+        setBusy(null);
+        setErrors({ [l.key]: `Choose a ${l.label.toLowerCase()}` });
+        return;
+      }
+    }
+    if (
+      spec.pivot?.required &&
+      drawer.mode === "create" &&
+      (body[spec.pivot.key] as number[] | undefined)?.length === 0
+    ) {
+      // Saving with none would hide the row from the person who just
+      // made it — the server says the same thing, this says it sooner.
+      setBusy(null);
+      setErrors({ [spec.pivot.key]: `Choose at least one ${spec.pivot.label.toLowerCase()}` });
       return;
     }
 
@@ -363,6 +423,38 @@ export default function MasterTable({
       });
     }
 
+    for (const l of spec.links ?? []) {
+      cols.push({
+        id: l.key,
+        accessorFn: (r) => r.linkLabels?.[l.key] ?? "",
+        header: l.label,
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-verdigris-200/60">
+            {row.original.linkLabels?.[l.key] ?? "—"}
+          </span>
+        ),
+      });
+    }
+
+    if (spec.pivot) {
+      cols.push({
+        id: "pivot",
+        accessorFn: (r) => r.pivotLabel ?? "",
+        header: spec.pivot.label,
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.pivotLabel ? (
+            <span className="whitespace-nowrap font-mono text-[0.72rem] text-verdigris-300">
+              {row.original.pivotLabel}
+            </span>
+          ) : (
+            // Not decoration: a carrier linked to nothing is invisible
+            // to every warehouse-scoped person on the system.
+            <span className="text-xs text-amber-300">no site</span>
+          ),
+      });
+    }
+
     for (const f of spec.fields) {
       // Editable in the drawer, absent from the list — see `hideInTable`
       // in the registry. An FAQ answer belongs in a form, not a cell.
@@ -383,6 +475,15 @@ export default function MasterTable({
           }
           if (f.type === "date" && v) {
             return <span className="whitespace-nowrap">{fmtDay(String(v))}</span>;
+          }
+          if (f.type === "boolean") {
+            return String(v) === "true" ? (
+              <span className="whitespace-nowrap rounded-full border border-rose-400/30 bg-rose-400/10 px-2.5 py-0.5 text-[0.78rem] text-rose-200">
+                yes
+              </span>
+            ) : (
+              <span className="text-verdigris-200/35">—</span>
+            );
           }
           if (f.type === "select" && v !== null && v !== undefined) {
             return (
@@ -528,6 +629,7 @@ export default function MasterTable({
           list={list}
           base={base}
           label={spec.listNoun ?? spec.label.toLowerCase()}
+          singular={spec.singular}
           filters={filters}
           enableSelection={spec.canUpdate || spec.canDelete}
           emptyTitle={filtered ? "Nothing matches that search." : `No ${spec.label.toLowerCase()} yet.`}
@@ -758,6 +860,18 @@ function MasterDrawer({
                 ...(spec.scope
                   ? [{ label: spec.scope.label, value: row.scopeLabel ?? "—" }]
                   : []),
+                ...(spec.links ?? []).map((l) => ({
+                  label: l.label,
+                  value: row.linkLabels?.[l.key] ?? "—",
+                })),
+                ...(spec.pivot
+                  ? [
+                      {
+                        label: spec.pivot.label,
+                        value: row.pivotLabel ?? "no site",
+                      },
+                    ]
+                  : []),
                 ...spec.fields.map((f) => ({
                   label: f.label,
                   mono: f.mono,
@@ -768,6 +882,8 @@ function MasterDrawer({
                   value:
                     row.values[f.key] === null || row.values[f.key] === undefined || row.values[f.key] === ""
                       ? "—"
+                      : f.type === "boolean"
+                        ? String(row.values[f.key]) === "true" ? "yes" : "no"
                       : f.type === "money"
                         ? formatPaise(Number(row.values[f.key]))
                         : f.type === "date"
@@ -830,7 +946,7 @@ function MasterDrawer({
               <div>
                 <label htmlFor="f-parent" className="text-[0.84rem] font-medium text-verdigris-200/70">
                   {spec.parent.label}
-                  {view ? "" : " *"}
+                  {view || spec.parent.optional ? "" : " *"}
                 </label>
                 {view ? (
                   <p className="mt-1 text-sm text-verdigris-50">
@@ -890,6 +1006,105 @@ function MasterDrawer({
               </div>
             ) : null}
 
+            {(spec.links ?? []).map((l) => (
+              <div key={l.key}>
+                <label htmlFor={`f-${l.key}`} className="text-[0.84rem] font-medium text-verdigris-200/70">
+                  {l.label}
+                  {l.required && !view ? " *" : ""}
+                </label>
+                {view ? (
+                  <p className="mt-1 text-sm text-verdigris-50">{row?.linkLabels?.[l.key] ?? "—"}</p>
+                ) : (
+                  <select
+                    id={`f-${l.key}`}
+                    value={draft[l.key] ?? ""}
+                    onChange={(e) => setDraft({ ...draft, [l.key]: e.target.value })}
+                    className={`${input} ${tone(l.key)}`}
+                  >
+                    <option value="" className="bg-ink-850">Choose</option>
+                    {l.options.map((o) => (
+                      <option key={o.id} value={o.id} className="bg-ink-850">{o.label}</option>
+                    ))}
+                  </select>
+                )}
+                {errors[l.key] ? <p className="mt-1 text-xs text-rose-300">{errors[l.key]}</p> : null}
+              </div>
+            ))}
+
+            {spec.pivot ? (
+              <div>
+                <span className="text-[0.84rem] font-medium text-verdigris-200/70">
+                  {spec.pivot.label}
+                  {spec.pivot.required && !view ? " *" : ""}
+                </span>
+                {view ? (
+                  <p className="mt-1 text-sm text-verdigris-50">
+                    {(row?.pivotIds ?? []).length === 0
+                      ? "no site"
+                      : spec.pivot.options
+                          .filter((o) => (row?.pivotIds ?? []).includes(o.id))
+                          .map((o) => o.label)
+                          .join(", ") || `${(row?.pivotIds ?? []).length} site(s)`}
+                  </p>
+                ) : (
+                  <>
+                    <p className="mt-0.5 text-xs text-verdigris-200/50">{spec.pivot.hint}</p>
+                    {(() => {
+                      const chosen = (draft[spec.pivot!.key] ?? "").split(",").filter(Boolean).map(Number);
+                      const visible = new Set(spec.pivot!.options.map((o) => o.id));
+                      const elsewhere = chosen.filter((id) => !visible.has(id)).length;
+                      // Saying so matters: the tick list is not the whole
+                      // truth for somebody who holds two sites out of six,
+                      // and a carrier that looks unlinked here is not.
+                      return elsewhere > 0 ? (
+                        <p className="mt-1 text-xs text-verdigris-200/45">
+                          Also linked to {elsewhere} other {elsewhere === 1 ? "site" : "sites"} you do
+                          not manage. Those links are left alone.
+                        </p>
+                      ) : null;
+                    })()}
+                    <div className="mt-2 max-h-44 space-y-1 overflow-y-auto rounded-lg border border-verdigris-300/15 bg-ink-900/40 p-2">
+                      {spec.pivot.options.length === 0 ? (
+                        <p className="px-1 py-2 text-xs text-amber-300">
+                          You are not assigned to a warehouse, so there is nothing to link to.
+                        </p>
+                      ) : (
+                        spec.pivot.options.map((o) => {
+                          const chosen = (draft[spec.pivot!.key] ?? "")
+                            .split(",")
+                            .filter(Boolean)
+                            .map(Number);
+                          const on = chosen.includes(o.id);
+                          return (
+                            <label
+                              key={o.id}
+                              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-verdigris-100 hover:bg-verdigris-100/5"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={on}
+                                onChange={() => {
+                                  const next = on
+                                    ? chosen.filter((id) => id !== o.id)
+                                    : [...chosen, o.id];
+                                  setDraft({ ...draft, [spec.pivot!.key]: next.join(",") });
+                                }}
+                                className="h-4 w-4 rounded border-verdigris-300/30 bg-ink-900 accent-verdigris-400"
+                              />
+                              {o.label}
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </>
+                )}
+                {errors[spec.pivot.key] ? (
+                  <p className="mt-1 text-xs text-rose-300">{errors[spec.pivot.key]}</p>
+                ) : null}
+              </div>
+            ) : null}
+
             {drawer.mode === "create" && spec.bulkCreate ? (
               <div>
                 <label htmlFor="f-bulk" className="text-[0.84rem] font-medium text-verdigris-200/70">
@@ -936,7 +1151,9 @@ function MasterDrawer({
                           ? formatPaise(Number(row.values[f.key]))
                           : f.type === "date"
                             ? fmtDay(String(row.values[f.key]))
-                            : String(row!.values[f.key])}
+                            : f.type === "boolean"
+                              ? String(row.values[f.key]) === "true" ? "yes" : "no"
+                              : String(row!.values[f.key])}
                   </p>
                 ) : f.type === "textarea" ? (
                   <textarea
@@ -959,6 +1176,19 @@ function MasterDrawer({
                       <option key={o} value={o} className="bg-ink-850">{o.toLowerCase().replace(/_/g, " ")}</option>
                     ))}
                   </select>
+                ) : f.type === "boolean" ? (
+                  <label className="mt-1 flex cursor-pointer items-center gap-2 text-sm text-verdigris-100">
+                    <input
+                      id={`f-${f.key}`}
+                      type="checkbox"
+                      checked={draft[f.key] === "true"}
+                      onChange={(e) =>
+                        setDraft({ ...draft, [f.key]: e.target.checked ? "true" : "false" })
+                      }
+                      className="h-4 w-4 rounded border-verdigris-300/30 bg-ink-900 accent-rose-400"
+                    />
+                    {f.hint ?? "Yes"}
+                  </label>
                 ) : f.type === "date" ? (
                   <input
                     id={`f-${f.key}`}

@@ -268,9 +268,19 @@ export const rejectImporterRequestSchema = z
   .openapi("RejectImporterRequest");
 
 // ── Users and roles ───────────────────────────────────────────────
+/**
+ * Every role key the enum in the database carries.
+ *
+ * Kept in step with `wms.role_key` by hand, and the failure mode is
+ * quiet: a role added to the database but not to this list is refused
+ * with "Please check the highlighted fields" on a field the user chose
+ * from a dropdown the server itself built. Found exactly that way when
+ * TRANSPORTER_ADMIN was created.
+ */
 export const roleKeySchema = z.enum([
   "SUPER_ADMIN",
   "WAREHOUSE_ADMIN",
+  "TRANSPORTER_ADMIN",
   "TRANSPORTER_MANAGER",
   "INWARD_MANAGER",
   "STORAGE_MANAGER",
