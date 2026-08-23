@@ -1,3 +1,4 @@
+import { formatPaise, inputToPaise, MAX_PAISE } from "@/lib/money";
 import { z } from "@/lib/openapi/zod";
 
 /**
@@ -17,9 +18,19 @@ import { z } from "@/lib/openapi/zod";
  * — a value from the request never reaches an identifier position.
  */
 
-/** `textarea` is `text` in a taller box — same column, same validation,
- *  for a field that holds sentences rather than a name. */
-export type MasterFieldType = "text" | "number" | "select" | "textarea";
+/**
+ * `textarea` is `text` in a taller box — same column, same validation,
+ * for a field that holds sentences rather than a name.
+ *
+ * `date` is a calendar day with no time: the day a bill was paid, not
+ * the instant a row was written. It reaches the browser as `YYYY-MM-DD`
+ * so an `<input type="date">` can hold it without a timezone turning
+ * the 1st into the 31st.
+ *
+ * `money` is an INTEGER number of paise in the database and rupees on
+ * the screen. Both conversions live in `lib/money.ts`.
+ */
+export type MasterFieldType = "text" | "number" | "select" | "textarea" | "date" | "money";
 
 export type MasterField = {
   /** JSON key, camelCase. */
@@ -139,6 +150,64 @@ export type MasterResource = {
    * would be a mistake.
    */
   listNoun?: string;
+  /**
+   * A SECOND foreign key, which also decides who may see the row.
+   *
+   * `parent` is what the row is filed under — an expense's category. A
+   * `scope` is where the row belongs, and it is the difference between
+   * a list everybody shares and one narrowed per person: an expense's
+   * warehouse. A caller holding the read permission at ALL sees every
+   * row; anyone narrower sees only rows whose scope column is one of
+   * their own assignments, and may only write rows there.
+   *
+   * Only resources that declare it pay for it. Generalising `parent`
+   * into an array instead would have rewritten the query, the drawer
+   * and the picker for all seven existing screens to serve one new one.
+   */
+  scope?: {
+    key: string;
+    column: string;
+    label: string;
+    table: string;
+    labelColumn: string;
+    /** Shown in the picker beside the label — "WH-0001 · Bhiwandi". */
+    codeColumn?: string;
+  };
+  /**
+   * Never remove the row, whatever the delete button says.
+   *
+   * The master default is a hard delete once nothing points at a row,
+   * because a country nobody references is a typo. A financial record
+   * is not: it is soft-deleted, leaves every list and total, and is
+   * still there at year end.
+   */
+  softDeleteOnly?: boolean;
+  /**
+   * Rows need a decision before they count.
+   *
+   * `autoApprovePermission` is the rule in one line: an author who
+   * already holds it does not have to ask themselves. A super admin
+   * records an approved expense; everybody else records a pending one.
+   */
+  approval?: {
+    column: string;
+    permission: string;
+    autoApprovePermission: string;
+  };
+  /**
+   * Files hanging off the row — receipts on an expense.
+   *
+   * Plain data, because the spec crosses from a server component to a
+   * client one: an endpoint template and what the picker will accept,
+   * never a function.
+   */
+  attachments?: {
+    /** `{id}` is replaced with the row id. */
+    endpoint: string;
+    label: string;
+    hint: string;
+    accept: string;
+  };
 };
 
 /**
@@ -199,6 +268,17 @@ const optionalText = (max: number) =>
       .optional(),
   );
 
+/**
+ * An untouched input posts `""`, which means "not given", not "invalid".
+ *
+ * `optionalText` and `optionalNumber` above each bake in their own
+ * validator; this is the same preprocessing for any other schema, so a
+ * blank Reference box does not come back as "Codes may only use letters
+ * and digits" on a field the user deliberately left empty.
+ */
+const blankOptional = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (v === "" || v === null ? undefined : v), schema.optional());
+
 const optionalNumber = (max: number) =>
   z.preprocess(
     (v) => (v === "" || v === null ? undefined : typeof v === "string" ? Number(v) : v),
@@ -227,6 +307,15 @@ const prose = (min: number, max: number) =>
     .refine((v) => !/[<>]/.test(v), "Angle brackets are not allowed")
     .refine((v) => /[A-Za-z]/.test(v), "Needs at least one letter");
 
+/** Mirrors the CHECK on `expense.payment_mode` exactly. */
+export const PAYMENT_MODES = [
+  "CASH",
+  "UPI",
+  "CARD",
+  "BANK_TRANSFER",
+  "CHEQUE",
+] as const;
+
 export const VEHICLE_CATEGORIES = [
   "THREE_WHEELER",
   "LCV",
@@ -237,6 +326,60 @@ export const VEHICLE_CATEGORIES = [
 ] as const;
 
 /** Every update may also flip the row's availability. */
+/**
+ * Rupees in, paise out.
+ *
+ * The conversion is `inputToPaise`, shared with the drawer, so the two
+ * sides cannot round differently. What arrives is whatever somebody
+ * typed — "42300", "42,300.50", "₹42300" — and what is stored is an
+ * integer. More than two decimals is refused rather than rounded: a
+ * third decimal is a typo or a foreign currency, and quietly filing
+ * ₹1,234.57 for ₹1,234.567 is the wrong kind of helpful.
+ */
+const money = (maxPaise: number) =>
+  z.preprocess(
+    (v) => {
+      if (v === "" || v === null || v === undefined) return undefined;
+      const paise = inputToPaise(v as string | number);
+      // `null` rather than undefined, so a bad value fails the number
+      // check with a message instead of vanishing as "not provided".
+      return paise === null ? Number.NaN : paise;
+    },
+    z
+      .number({ invalid_type_error: "Enter an amount like 4200 or 4200.50" })
+      .int("Enter an amount like 4200 or 4200.50")
+      .positive("An amount has to be more than zero")
+      .max(maxPaise, `That is more than ${formatPaise(maxPaise)}`),
+  );
+
+/**
+ * A calendar day, as `YYYY-MM-DD`.
+ *
+ * Not `z.coerce.date()`: that parses "2026-08-21" as UTC midnight, and
+ * `toISOString()` on the way back out in Asia/Kolkata is still the 21st
+ * — but the same round trip in a westward timezone is the 20th. A date
+ * with no time attached should never touch a Date object at all.
+ */
+const isoDate = (opts: { notFuture?: boolean } = {}) => {
+  const base = z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date")
+    .refine((v) => !Number.isNaN(Date.parse(`${v}T00:00:00Z`)), "That is not a real date");
+  if (!opts.notFuture) return base;
+  /**
+   * Refused here as well as by `expense_spent_on_sane`, because the
+   * CHECK's message is "violates check constraint" and the person who
+   * mistyped 2062 for 2026 deserves better than a 500. Compared as
+   * strings: `YYYY-MM-DD` sorts the same way it reads, and going via a
+   * Date to compare two calendar days is how the 1st becomes the 31st.
+   */
+  return base.refine(
+    (v) => v <= new Date().toISOString().slice(0, 10),
+    "That is in the future",
+  );
+};
+
 const withActive = <T extends z.ZodRawShape>(shape: T) =>
   z.object({ ...shape, isActive: z.boolean().optional() });
 
@@ -564,6 +707,177 @@ const faq: MasterResource = {
   }),
 };
 
+// ── expense category ──────────────────────────────────────────────
+/**
+ * A twin of `faqCategory`, and named `master.expense_category` for the
+ * same reason the FAQ one is: it belongs under the Master menu, and
+ * only a super admin may change it. Its `.read` IS granted to the three
+ * roles that record expenses, because they need it as a picker.
+ */
+const expenseCategory: MasterResource = {
+  slug: "expense-categories",
+  table: "expense_category",
+  label: "Expense categories",
+  singular: "expense category",
+  listNoun: "expense categories",
+  permission: "master.expense_category",
+  intro:
+    "What money is spent on — rent, power, fuel, wages. Deactivating one keeps every expense already filed under it and takes it out of the picker.",
+  hasAudit: true,
+  fields: [
+    { key: "code", column: "code", label: "Code", type: "text", required: true, mono: true, width: 8 },
+    { key: "name", column: "name", label: "Name", type: "text", required: true },
+    { key: "description", column: "description", label: "Description", type: "text" },
+    {
+      key: "sortOrder",
+      column: "sort_order",
+      label: "Order",
+      type: "number",
+      align: "right",
+      width: 5,
+      hint: "Lowest first in the picker.",
+    },
+  ],
+  dependents: [{ table: "expense", column: "expense_category_id", noun: "expenses" }],
+  conflict: "An expense category with that code already exists",
+  orderBy: "sort_order, name",
+  createSchema: withActive({
+    code: codeText(2, 24),
+    name: name(80),
+    description: optionalText(300),
+    sortOrder: optionalNumber(9999),
+  }),
+  updateSchema: withActive({
+    code: codeText(2, 24).optional(),
+    name: name(80).optional(),
+    description: optionalText(300),
+    sortOrder: optionalNumber(9999),
+  }),
+};
+
+// ── expense ───────────────────────────────────────────────────────
+/**
+ * Money spent at a site. The first resource here that is a transaction
+ * rather than a list of things, which is why it is the first to use
+ * `scope`, `softDeleteOnly`, `approval` and `attachments` — every one
+ * of them opt-in, and every other resource takes the old path.
+ *
+ * Plain `expense`, not `master.expense`: the seed grants `master.%.read`
+ * to every role so that anyone filling in an address can read the city
+ * list, and naming this `master.*` would hand the whole floor read
+ * access to the company's spending.
+ */
+const expense: MasterResource = {
+  slug: "expenses",
+  table: "expense",
+  label: "Expenses",
+  singular: "expense",
+  listNoun: "expenses",
+  permission: "expense",
+  intro:
+    "What each site spends. A super admin's entry is approved as it is recorded; everybody else's waits for a decision. Nothing here is ever deleted outright — cancelling keeps the row for the year end.",
+  hasAudit: true,
+  fields: [
+    {
+      key: "spentOn",
+      column: "spent_on",
+      label: "Date",
+      type: "date",
+      required: true,
+      width: 8,
+      hint: "The day the money went out.",
+    },
+    { key: "paidTo", column: "paid_to", label: "Paid to", type: "text", required: true },
+    {
+      key: "paymentMode",
+      column: "payment_mode",
+      label: "Mode",
+      type: "select",
+      required: true,
+      filterable: true,
+      width: 8,
+      options: PAYMENT_MODES,
+    },
+    {
+      key: "amount",
+      column: "amount_paise",
+      label: "Amount",
+      type: "money",
+      required: true,
+      align: "right",
+      width: 9,
+      hint: "In rupees — 4200 or 4200.50.",
+    },
+    {
+      key: "referenceNo",
+      column: "reference_no",
+      label: "Reference",
+      type: "text",
+      mono: true,
+      width: 10,
+      hint: "Bill number, UTR or cheque number.",
+    },
+    {
+      key: "notes",
+      column: "notes",
+      label: "Notes",
+      type: "textarea",
+      hideInTable: true,
+      hint: "Anything the bill does not say for itself.",
+    },
+  ],
+  parent: {
+    key: "expenseCategoryId",
+    column: "expense_category_id",
+    label: "Category",
+    table: "expense_category",
+    labelColumn: "name",
+  },
+  scope: {
+    key: "warehouseId",
+    column: "warehouse_id",
+    label: "Warehouse",
+    table: "warehouse",
+    labelColumn: "name",
+    codeColumn: "code",
+  },
+  softDeleteOnly: true,
+  approval: {
+    column: "approval_status",
+    permission: "expense.approve",
+    autoApprovePermission: "expense.approve",
+  },
+  attachments: {
+    endpoint: "/admin/expenses/{id}/receipts",
+    label: "Receipts",
+    hint: "The bill itself — a photo or a PDF, up to 5 MB.",
+    accept: "image/*,application/pdf",
+  },
+  dependents: [],
+  conflict: "That expense has already been recorded",
+  orderBy: "spent_on desc, id desc",
+  createSchema: withActive({
+    expenseCategoryId: z.number().int().positive(),
+    warehouseId: z.number().int().positive(),
+    spentOn: isoDate({ notFuture: true }),
+    paidTo: name(120),
+    paymentMode: z.enum(PAYMENT_MODES),
+    amount: money(MAX_PAISE),
+    referenceNo: blankOptional(codeText(1, 40)),
+    notes: blankOptional(prose(2, 1000)),
+  }),
+  updateSchema: withActive({
+    expenseCategoryId: z.number().int().positive().optional(),
+    warehouseId: z.number().int().positive().optional(),
+    spentOn: isoDate({ notFuture: true }).optional(),
+    paidTo: name(120).optional(),
+    paymentMode: z.enum(PAYMENT_MODES).optional(),
+    amount: money(MAX_PAISE).optional(),
+    referenceNo: blankOptional(codeText(1, 40)),
+    notes: blankOptional(prose(2, 1000)),
+  }),
+};
+
 /**
  * The whitelist.
  *
@@ -578,6 +892,8 @@ export const MASTER_RESOURCES = Object.freeze({
   "vehicle-types": vehicleType,
   "faq-categories": faqCategory,
   faqs: faq,
+  "expense-categories": expenseCategory,
+  expenses: expense,
 } as const);
 
 export type MasterSlug = keyof typeof MASTER_RESOURCES;

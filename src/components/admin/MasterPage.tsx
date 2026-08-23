@@ -15,6 +15,7 @@ import {
 } from "@/lib/admin/listing";
 import { pluralise, resolveResource } from "@/lib/admin/master-registry";
 import { grantFor, pageGuard } from "@/lib/auth/guard";
+import { actorWarehouseIds } from "@/lib/users/authority";
 
 /**
  * The server half of a master screen, once.
@@ -59,12 +60,28 @@ export default async function MasterPage({
    */
   const sortable = [
     ...(resource.parent ? ["parent"] : []),
+    ...(resource.scope ? ["scope"] : []),
+    ...(resource.approval ? ["approval"] : []),
     // A `hideInTable` field has no header to click, and sorting a list
     // by the text of a paragraph is not something anybody wants.
     ...resource.fields.filter((f) => !f.hideInTable).map((f) => f.key),
     "status",
   ];
   const selectFilters = resource.fields.filter((f) => f.type === "select" && f.filterable);
+
+  /**
+   * Which rows this viewer is allowed to see at all.
+   *
+   * A resource with no `scope` is unchanged: everyone who holds the read
+   * permission sees every row. With one, a grant at ALL still sees
+   * everything, and anything narrower is cut down to the sites the
+   * caller is actually assigned to — the same set `mayActOnUser` uses on
+   * the users screen, and the same set the write route re-checks.
+   */
+  const readGrant = grantFor(guard.actor, `${resource.permission}.read`);
+  const wideRead = !resource.scope || readGrant?.scope === "ALL";
+  const mySites = actorWarehouseIds(guard.actor);
+
   const query = parseListQuery(searchParams ?? {}, {
     sortable,
     defaultSort:
@@ -73,6 +90,8 @@ export default async function MasterPage({
       resource.fields[0]!.key,
     extraKeys: [
       ...(resource.parent ? ["parent"] : []),
+      ...(resource.scope ? ["scope"] : []),
+      ...(resource.approval ? ["approval"] : []),
       "inuse",
       ...selectFilters.map((f) => f.key),
     ],
@@ -82,6 +101,12 @@ export default async function MasterPage({
     if (query.sort === "status") return sql`m.is_active`;
     if (query.sort === "parent" && resource.parent) {
       return sql`p.${identifier(resource.parent.labelColumn)}`;
+    }
+    if (query.sort === "scope" && resource.scope) {
+      return sql`s.${identifier(resource.scope.labelColumn)}`;
+    }
+    if (query.sort === "approval" && resource.approval) {
+      return sql`m.${identifier(resource.approval.column)}`;
     }
     const field = resource.fields.find((f) => f.key === query.sort) ?? resource.fields[0]!;
     return sql`m.${identifier(field.column)}`;
@@ -100,8 +125,17 @@ export default async function MasterPage({
   /** Text search across every field, plus the parent's label. Numbers
    *  are cast so "40" finds a 40-foot container. */
   const searchable = [
-    ...resource.fields.map((f) => sql`m.${identifier(f.column)}::text`),
+    // A money column is searched in RUPEES, because that is what the
+    // person typing into the box is reading off the screen. Searching
+    // `amount_paise::text` would make "4200" find ₹42.00 and miss the
+    // ₹4,200.00 row the user is looking at.
+    ...resource.fields.map((f) =>
+      f.type === "money"
+        ? sql`(m.${identifier(f.column)} / 100.0)::text`
+        : sql`m.${identifier(f.column)}::text`,
+    ),
     ...(resource.parent ? [sql`p.${identifier(resource.parent.labelColumn)}::text`] : []),
+    ...(resource.scope ? [sql`s.${identifier(resource.scope.labelColumn)}::text`] : []),
   ];
 
   const parentFilter = Number.parseInt(query.extra.parent ?? "", 10);
@@ -110,6 +144,33 @@ export default async function MasterPage({
   if (query.status === "inactive") conditions.push(sql`not m.is_active`);
   if (resource.parent && Number.isFinite(parentFilter)) {
     conditions.push(sql`m.${identifier(resource.parent.column)} = ${parentFilter}`);
+  }
+  /**
+   * The line that keeps one branch out of another's books.
+   *
+   * Note the `in (null)` fallback rather than skipping the clause: a
+   * scoped reader with no assignments must see NOTHING, and a missing
+   * clause would have shown them everything.
+   */
+  if (resource.scope && !wideRead) {
+    const sites =
+      mySites.length > 0
+        ? sql.join(
+            mySites.map((id) => sql`${id}`),
+            sql`, `,
+          )
+        : sql`null`;
+    conditions.push(sql`m.${identifier(resource.scope.column)} in (${sites})`);
+  }
+  const scopeFilter = Number.parseInt(query.extra.scope ?? "", 10);
+  if (resource.scope && Number.isFinite(scopeFilter)) {
+    conditions.push(sql`m.${identifier(resource.scope.column)} = ${scopeFilter}`);
+  }
+  if (resource.approval && query.extra.approval) {
+    const wanted = query.extra.approval.toUpperCase();
+    if (["PENDING", "APPROVED", "REJECTED"].includes(wanted)) {
+      conditions.push(sql`m.${identifier(resource.approval.column)} = ${wanted}`);
+    }
   }
   if (query.extra.inuse === "used") conditions.push(sql`(${inUseTotal}) > 0`);
   if (query.extra.inuse === "unused") conditions.push(sql`(${inUseTotal}) = 0`);
@@ -136,10 +197,24 @@ export default async function MasterPage({
                   on p.id = m.${identifier(resource.parent.column)}`
           : sql``
       }
+      ${
+        resource.scope
+          ? sql`left join wms.${identifier(resource.scope.table)} s
+                  on s.id = m.${identifier(resource.scope.column)}`
+          : sql``
+      }
      where ${where}`;
 
-  const selected = resource.fields.map(
-    (f) => sql`m.${identifier(f.column)} as ${identifier(f.column)}`,
+  const selected = resource.fields.map((f) =>
+    /**
+     * A date column comes back as `YYYY-MM-DD` text and never as a
+     * Date. `date` has no time and no zone; letting the driver make a
+     * Date out of it and `toISOString()` turn it back is how the 1st
+     * becomes the 31st for anybody west of Greenwich.
+     */
+    f.type === "date"
+      ? sql`to_char(m.${identifier(f.column)}, 'YYYY-MM-DD') as ${identifier(f.column)}`
+      : sql`m.${identifier(f.column)} as ${identifier(f.column)}`,
   );
   const perDependent = dependentCounts.map((c, i) => sql`${c} as dep_${sql.raw(String(i))}`);
 
@@ -159,6 +234,31 @@ export default async function MasterPage({
              resource.parent
                ? sql`, m.${identifier(resource.parent.column)} as parent_id,
                       p.${identifier(resource.parent.labelColumn)} as parent_label`
+               : sql``
+           }
+           ${
+             resource.scope
+               ? sql`, m.${identifier(resource.scope.column)} as scope_id,
+                      ${
+                        resource.scope.codeColumn
+                          ? sql`(s.${identifier(resource.scope.codeColumn)} || ' · ' || s.${identifier(resource.scope.labelColumn)})`
+                          : sql`s.${identifier(resource.scope.labelColumn)}`
+                      } as scope_label`
+               : sql``
+           }
+           ${
+             resource.approval
+               ? sql`, m.${identifier(resource.approval.column)} as approval_status,
+                      m.approval_note as approval_note,
+                      (select trim(a.first_name || ' ' || a.last_name)
+                         from wms.users a where a.id = m.approved_by) as approved_by_name,
+                      to_char(m.approved_at, 'DD Mon YYYY') as approved_at`
+               : sql``
+           }
+           ${
+             resource.attachments
+               ? sql`, (select count(*)::int from wms.expense_receipt r
+                         where r.expense_id = m.id) as attachment_count`
                : sql``
            }
       ${fromClause}
@@ -194,6 +294,38 @@ export default async function MasterPage({
       }))
     : [];
 
+  /**
+   * The scope picker, narrowed the same way the list is.
+   *
+   * Offering a site the caller cannot write to would be a dropdown that
+   * produces a 403 — the route checks this again against their own
+   * assignments, so this is about not lying to them, not about safety.
+   */
+  const scopeOptions: ParentOption[] = resource.scope
+    ? (
+        await getDb().execute<{ id: number; label: string }>(sql`
+          select o.id,
+                 ${
+                   resource.scope.codeColumn
+                     ? sql`(o.${identifier(resource.scope.codeColumn)} || ' · ' || o.${identifier(resource.scope.labelColumn)})`
+                     : sql`o.${identifier(resource.scope.labelColumn)}`
+                 }::text as label
+            from wms.${identifier(resource.scope.table)} o
+           where o.is_active and o.deleted_at is null
+             and (${wideRead} or o.id in (${
+               mySites.length > 0
+                 ? sql.join(
+                     mySites.map((id) => sql`${id}`),
+                     sql`, `,
+                   )
+                 : sql`null`
+             }))
+           order by 2
+           limit 300
+        `)
+      ).map((r) => ({ id: Number(r.id), label: r.label }))
+    : [];
+
   const data: MasterRow[] = rows.map((r) => ({
     id: Number(r.id),
     isActive: Boolean(r.is_active),
@@ -204,6 +336,13 @@ export default async function MasterPage({
       .join(", "),
     parentId: r.parent_id === undefined ? null : Number(r.parent_id),
     parentLabel: (r.parent_label as string | null) ?? null,
+    scopeId: r.scope_id === undefined ? null : Number(r.scope_id),
+    scopeLabel: (r.scope_label as string | null) ?? null,
+    approvalStatus: (r.approval_status as string | null) ?? null,
+    approvalNote: (r.approval_note as string | null) ?? null,
+    approvedBy: (r.approved_by_name as string | null) ?? null,
+    approvedAt: (r.approved_at as string | null) ?? null,
+    attachmentCount: Number(r.attachment_count ?? 0),
     createdAt: r.created_at ? String(r.created_at) : null,
     updatedAt: r.updated_at ? String(r.updated_at) : null,
     values: Object.fromEntries(
@@ -214,7 +353,7 @@ export default async function MasterPage({
         const value =
           raw === null || raw === undefined
             ? null
-            : f.type === "number"
+            : f.type === "number" || f.type === "money"
               ? Number(raw)
               : String(raw).trim();
         return [f.key, value];
@@ -236,6 +375,18 @@ export default async function MasterPage({
         }
       : null,
     listNoun: resource.listNoun,
+    scope: resource.scope
+      ? { key: resource.scope.key, label: resource.scope.label, options: scopeOptions }
+      : null,
+    approval: resource.approval
+      ? {
+          // Whether THIS viewer may decide. The button is hidden
+          // otherwise; the route refuses either way.
+          canDecide: grantFor(guard.actor, resource.approval.permission) !== null,
+        }
+      : null,
+    attachments: resource.attachments ?? null,
+    softDeleteOnly: resource.softDeleteOnly === true,
     dependentNoun: resource.dependents[0]?.noun ?? "records",
     canCreate: grantFor(guard.actor, `${resource.permission}.create`) !== null,
     canUpdate: grantFor(guard.actor, `${resource.permission}.update`) !== null,
@@ -277,6 +428,36 @@ export default async function MasterPage({
                   {o.label}
                 </option>
               ))}
+        </select>
+      ) : null}
+      {resource.scope && scopeOptions.length > 1 ? (
+        <select
+          name="scope"
+          defaultValue={query.extra.scope ?? ""}
+          aria-label={resource.scope.label}
+          className={selectClass}
+        >
+          <option value="" className="bg-ink-850">
+            All {pluralise(resource.scope.label.toLowerCase())}
+          </option>
+          {scopeOptions.map((o) => (
+            <option key={o.id} value={o.id} className="bg-ink-850">
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ) : null}
+      {resource.approval ? (
+        <select
+          name="approval"
+          defaultValue={query.extra.approval ?? ""}
+          aria-label="Approval"
+          className={selectClass}
+        >
+          <option value="" className="bg-ink-850">Any approval</option>
+          <option value="PENDING" className="bg-ink-850">Awaiting approval</option>
+          <option value="APPROVED" className="bg-ink-850">Approved</option>
+          <option value="REJECTED" className="bg-ink-850">Rejected</option>
         </select>
       ) : null}
       {selectFilters.map((f) => (

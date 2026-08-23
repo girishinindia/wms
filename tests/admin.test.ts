@@ -167,6 +167,7 @@ describe("admin navigation: grouping", () => {
       "Cities",
       "Warehouse types",
       "Vehicle types",
+      "Expense categories",
       "FAQ categories",
     ]);
   });
@@ -413,6 +414,9 @@ describe("OpenAPI: admin endpoints", () => {
     expect(documented).toEqual([
       "/api/v1/admin/cities",
       "/api/v1/admin/cities/{id}",
+      "/api/v1/admin/expenses/{id}/approve",
+      "/api/v1/admin/expenses/{id}/receipts",
+      "/api/v1/admin/expenses/{id}/receipts/{receiptId}",
       "/api/v1/admin/importers",
       "/api/v1/admin/importers/{id}",
       "/api/v1/admin/importers/{id}/approve",

@@ -107,15 +107,31 @@ export async function deleteOne(
   const inUse = await inUseSummary(resource, id);
   if (inUse) return { id, ok: false, reason: "in_use", detail: inUse };
 
-  try {
+  /**
+   * A financial record is never erased.
+   *
+   * Every other master table hard-deletes a row nothing points at,
+   * because a country nobody references is a typo. An expense is not:
+   * it leaves the lists and the totals, and it is still there at year
+   * end for anybody asking what a figure was made of.
+   */
+  if (resource.softDeleteOnly) {
     await getDb().execute(sql`
-      delete from wms.${identifier(resource.table)} where id = ${id}
+      update wms.${identifier(resource.table)}
+         set deleted_at = now(), deleted_by = ${actor.session.userId}, is_active = false
+       where id = ${id} and deleted_at is null
     `);
-  } catch (error) {
-    if (isForeignKeyViolation(error)) {
-      return { id, ok: false, reason: "in_use", detail: "records that were just created" };
+  } else {
+    try {
+      await getDb().execute(sql`
+        delete from wms.${identifier(resource.table)} where id = ${id}
+      `);
+    } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        return { id, ok: false, reason: "in_use", detail: "records that were just created" };
+      }
+      throw error;
     }
-    throw error;
   }
 
   const snapshot: Record<string, unknown> = {};
@@ -131,7 +147,9 @@ export async function deleteOne(
     entityLabel: String(before[0]!.name ?? before[0]!.code ?? ""),
     // The schema insists a DELETE row says why; "not in use" is the
     // only reason this code path ever deletes.
-    reason: "Deleted from the master screen; nothing referenced the row",
+    reason: resource.softDeleteOnly
+      ? "Removed from the books; the row is kept for the audit trail"
+      : "Deleted from the master screen; nothing referenced the row",
     actorUserId: actor.session.userId,
     actorEmail: actor.session.email,
     actorName: `${actor.session.firstName} ${actor.session.lastName}`.trim(),

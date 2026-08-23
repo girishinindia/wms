@@ -4,12 +4,14 @@ import { type NextRequest } from "next/server";
 import { getDb } from "@/db";
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { auditQuietly } from "@/lib/audit";
-import { requirePermission } from "@/lib/auth/guard";
+import { grantFor, requirePermission, type Actor } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { deleteOne, dependentCounts, dropPublicCache, identifier } from "@/lib/admin/master-ops";
 import { invalidateGeo } from "@/lib/admin/geo";
-import { resolveResource } from "@/lib/admin/master-registry";
-import { isUniqueViolation } from "@/lib/db-errors";
+import { resolveResource, type MasterResource } from "@/lib/admin/master-registry";
+import { announceSubmitted } from "@/lib/expenses/ops";
+import { actorWarehouseIds } from "@/lib/users/authority";
+import { constraintNameOf, isCheckViolation, isUniqueViolation } from "@/lib/db-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,12 +79,58 @@ export async function POST(
         }
       }
 
+      // The site has to be one of the caller's before a row exists for it.
+      if (resource.scope) {
+        const refusal = outsideScope(resource, actor, input[resource.scope.key]);
+        if (refusal) {
+          return fail("FORBIDDEN", refusal, requestId, {
+            fields: { [resource.scope.key]: "Not one of yours" },
+          });
+        }
+        const site = await getDb().execute<{ is_active: boolean }>(sql`
+          select is_active from wms.${identifier(resource.scope.table)}
+           where id = ${input[resource.scope.key]} and deleted_at is null
+        `);
+        if (site.length === 0 || !site[0]!.is_active) {
+          return fail("VALIDATION_FAILED", `Choose an active ${resource.scope.label.toLowerCase()}`, requestId, {
+            fields: { [resource.scope.key]: "Not available" },
+          });
+        }
+      }
+
       const columns: SQL[] = [];
       const values: SQL[] = [];
 
       if (resource.parent) {
         columns.push(identifier(resource.parent.column));
         values.push(sql`${input[resource.parent.key]}`);
+      }
+      if (resource.scope) {
+        columns.push(identifier(resource.scope.column));
+        values.push(sql`${input[resource.scope.key]}`);
+      }
+
+      /**
+       * Approved on arrival, or waiting.
+       *
+       * The rule in one line: an author who already holds the approve
+       * permission does not have to ask themselves. That is the whole of
+       * "a super admin's entry needs no approval" — and because the
+       * approve endpoint asks for the same permission, the two can never
+       * disagree about who is exempt.
+       */
+      const autoApprove =
+        resource.approval !== undefined &&
+        grantFor(actor, resource.approval.autoApprovePermission) !== null;
+      if (resource.approval) {
+        columns.push(identifier(resource.approval.column));
+        values.push(sql`${autoApprove ? "APPROVED" : "PENDING"}`);
+        if (autoApprove) {
+          columns.push(identifier("approved_by"));
+          values.push(sql`${actor.session.userId}`);
+          columns.push(identifier("approved_at"));
+          values.push(sql`now()`);
+        }
       }
       for (const field of resource.fields) {
         const value = input[field.key];
@@ -113,6 +161,16 @@ export async function POST(
         userAgent: request.headers.get("user-agent"),
         requestId,
       });
+
+      // Somebody has to be told it is waiting. Nobody has to be told
+      // about an entry that was approved as it was typed.
+      if (resource.approval && !autoApprove && rows[0]?.id) {
+        await announceSubmitted(Number(rows[0].id), actor, {
+          requestId,
+          ip: clientIp(request.headers),
+          userAgent: request.headers.get("user-agent"),
+        });
+      }
 
       await invalidateGeo();
       dropPublicCache(resource);
@@ -164,6 +222,26 @@ export async function PATCH(
       if (before.length === 0) return fail("NOT_FOUND", `No such ${resource.singular}`, requestId);
 
       /**
+       * Where the row is NOW, before anything about where it is going.
+       *
+       * Checking only the incoming warehouse would let one branch pull
+       * another's expense across into its own books, which is a worse
+       * version of editing it in place.
+       */
+      if (resource.scope) {
+        const here = outsideScope(resource, actor, before[0]![resource.scope.column]);
+        if (here) return fail("FORBIDDEN", here, requestId);
+        if (input[resource.scope.key] !== undefined) {
+          const there = outsideScope(resource, actor, input[resource.scope.key]);
+          if (there) {
+            return fail("FORBIDDEN", there, requestId, {
+              fields: { [resource.scope.key]: "Not one of yours" },
+            });
+          }
+        }
+      }
+
+      /**
        * Switching a row off is the one change with consequences beyond
        * the row, so it is the one that gets counted first. Everything
        * pointing at it keeps working; what breaks is every picker that
@@ -210,6 +288,30 @@ export async function PATCH(
         }
         sets.push(sql`${identifier(resource.parent.column)} = ${input[resource.parent.key]}`);
       }
+      if (resource.scope && input[resource.scope.key] !== undefined) {
+        sets.push(sql`${identifier(resource.scope.column)} = ${input[resource.scope.key]}`);
+      }
+
+      /**
+       * Editing an approved row sends it back for a decision.
+       *
+       * Otherwise approval means nothing: record ₹500, get it approved,
+       * then edit it to ₹50,000 and the row still says APPROVED with
+       * somebody else's name against it. A caller who can approve is
+       * exempt — they would only be re-approving their own edit.
+       */
+      const resubmit =
+        resource.approval !== undefined &&
+        grantFor(actor, resource.approval.permission) === null &&
+        before[0]![resource.approval.column] !== "PENDING" &&
+        resource.fields.some((f) => f.key in input);
+      if (resubmit && resource.approval) {
+        sets.push(sql`${identifier(resource.approval.column)} = 'PENDING'`);
+        sets.push(sql`${identifier("approved_by")} = null`);
+        sets.push(sql`${identifier("approved_at")} = null`);
+        sets.push(sql`${identifier("approval_note")} = null`);
+      }
+
       if (input.isActive !== undefined) {
         sets.push(sql`${identifier("is_active")} = ${input.isActive}`);
       }
@@ -268,9 +370,17 @@ export async function PATCH(
         requestId,
       });
 
+      if (resubmit) {
+        await announceSubmitted(id, actor, {
+          requestId,
+          ip: clientIp(request.headers),
+          userAgent: request.headers.get("user-agent"),
+        });
+      }
+
       await invalidateGeo();
       dropPublicCache(resource);
-      return ok({ ok: true as const }, requestId);
+      return ok({ ok: true as const, resubmitted: resubmit }, requestId);
     } catch (error) {
       return translate(error, requestId, await context.params.then((p) => p.resource));
     }
@@ -295,6 +405,17 @@ export async function DELETE(
       const id = Number(request.nextUrl.searchParams.get("id"));
       if (!Number.isInteger(id) || id <= 0) {
         return fail("VALIDATION_FAILED", "Which row?", requestId);
+      }
+
+      if (resource.scope) {
+        const row = await getDb().execute<Record<string, unknown>>(sql`
+          select ${identifier(resource.scope.column)} as site
+            from wms.${identifier(resource.table)}
+           where id = ${id} and deleted_at is null
+        `);
+        if (row.length === 0) return fail("NOT_FOUND", `No such ${resource.singular}`, requestId);
+        const refusal = outsideScope(resource, actor, row[0]!.site);
+        if (refusal) return fail("FORBIDDEN", refusal, requestId);
       }
 
       const outcome = await deleteOne(resource, id, actor, {
@@ -322,6 +443,32 @@ export async function DELETE(
 }
 
 /**
+ * Is this site one the caller may write to?
+ *
+ * `requirePermission` cannot answer it: a WAREHOUSE-scoped grant with no
+ * warehouse named on the request is let through, which is correct for a
+ * list and for a create, and here the warehouse arrives in the BODY (on
+ * create) or sits on the existing ROW (on update and delete). Both are
+ * measured against the caller's own live assignments.
+ */
+function outsideScope(
+  resource: MasterResource,
+  actor: Actor,
+  warehouseId: unknown,
+): string | null {
+  if (!resource.scope) return null;
+  const grant = grantFor(actor, `${resource.permission}.create`);
+  const readGrant = grantFor(actor, `${resource.permission}.update`);
+  if (grant?.scope === "ALL" || readGrant?.scope === "ALL") return null;
+
+  const id = Number(warehouseId);
+  if (!Number.isInteger(id)) return `Choose a ${resource.scope.label.toLowerCase()}`;
+  return actorWarehouseIds(actor).includes(id)
+    ? null
+    : `You can only do this for a ${resource.scope.label.toLowerCase()} you are assigned to`;
+}
+
+/**
  * A unique violation is the only database error a user of these screens
  * can actually do something about, so it is the only one given its own
  * message — and the message says what the index means rather than
@@ -331,6 +478,26 @@ function translate(error: unknown, requestId: string, slug: string) {
   if (isUniqueViolation(error)) {
     const resource = resolveResource(slug);
     return fail("CONFLICT", resource?.conflict ?? "That value is already taken", requestId);
+  }
+  /**
+   * A CHECK refused the row.
+   *
+   * Every one of these SHOULD have been caught by the Zod schema in
+   * front of it — the constraints and the schemas say the same things
+   * twice on purpose, one for the person and one for anything that
+   * reaches the table another way. When one gets through, the honest
+   * answer is 422 with the constraint named, not a 500 that tells the
+   * user to try again at something that will never work.
+   */
+  if (isCheckViolation(error)) {
+    const named = constraintNameOf(error);
+    return fail(
+      "VALIDATION_FAILED",
+      named
+        ? `That value is not allowed here (${named.replace(/_/g, " ")}).`
+        : "One of those values is not allowed here.",
+      requestId,
+    );
   }
   return toResponse(error, requestId);
 }

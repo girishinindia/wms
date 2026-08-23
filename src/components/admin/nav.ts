@@ -73,7 +73,8 @@ export type AdminNavIcon =
   | "bell"
   | "warehouse"
   | "image"
-  | "help";
+  | "help"
+  | "rupee";
 
 /** A collapsible section. Its children are ordinary items and are what
  *  `visibleNav` returns — the group itself grants nothing. */
@@ -127,6 +128,16 @@ export const MASTER_ITEMS: AdminNavItem[] = [
     label: "Vehicle types",
     permission: "master.vehicle_type.create",
     icon: "truck",
+  },
+  {
+    href: "/admin/master/expense-categories",
+    label: "Expense categories",
+    permission: "master.expense_category.create",
+    // `.read` is granted to the three roles that record expenses,
+    // because they need the picker. `.create` is the super admin's
+    // alone, which is what this entry is keyed on.
+    allOnly: true,
+    icon: "rupee",
   },
   {
     href: "/admin/master/faq-categories",
@@ -209,6 +220,20 @@ export const ADMIN_NAV: AdminNavNode[] = [
     icon: "database",
     match: "/admin/master",
     children: MASTER_ITEMS,
+  },
+  /**
+   * Expenses, above FAQs and outside Master.
+   *
+   * Keyed on plain `expense.read` and deliberately NOT `allOnly`: four
+   * roles are meant to see this one, two of them at WAREHOUSE scope.
+   * The page narrows what they see to their own sites; the entry only
+   * decides whether the door is there at all.
+   */
+  {
+    href: "/admin/expenses",
+    label: "Expenses",
+    permission: "expense.read",
+    icon: "rupee",
   },
   /**
    * FAQs, below Master and outside it.

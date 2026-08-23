@@ -37,6 +37,9 @@ import {
   createCitiesResponseSchema,
   createUserRequestSchema,
   createUserResponseSchema,
+  decideExpenseRequestSchema,
+  receiptListResponseSchema,
+  receiptResponseSchema,
   okAdminResponseSchema,
   rejectImporterRequestSchema,
   revokeRoleRequestSchema,
@@ -828,6 +831,44 @@ adminPath({
 });
 
 adminPath({
+  path: "/api/v1/admin/expenses/{id}/approve",
+  operationId: "decideExpense",
+  summary: "Approve or reject an expense",
+  permission: "expense.approve",
+  description:
+    "One endpoint for both answers, because they are one decision.\n\n" +
+    "`expense.approve` is held by the super admin and nobody else, and " +
+    "that is also what makes a super admin's own entry approved on " +
+    "arrival: the create route auto-approves an author who holds this " +
+    "permission, so the two can never disagree about who is exempt.\n\n" +
+    "A rejection requires a note. A decision cannot be undone back to " +
+    "PENDING — changing your mind means deciding again the other way, " +
+    "and both decisions are in `wms.audit_log`.",
+  params: idParam,
+  request: decideExpenseRequestSchema,
+  response: okAdminResponseSchema,
+  responses: {
+    404: errorResponse("No such expense."),
+    409: errorResponse("It already carries that decision."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/expenses/{id}/receipts",
+  operationId: "listExpenseReceipts",
+  method: "get",
+  summary: "The bills attached to an expense",
+  permission: "expense.read",
+  description:
+    "A warehouse-scoped reader may only list receipts on an expense at " +
+    "one of their own sites — the site is a property of the row, so it " +
+    "is checked against the row rather than against the request.",
+  params: idParam,
+  response: receiptListResponseSchema,
+  responses: { 404: errorResponse("No such expense.") },
+});
+
+adminPath({
   path: "/api/v1/admin/users",
   operationId: "createUser",
   summary: "Add a member of staff",
@@ -1145,6 +1186,70 @@ adminPath({
   }),
   response: okAdminResponseSchema,
   responses: { 404: errorResponse("No such photo on that warehouse.") },
+});
+
+// The receipt upload is registered by hand for the same reason the
+// gallery upload is: the request body is the file, not JSON. Two content
+// types here rather than one — half the bills in a warehouse arrive as a
+// phone snap and half as an emailed PDF.
+registry.registerPath({
+  method: "post",
+  path: "/api/v1/admin/expenses/{id}/receipts",
+  operationId: "addExpenseReceipt",
+  tags: ["Admin"],
+  summary: "Attach a bill to an expense",
+  security: AUTHENTICATED,
+  description:
+    "The body is the file itself: `image/webp` (the browser resizes and " +
+    "re-encodes a photo before sending, so the four megabytes never " +
+    "cross the network) or `application/pdf` up to 5 MB.\n\nThe server " +
+    "reads the real RIFF/WEBP header or the `%PDF` magic bytes rather " +
+    "than believing the content-type, stores the object under " +
+    "`expenses/<id>/` with a random name, and only then inserts the row " +
+    "— an insert that fails takes the just-uploaded object with it. " +
+    "`x-file-name` is kept for display and is never used to build the " +
+    "storage key.\n\n**Requires** `expense.update`, and for a " +
+    "warehouse-scoped caller the expense must be at one of their own " +
+    "sites.",
+  request: {
+    params: idParam,
+    body: {
+      required: true,
+      content: {
+        "image/webp": { schema: { type: "string", format: "binary" } },
+        "application/pdf": { schema: { type: "string", format: "binary" } },
+      },
+    },
+  },
+  responses: {
+    201: { description: "Stored.", content: { "application/json": { schema: receiptResponseSchema } } },
+    401: errorResponse("No session. Sign in."),
+    403: errorResponse("Not your warehouse, or no `expense.update`."),
+    404: errorResponse("No such expense."),
+    409: errorResponse("Receipt storage is not configured on this environment."),
+    422: errorResponse("Not a WebP or a PDF, or over the size limit."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/expenses/{id}/receipts/{receiptId}",
+  operationId: "deleteExpenseReceipt",
+  method: "delete",
+  summary: "Remove a bill from an expense",
+  permission: "expense.update",
+  description:
+    "Takes the file off storage first and the row out of the table " +
+    "second, so a failure leaves a listed receipt rather than a " +
+    "paid-for object nothing remembers.\n\nRefused once the expense is " +
+    "APPROVED unless the caller can approve: the receipt is what the " +
+    "approval was given against, and pulling it afterwards leaves an " +
+    "approved figure with nothing behind it.",
+  params: z.object({
+    id: z.string().openapi({ example: "12" }),
+    receiptId: z.string().openapi({ example: "34" }),
+  }),
+  response: okAdminResponseSchema,
+  responses: { 404: errorResponse("No such receipt on that expense.") },
 });
 
 // ── Profile photos ────────────────────────────────────────────────

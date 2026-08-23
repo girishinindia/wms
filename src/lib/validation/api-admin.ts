@@ -350,6 +350,34 @@ export const setUserStatusRequestSchema = z
   })
   .openapi("SetUserStatusRequest");
 
+export const decideExpenseRequestSchema = z
+  .object({
+    decision: z.enum(["APPROVED", "REJECTED"]),
+    /** Required on a rejection — refusing somebody's expense without
+     *  saying why turns into a phone call either way. */
+    note: optional(z.string().trim().max(300)),
+  })
+  .refine((v) => v.decision !== "REJECTED" || (v.note ?? "").trim().length >= 5, {
+    message: "Say why it is being rejected",
+    path: ["note"],
+  })
+  .openapi("DecideExpenseRequest");
+
+export const receiptResponseSchema = z
+  .object({
+    id: z.number().int(),
+    url: z.string(),
+    contentType: z.string(),
+    bytes: z.number().int(),
+    originalName: z.string().nullable(),
+    createdAt: z.string(),
+  })
+  .openapi("ExpenseReceipt");
+
+export const receiptListResponseSchema = z
+  .object({ receipts: z.array(receiptResponseSchema) })
+  .openapi("ExpenseReceiptList");
+
 export const okAdminResponseSchema = z
   .object({ ok: z.literal(true) })
   .openapi("OkAdminResponse");

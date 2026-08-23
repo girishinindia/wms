@@ -4,10 +4,12 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import { EyeIcon, PencilIcon, TrashIcon, XIcon } from "@/components/icons";
+import { EyeIcon, PaperclipIcon, PencilIcon, TrashIcon, XIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import AttachmentPanel from "./AttachmentPanel";
+import { formatPaise, paiseToInput } from "@/lib/money";
 import type { ListState } from "@/lib/admin/listing";
 import type { MasterField } from "@/lib/admin/master-registry";
 
@@ -41,6 +43,15 @@ export type MasterRow = {
   inUseDetail: string;
   parentId?: number | null;
   parentLabel?: string | null;
+  /** The second foreign key, when the resource has one — an expense's
+   *  warehouse. Also what decides who sees the row. */
+  scopeId?: number | null;
+  scopeLabel?: string | null;
+  approvalStatus?: string | null;
+  approvalNote?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  attachmentCount?: number;
   values: Record<string, string | number | null>;
   createdAt: string | null;
   updatedAt: string | null;
@@ -63,6 +74,18 @@ export type MasterSpec = {
     /** "Country" when the options are grouped one level up. */
     groupLabel?: string;
   } | null;
+  /** A second picker, and the row's home. See `scope` in the registry. */
+  scope?: {
+    key: string;
+    label: string;
+    options: ParentOption[];
+  } | null;
+  /** Present when rows need a decision. `canDecide` is about THIS
+   *  viewer; the route asks the same question again. */
+  approval?: { canDecide: boolean } | null;
+  attachments?: { endpoint: string; label: string; hint: string; accept: string } | null;
+  /** Delete cancels the row instead of removing it. */
+  softDeleteOnly?: boolean;
   dependentNoun: string;
   canCreate: boolean;
   canUpdate: boolean;
@@ -94,9 +117,23 @@ const asDraft = (row: MasterRow | null, spec: MasterSpec): Draft => {
   const d: Draft = {};
   for (const f of spec.fields) {
     const v = row?.values[f.key];
-    d[f.key] = v === null || v === undefined ? "" : String(v);
+    if (v === null || v === undefined) {
+      // A new expense is dated today far more often than any other day.
+      d[f.key] = f.type === "date" && !row ? new Date().toISOString().slice(0, 10) : "";
+      continue;
+    }
+    // Stored in paise, edited in rupees.
+    d[f.key] = f.type === "money" ? paiseToInput(Number(v)) : String(v);
   }
   if (spec.parent) d[spec.parent.key] = row?.parentId ? String(row.parentId) : "";
+  if (spec.scope) {
+    d[spec.scope.key] = row?.scopeId
+      ? String(row.scopeId)
+      : // One site and it is the only one they could pick, so pick it.
+        spec.scope.options.length === 1
+        ? String(spec.scope.options[0]!.id)
+        : "";
+  }
   return d;
 };
 
@@ -107,11 +144,24 @@ function payload(draft: Draft, spec: MasterSpec): Record<string, unknown> {
   for (const field of spec.fields) {
     const raw = draft[field.key] ?? "";
     if (raw === "") continue;
+    // `money` stays a string on purpose: `inputToPaise` on the server is
+    // the single rounding rule, and turning it into a float here would
+    // put a second one in front of it.
     out[field.key] = field.type === "number" ? Number(raw) : raw;
   }
   if (spec.parent && draft[spec.parent.key]) out[spec.parent.key] = Number(draft[spec.parent.key]);
+  if (spec.scope && draft[spec.scope.key]) out[spec.scope.key] = Number(draft[spec.scope.key]);
   return out;
 }
+
+/** "21 Aug 2026" from a `YYYY-MM-DD` string, with no Date in between —
+ *  see the `date` note in the registry. */
+const fmtDay = (ymd: string) => {
+  const [y, m, d] = ymd.split("-");
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const month = months[Number(m) - 1];
+  return month ? `${d} ${month} ${y}` : ymd;
+};
 
 const fmtDate = (iso: string | null) =>
   iso
@@ -160,6 +210,11 @@ export default function MasterTable({
     if (spec.parent && drawer.mode === "create" && !body[spec.parent.key]) {
       setBusy(null);
       setErrors({ [spec.parent.key]: `Choose a ${spec.parent.label.toLowerCase()}` });
+      return;
+    }
+    if (spec.scope && drawer.mode === "create" && !body[spec.scope.key]) {
+      setBusy(null);
+      setErrors({ [spec.scope.key]: `Choose a ${spec.scope.label.toLowerCase()}` });
       return;
     }
 
@@ -295,6 +350,19 @@ export default function MasterTable({
       });
     }
 
+    if (spec.scope) {
+      cols.push({
+        id: "scope",
+        accessorFn: (r) => r.scopeLabel ?? "",
+        header: spec.scope.label,
+        cell: ({ row }) => (
+          <span className="whitespace-nowrap text-verdigris-200/60">
+            {row.original.scopeLabel ?? "—"}
+          </span>
+        ),
+      });
+    }
+
     for (const f of spec.fields) {
       // Editable in the drawer, absent from the list — see `hideInTable`
       // in the registry. An FAQ answer belongs in a form, not a cell.
@@ -306,6 +374,16 @@ export default function MasterTable({
         meta: { align: f.align, mono: f.mono, width: f.width } satisfies ColumnMeta,
         cell: ({ row }) => {
           const v = row.original.values[f.key];
+          if (f.type === "money" && v !== null && v !== undefined) {
+            return (
+              <span className="whitespace-nowrap font-medium tabular-nums text-verdigris-50">
+                {formatPaise(Number(v))}
+              </span>
+            );
+          }
+          if (f.type === "date" && v) {
+            return <span className="whitespace-nowrap">{fmtDay(String(v))}</span>;
+          }
           if (f.type === "select" && v !== null && v !== undefined) {
             return (
               <span className="rounded-full border border-verdigris-300/20 px-2.5 py-0.5 text-[0.78rem] text-verdigris-200">
@@ -318,15 +396,72 @@ export default function MasterTable({
       });
     }
 
-    cols.push({
-      id: "inUse",
-      accessorFn: (r) => r.inUse,
-      header: "In use",
-      enableSorting: false,
-      meta: { className: "whitespace-nowrap text-xs text-verdigris-200/50" } satisfies ColumnMeta,
-      cell: ({ row }) =>
-        row.original.inUse > 0 ? row.original.inUseDetail || `${row.original.inUse} ${spec.dependentNoun}` : "—",
-    });
+    if (spec.approval) {
+      cols.push({
+        id: "approval",
+        accessorFn: (r) => r.approvalStatus ?? "",
+        header: "Approval",
+        cell: ({ row }) => {
+          const status = row.original.approvalStatus ?? "PENDING";
+          const look =
+            status === "APPROVED"
+              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200"
+              : status === "REJECTED"
+                ? "border-rose-400/30 bg-rose-400/10 text-rose-200"
+                : "border-amber-400/30 bg-amber-400/10 text-amber-200";
+          return (
+            <span
+              className={`whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[0.78rem] ${look}`}
+              title={
+                status === "PENDING"
+                  ? "Waiting for a super admin to decide"
+                  : `${status.toLowerCase()} by ${row.original.approvedBy ?? "—"}${
+                      row.original.approvedAt ? ` on ${row.original.approvedAt}` : ""
+                    }`
+              }
+            >
+              {status === "PENDING" ? "awaiting" : status.toLowerCase()}
+            </span>
+          );
+        },
+      });
+    }
+
+    if (spec.attachments) {
+      cols.push({
+        id: "receipts",
+        accessorFn: (r) => r.attachmentCount ?? 0,
+        header: spec.attachments.label,
+        enableSorting: false,
+        meta: { className: "whitespace-nowrap text-xs text-verdigris-200/50" } satisfies ColumnMeta,
+        cell: ({ row }) =>
+          (row.original.attachmentCount ?? 0) > 0 ? (
+            <span className="inline-flex items-center gap-1 text-verdigris-200/75">
+              <PaperclipIcon className="h-3.5 w-3.5" />
+              {row.original.attachmentCount}
+            </span>
+          ) : (
+            <span className="text-amber-300/70">none</span>
+          ),
+      });
+    }
+
+    /**
+     * "In use" is about what points AT this row. An expense is pointed
+     * at by nothing, so the column would be a solid line of em-dashes
+     * taking up space the amount could use.
+     */
+    if (spec.dependentNoun !== "records") {
+      cols.push({
+        id: "inUse",
+        accessorFn: (r) => r.inUse,
+        header: "In use",
+        enableSorting: false,
+        meta: { className: "whitespace-nowrap text-xs text-verdigris-200/50" } satisfies ColumnMeta,
+        cell: ({ row }) =>
+          row.original.inUse > 0 ? row.original.inUseDetail || `${row.original.inUse} ${spec.dependentNoun}` : "—",
+      });
+    }
 
     cols.push({
       id: "status",
@@ -360,7 +495,13 @@ export default function MasterTable({
             ) : null}
             {spec.canDelete ? (
               <IconButton
-                label={r.inUse > 0 ? `Cannot delete — ${r.inUseDetail} still use it` : `Delete ${rowLabel(r)}`}
+                label={
+                  r.inUse > 0
+                    ? `Cannot delete — ${r.inUseDetail} still use it`
+                    : spec.softDeleteOnly
+                      ? `Remove ${rowLabel(r)} from the books`
+                      : `Delete ${rowLabel(r)}`
+                }
                 tone="danger"
                 disabled={r.inUse > 0}
                 onClick={() => setConfirm({ kind: "delete", ids: [r.id], label: rowLabel(r) })}
@@ -450,9 +591,17 @@ export default function MasterTable({
 
       {confirm?.kind === "delete" ? (
         <ConfirmDialog
-          title={`Delete ${confirm.label}?`}
-          message="This cannot be undone; the audit log keeps a copy of the values."
-          confirmLabel="Delete"
+          title={
+            spec.softDeleteOnly
+              ? `Remove ${confirm.label} from the books?`
+              : `Delete ${confirm.label}?`
+          }
+          message={
+            spec.softDeleteOnly
+              ? "It leaves every list and every total. The row itself is kept, so the year end still adds up and the audit log can say what changed."
+              : "This cannot be undone; the audit log keeps a copy of the values."
+          }
+          confirmLabel={spec.softDeleteOnly ? "Remove" : "Delete"}
           busy={busy === "bulk"}
           onConfirm={() => remove(confirm.ids)}
           onCancel={() => setConfirm(null)}
@@ -471,6 +620,10 @@ export default function MasterTable({
           onSave={save}
           onEdit={(row) => openEdit(row)}
           onDelete={(row) => setConfirm({ kind: "delete", ids: [row.id], label: rowLabel(row) })}
+          onDecided={() => {
+            close();
+            router.refresh();
+          }}
         />
       ) : null}
     </>
@@ -482,7 +635,7 @@ const cap = (s: string) => `${s[0]!.toUpperCase()}${s.slice(1)}`;
 // ── drawer ────────────────────────────────────────────────────────
 
 function MasterDrawer({
-  spec, drawer, draft, setDraft, errors, busy, onClose, onSave, onEdit, onDelete,
+  spec, drawer, draft, setDraft, errors, busy, onClose, onSave, onEdit, onDelete, onDecided,
 }: {
   spec: MasterSpec;
   drawer: NonNullable<Drawer>;
@@ -494,9 +647,40 @@ function MasterDrawer({
   onSave: () => void;
   onEdit: (row: MasterRow) => void;
   onDelete: (row: MasterRow) => void;
+  onDecided: () => void;
 }) {
+  const toast = useToast();
   const view = drawer.mode === "view";
   const row = drawer.mode === "create" ? null : drawer.row;
+
+  /** Approve / reject, and the reason box that a rejection needs. */
+  const [deciding, setDeciding] = useState<"APPROVED" | "REJECTED" | null>(null);
+  const [note, setNote] = useState("");
+  const [decideBusy, setDecideBusy] = useState(false);
+
+  const status = row?.approvalStatus ?? null;
+  const canDecide = Boolean(spec.approval?.canDecide && row);
+
+  async function decide(decision: "APPROVED" | "REJECTED") {
+    if (!row) return;
+    if (decision === "REJECTED" && note.trim().length < 5) {
+      toast.error("Say why it is being rejected.");
+      return;
+    }
+    setDecideBusy(true);
+    const result = await api<{ ok: true }>(`/admin/expenses/${row.id}/approve`, {
+      body: { decision, ...(note.trim() ? { note: note.trim() } : {}) },
+    });
+    setDecideBusy(false);
+    if (!result.ok) {
+      toast.error(result.error.message);
+      return;
+    }
+    toast.success(decision === "APPROVED" ? "Approved." : "Rejected.");
+    setDeciding(null);
+    setNote("");
+    onDecided();
+  }
 
   /**
    * The parent picker narrowed one level up — a city's state chosen from
@@ -571,18 +755,44 @@ function MasterDrawer({
                       },
                     ]
                   : []),
+                ...(spec.scope
+                  ? [{ label: spec.scope.label, value: row.scopeLabel ?? "—" }]
+                  : []),
                 ...spec.fields.map((f) => ({
                   label: f.label,
                   mono: f.mono,
+                  // Same formatting as the cells. The first cut of this
+                  // read the raw column and showed "4230075" where the
+                  // list beside it said ₹42,300.75 — the two views have
+                  // to agree, or one of them is lying about the money.
                   value:
                     row.values[f.key] === null || row.values[f.key] === undefined || row.values[f.key] === ""
                       ? "—"
-                      : f.type === "select"
-                        ? String(row.values[f.key]).toLowerCase().replace(/_/g, " ")
-                        : String(row.values[f.key]),
+                      : f.type === "money"
+                        ? formatPaise(Number(row.values[f.key]))
+                        : f.type === "date"
+                          ? fmtDay(String(row.values[f.key]))
+                          : f.type === "select"
+                            ? String(row.values[f.key]).toLowerCase().replace(/_/g, " ")
+                            : String(row.values[f.key]),
                 })),
+                ...(spec.approval && row.approvalStatus
+                  ? [
+                      {
+                        label: "Approval",
+                        value:
+                          row.approvalStatus === "PENDING"
+                            ? "awaiting a decision"
+                            : `${row.approvalStatus.toLowerCase()} by ${row.approvedBy ?? "—"}${
+                                row.approvedAt ? ` on ${row.approvedAt}` : ""
+                              }${row.approvalNote ? ` — ${row.approvalNote}` : ""}`,
+                      },
+                    ]
+                  : []),
                 { label: "Status", value: <StatusBadge value={row.isActive ? "ACTIVE" : "CLOSED"} /> },
-                { label: "In use", value: row.inUse > 0 ? row.inUseDetail : "Not referenced anywhere" },
+                ...(spec.dependentNoun === "records"
+                  ? []
+                  : [{ label: "In use", value: row.inUse > 0 ? row.inUseDetail : "Not referenced anywhere" }]),
                 { label: "Created", value: fmtDate(row.createdAt) },
                 { label: "Updated", value: fmtDate(row.updatedAt) },
               ]}
@@ -620,6 +830,7 @@ function MasterDrawer({
               <div>
                 <label htmlFor="f-parent" className="text-[0.84rem] font-medium text-verdigris-200/70">
                   {spec.parent.label}
+                  {view ? "" : " *"}
                 </label>
                 {view ? (
                   <p className="mt-1 text-sm text-verdigris-50">
@@ -645,6 +856,37 @@ function MasterDrawer({
                   </select>
                 )}
                 {errors[spec.parent.key] ? <p className="mt-1 text-xs text-rose-300">{errors[spec.parent.key]}</p> : null}
+              </div>
+            ) : null}
+
+            {spec.scope ? (
+              <div>
+                <label htmlFor="f-scope" className="text-[0.84rem] font-medium text-verdigris-200/70">
+                  {spec.scope.label}
+                  {view ? "" : " *"}
+                </label>
+                {view ? (
+                  <p className="mt-1 text-sm text-verdigris-50">{row?.scopeLabel ?? "—"}</p>
+                ) : (
+                  <select
+                    id="f-scope"
+                    value={draft[spec.scope.key] ?? ""}
+                    onChange={(e) => setDraft({ ...draft, [spec.scope!.key]: e.target.value })}
+                    className={`${input} ${tone(spec.scope.key)}`}
+                  >
+                    <option value="" className="bg-ink-850">
+                      {spec.scope.options.length === 0
+                        ? `No ${spec.scope.label.toLowerCase()} available to you`
+                        : "Choose"}
+                    </option>
+                    {spec.scope.options.map((o) => (
+                      <option key={o.id} value={o.id} className="bg-ink-850">{o.label}</option>
+                    ))}
+                  </select>
+                )}
+                {errors[spec.scope.key] ? (
+                  <p className="mt-1 text-xs text-rose-300">{errors[spec.scope.key]}</p>
+                ) : null}
               </div>
             ) : null}
 
@@ -690,7 +932,11 @@ function MasterDrawer({
                       ? "—"
                       : f.type === "select"
                         ? String(row.values[f.key]).toLowerCase().replace(/_/g, " ")
-                        : String(row!.values[f.key])}
+                        : f.type === "money"
+                          ? formatPaise(Number(row.values[f.key]))
+                          : f.type === "date"
+                            ? fmtDay(String(row.values[f.key]))
+                            : String(row!.values[f.key])}
                   </p>
                 ) : f.type === "textarea" ? (
                   <textarea
@@ -713,6 +959,35 @@ function MasterDrawer({
                       <option key={o} value={o} className="bg-ink-850">{o.toLowerCase().replace(/_/g, " ")}</option>
                     ))}
                   </select>
+                ) : f.type === "date" ? (
+                  <input
+                    id={`f-${f.key}`}
+                    type="date"
+                    value={draft[f.key] ?? ""}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
+                    className={`${input} ${tone(f.key)}`}
+                  />
+                ) : f.type === "money" ? (
+                  <div className="relative">
+                    {/* The ₹ is furniture, not text in the box: typing
+                        over a prefilled symbol is a small daily annoyance
+                        and the server strips it anyway. */}
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-verdigris-200/50">
+                      ₹
+                    </span>
+                    <input
+                      id={`f-${f.key}`}
+                      type="text"
+                      inputMode="decimal"
+                      value={draft[f.key] ?? ""}
+                      placeholder="0.00"
+                      onChange={(e) =>
+                        setDraft({ ...draft, [f.key]: e.target.value.replace(/[^\d.]/g, "") })
+                      }
+                      className={`${input} ${tone(f.key)} pl-7 text-right tabular-nums`}
+                    />
+                  </div>
                 ) : (
                   <input
                     id={`f-${f.key}`}
@@ -734,17 +1009,96 @@ function MasterDrawer({
             )))}
           </form>
           )}
+
+          {/* Both of these want a row to hang off, so neither appears
+              while one is being created. Attaching a receipt to an
+              expense that does not exist yet has nowhere to put it. */}
+          {row && spec.attachments ? (
+            <div className="mt-6 border-t border-verdigris-300/10 pt-5">
+              <AttachmentPanel
+                endpoint={spec.attachments.endpoint.replace("{id}", String(row.id))}
+                label={spec.attachments.label}
+                hint={spec.attachments.hint}
+                accept={spec.attachments.accept}
+                readOnly={!spec.canUpdate}
+              />
+            </div>
+          ) : null}
+
         </div>
+
+        {/* The decision, on its own row above the ordinary buttons: it is
+            a different kind of action from Edit and Close, and putting a
+            reason box in a line of buttons squeezes both. */}
+        {view && row && canDecide && deciding ? (
+          <div className="border-t border-verdigris-300/10 px-6 py-4">
+            <label htmlFor="decide-note" className="text-[0.84rem] font-medium text-verdigris-200/70">
+              {deciding === "REJECTED" ? "Why is it being rejected?" : "Note (optional)"}
+            </label>
+            <input
+              id="decide-note"
+              type="text"
+              autoFocus
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="mt-1.5 w-full rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50 focus:outline-none focus:ring-2 focus:ring-patina/40"
+            />
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setDeciding(null); setNote(""); }}
+                className="rounded-lg border border-verdigris-300/20 px-3 py-1.5 text-sm text-verdigris-100 hover:border-verdigris-300/45"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void decide(deciding)}
+                disabled={decideBusy}
+                className={`inline-flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-semibold disabled:opacity-60 ${
+                  deciding === "APPROVED"
+                    ? "bg-verdigris-400 text-ink-900 hover:bg-patina"
+                    : "bg-rose-500/85 text-white hover:bg-rose-500"
+                }`}
+              >
+                {decideBusy ? <Spinner className="h-3.5 w-3.5" /> : null}
+                Confirm {deciding === "APPROVED" ? "approval" : "rejection"}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <footer className="flex items-center justify-end gap-2 border-t border-verdigris-300/10 px-6 py-4">
           {view && row ? (
             <>
+              {canDecide && !deciding ? (
+                <span className="mr-auto inline-flex items-center gap-2">
+                  {status !== "APPROVED" ? (
+                    <button
+                      type="button"
+                      onClick={() => { setDeciding("APPROVED"); setNote(""); }}
+                      className="rounded-lg border border-emerald-400/35 px-3 py-2 text-sm text-emerald-200 hover:border-emerald-400/70"
+                    >
+                      Approve
+                    </button>
+                  ) : null}
+                  {status !== "REJECTED" ? (
+                    <button
+                      type="button"
+                      onClick={() => { setDeciding("REJECTED"); setNote(""); }}
+                      className="rounded-lg border border-rose-400/30 px-3 py-2 text-sm text-rose-200 hover:border-rose-400/60"
+                    >
+                      Reject
+                    </button>
+                  ) : null}
+                </span>
+              ) : null}
               {spec.canDelete ? (
                 <button type="button" disabled={row.inUse > 0}
                   title={row.inUse > 0 ? `${row.inUseDetail} still use it` : undefined}
                   onClick={() => onDelete(row)}
                   className="mr-auto inline-flex items-center gap-1.5 rounded-lg border border-rose-400/30 px-3 py-2 text-sm text-rose-200 hover:border-rose-400/60 disabled:opacity-40">
-                  <TrashIcon className="h-4 w-4" /> Delete
+                  <TrashIcon className="h-4 w-4" /> {spec.softDeleteOnly ? "Remove" : "Delete"}
                 </button>
               ) : null}
               <button type="button" onClick={onClose}

@@ -293,3 +293,17 @@ export const BuildingIcon = (p: P) => (
     <path d="M7 8h2M7 11.5h2M7 15h2M10 20v-3h-2v3" />
   </svg>
 );
+
+/** Attachment — a paperclip. A receipt hanging off an expense. */
+export const PaperclipIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M20 11.5 12.2 19.3a5 5 0 0 1-7.07-7.07l8.13-8.13a3.4 3.4 0 1 1 4.81 4.81l-8.13 8.13a1.8 1.8 0 1 1-2.55-2.55l7.4-7.4" />
+  </svg>
+);
+
+/** A rupee sign, for the amount a receipt is being attached to. */
+export const RupeeIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M7 4h10M7 8.5h10M7 20l7.5-7.5a4.25 4.25 0 0 0-3-7.25H7" />
+  </svg>
+);
