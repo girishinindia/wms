@@ -142,6 +142,31 @@ export async function limitOtpSend(account: string): Promise<LimitResult> {
 }
 
 /**
+ * Sign-in details sent to one account, per hour.
+ *
+ * Keyed on the TARGET, not on the admin doing the sending, and that is
+ * the whole point: every send replaces the account's password and puts
+ * a message in somebody's inbox. Two admins each clicking "send again"
+ * twice would leave the person with four emails, three of them already
+ * dead — the last send wins and the earlier ones just look broken.
+ *
+ * Three an hour is generous for the real case ("it went to spam, try
+ * again") and low enough that the button cannot be used to bury an
+ * inbox. A separate budget from `limitOtpSend` so an invite never eats
+ * the allowance that person needs to reset their own password.
+ *
+ * Hard-coded rather than an env var: it is a product decision about how
+ * many emails one person should receive, not a knob for an operator to
+ * turn, and one more unset variable on Vercel is one more thing to go
+ * wrong quietly.
+ */
+export async function limitInviteSend(userId: number): Promise<LimitResult> {
+  const env = ratelimitEnv();
+  if (!env.RATELIMIT_ENABLED) return ALLOWED;
+  return check("invite-hour", String(userId), 3, 3_600, "account");
+}
+
+/**
  * Best-effort wrapper: if Upstash is unreachable, allow the request.
  *
  * FAIL OPEN, deliberately, and it is a real trade. Failing closed turns

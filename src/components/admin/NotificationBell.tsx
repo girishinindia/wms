@@ -141,8 +141,10 @@ export default function NotificationBell() {
                       )}
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-verdigris-50">{item.title}</p>
-                        <p className="mt-0.5 line-clamp-2 text-xs text-verdigris-200/70">{item.body}</p>
-                        <p className="mt-1 text-[0.78rem] text-verdigris-200/45">{ago(item.createdAt)}</p>
+                        {/* Same sentence as the notifications table, so
+                            the same weight — see the note there. */}
+                        <p className="mt-0.5 line-clamp-2 text-xs text-verdigris-200/80">{item.body}</p>
+                        <p className="mt-1 text-[0.78rem] text-verdigris-200/60">{ago(item.createdAt)}</p>
                       </div>
                     </div>
                   </button>

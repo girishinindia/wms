@@ -125,7 +125,16 @@ export default function NotificationsTable({
             <span className={`block font-semibold ${row.original.readAt ? "text-verdigris-100" : "text-verdigris-50"}`}>
               {row.original.title}
             </span>
-            <span className="mt-0.5 line-clamp-2 block text-xs text-verdigris-200/65">
+            {/*
+              /80, not /65. At 12px on the card this is the sentence
+              people actually read, and at /65 it painted #78958a —
+              5.5:1, which clears AA and still reads as grey mush. It
+              was also DIMMER than the `user.created` event key beside
+              it, which is machine noise. /80 is 7.6:1, well clear of
+              the title above it at 16.6:1 so the row keeps its
+              hierarchy. Size is untouched.
+            */}
+            <span className="mt-0.5 line-clamp-2 block text-xs text-verdigris-200/80">
               {row.original.body}
             </span>
           </button>
@@ -142,7 +151,10 @@ export default function NotificationsTable({
       {
         accessorKey: "createdAt",
         header: "When",
-        meta: { className: "whitespace-nowrap text-xs text-verdigris-200/60" } satisfies ColumnMeta,
+        // /75 rather than /60: at 4.8:1 the timestamp was the faintest
+        // thing in the row, and a date nobody can read is a column
+        // nobody uses.
+        meta: { className: "whitespace-nowrap text-xs text-verdigris-200/75" } satisfies ColumnMeta,
         cell: ({ getValue }) =>
           new Date(String(getValue())).toLocaleString("en-IN", {
             dateStyle: "medium",

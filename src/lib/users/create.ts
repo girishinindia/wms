@@ -1,7 +1,5 @@
 import "server-only";
 
-import { randomInt } from "node:crypto";
-
 import { sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
@@ -9,9 +7,9 @@ import { auditQuietly } from "@/lib/audit";
 import type { Actor } from "@/lib/auth/guard";
 import { hashPassword } from "@/lib/auth/password";
 import { announce } from "@/lib/notify/announce";
-import { sendEmail } from "@/lib/notify/email";
 import { absoluteUrl } from "@/lib/url";
 import { mayAssign } from "@/lib/users/authority";
+import { type InviteStatus, sendInvite, temporaryPassword } from "@/lib/users/invite";
 
 /**
  * Creating a staff login.
@@ -19,6 +17,9 @@ import { mayAssign } from "@/lib/users/authority";
  * Every rule about who may do this lives in `authority.ts`, which reads
  * `role_creation_rule`. This file is the doing: make a password, write
  * the row, bind the role, tell the people who need telling.
+ *
+ * The password itself is minted and sent by `invite.ts` and never comes
+ * back out of this function — see `CreatedUser`.
  */
 
 export class UserCreateError extends Error {
@@ -32,27 +33,9 @@ export class UserCreateError extends Error {
   }
 }
 
-/**
- * A temporary password a person can read down a phone line.
- *
- * Upper case and digits only, with `I`, `L`, `O`, `0` and `1` left out —
- * the pairs that are the same shape in most fonts. That is the whole of
- * the claim: `B`/`8`, `S`/`5` and `Z`/`2` are all still in, because
- * removing every arguable pair leaves an alphabet too small to be worth
- * having. Grouped in fours so it can be read out.
- *
- * `randomInt` is the CSPRNG, not `Math.random`. Twelve characters from
- * a 31-symbol alphabet is 59.5 bits — well short of what a permanent
- * password should carry, and ample for one that is rate-limited at the
- * login endpoint and replaced the first time it is used.
- */
-const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-
-export function temporaryPassword(): string {
-  const pick = () => ALPHABET[randomInt(ALPHABET.length)]!;
-  const group = () => Array.from({ length: 4 }, pick).join("");
-  return `${group()}-${group()}-${group()}`;
-}
+/** Re-exported: it lived here first, and `tests/users.test.ts` and any
+ *  future caller should not have to know it moved. */
+export { temporaryPassword };
 
 export type CreateUserInput = {
   firstName: string;
@@ -71,10 +54,17 @@ export type CreatedUser = {
   role: string;
   roleLabel: string;
   warehouseLabel: string | null;
-  /** Returned exactly once, in the response to the create call, and
-   *  never stored anywhere readable. */
-  temporaryPassword: string;
-  emailed: boolean;
+  /**
+   * What happened to the email — NOT the password.
+   *
+   * The password used to be returned here and shown in a dialog. That
+   * put it in the API response, in the browser's network tab, and in
+   * front of whoever was standing behind the person creating the
+   * account. It now leaves the server only inside the email, and the
+   * way back from a send that did not happen is
+   * `POST /admin/users/{id}/invite`, which mints a new one.
+   */
+  emailStatus: InviteStatus;
 };
 
 type Meta = { requestId: string; ip: string | null; userAgent: string | null };
@@ -240,19 +230,12 @@ export async function createUser(
     });
   });
 
-  const outcome = await sendEmail({
+  const emailStatus = await sendInvite({
     toEmail: input.email,
     toName: name,
-    subject: "Your Genius WMS sign-in details",
-    message:
-      `You have been added to Genius WMS as ${role.name}${whereSuffix}.\n\n` +
-      `Sign in with this email address and the temporary password below. ` +
-      `You will be asked to choose your own password straight away.\n\n` +
-      `Temporary password: ${temp}\n\n` +
-      `If you were not expecting this, tell us and we will close the account.`,
-    actionUrl: absoluteUrl("/sign-in") ?? undefined,
-    actionLabel: "Sign in",
-  }).catch(() => ({ status: "FAILED" as const }));
+    roleLine: ` as ${role.name}${whereSuffix}`,
+    temp,
+  });
 
   return {
     id: Number(id),
@@ -261,7 +244,6 @@ export async function createUser(
     role: input.role,
     roleLabel: role.name,
     warehouseLabel,
-    temporaryPassword: temp,
-    emailed: outcome.status === "SENT",
+    emailStatus,
   };
 }

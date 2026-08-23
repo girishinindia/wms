@@ -6,6 +6,7 @@ import UserRoles, {
   type GrantableRole,
   type ScopeOption,
 } from "@/components/admin/UserRoles";
+import ResendInvite from "@/components/admin/ResendInvite";
 import UserNameEditor from "@/components/admin/UserNameEditor";
 import UserOverrides, { type Grantable, type Override } from "@/components/admin/UserOverrides";
 import UserStatus from "@/components/admin/UserStatus";
@@ -42,6 +43,16 @@ export default async function UserDetailPage({
   const viewerRoles = guard.actor.roles.map((r) => r.role);
   const canAssign = grantFor(guard.actor, "role.assign") !== null;
   const canUpdate = grantFor(guard.actor, "user.update") !== null;
+  /**
+   * Re-issuing a password is the same act as creating the account, so
+   * it asks for `user.create` and not `user.update`. Being allowed to
+   * correct somebody's phone number is not the same permission as being
+   * allowed to hand them a working credential.
+   *
+   * `mayActOnUser` is checked below, once the target's roles are known,
+   * and again by the route — this only decides whether to draw it.
+   */
+  const canInvite = grantFor(guard.actor, "user.create") !== null;
 
   const [users, roleRows, grantableRows, warehouseRows, importerRows] = await Promise.all([
     getDb().execute<{
@@ -159,6 +170,20 @@ export default async function UserDetailPage({
   const manage = canAssign ? await mayManageUser(guard.actor, id) : ({ ok: false as const, reason: "" });
   const manageable = manage === true;
   const lockedReason = manage === true ? null : manage.reason;
+
+  /**
+   * Whether to draw the "send sign-in details" button.
+   *
+   * The same three questions the endpoint asks, in the same order: do
+   * you hold `user.create`, is this account within your reach, and is
+   * it somebody other than you. Your own password is changed from your
+   * profile, not by mailing yourself a new one.
+   */
+  const isSelf = id === guard.actor.session.userId;
+  const mayInvite =
+    canInvite &&
+    !isSelf &&
+    (await mayActOnUser(guard.actor, id, "user.create", "send their sign-in details")) === true;
 
   // A warehouse admin picks from their own sites; a super admin from all.
   const assignScope = grantFor(guard.actor, "role.assign");
@@ -283,10 +308,35 @@ export default async function UserDetailPage({
             },
             {
               label: "Password",
-              value: user.must_change_password ? (
-                <span className="text-amber-300">must be changed at next sign-in</span>
-              ) : (
-                "set"
+              value: (
+                <>
+                  {user.must_change_password ? (
+                    <span className="text-amber-300">must be changed at next sign-in</span>
+                  ) : (
+                    "set"
+                  )}
+                  {/*
+                    "I never got the email" is the commonest request
+                    there is, and until now the only answer was to
+                    delete the account and make it again. This issues a
+                    NEW temporary password and emails it — the old one
+                    exists only as a hash and cannot be read back, which
+                    is the point rather than a limitation.
+
+                    Offered only on somebody else's account, and only to
+                    a viewer who could have created them: it hands over a
+                    working credential, so it asks the same question the
+                    endpoint behind it asks.
+                  */}
+                  {mayInvite && user.status === "ACTIVE" ? (
+                    <span className="mt-2 block">
+                      <ResendInvite
+                        userId={user.id}
+                        className="rounded-lg border border-verdigris-300/25 px-2.5 py-1 text-xs text-verdigris-100 transition-colors hover:border-verdigris-300/50 disabled:opacity-55"
+                      />
+                    </span>
+                  ) : null}
+                </>
               ),
             },
             ...(user.deactivation_reason

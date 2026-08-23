@@ -9,6 +9,8 @@ import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 
+import ResendInvite from "./ResendInvite";
+
 /**
  * "Add user" — a login for a member of staff.
  *
@@ -19,10 +21,12 @@ import { api } from "@/lib/api/client";
  * theirs. A dropdown that offers what the API will refuse teaches people
  * to distrust the screen.
  *
- * The password is created on the server, shown here once, and emailed.
- * It is never stored anywhere a person can read it back — which is why
- * this component has a panel that appears after the drawer closes, and
- * says so plainly.
+ * The temporary password is created on the server and EMAILED. It is
+ * never returned to this component, never shown on screen and never
+ * stored anywhere it can be read back. The panel that appears after the
+ * drawer closes reports what happened to that email — and, when it did
+ * not go out, offers to send a fresh one rather than printing a
+ * password nobody asked to see.
  */
 
 export type CreatableRoleOption = {
@@ -34,13 +38,15 @@ export type CreatableRoleOption = {
 
 export type WarehouseOption = { id: number; label: string };
 
+type EmailStatus = "SENT" | "SUPPRESSED" | "FAILED";
+
 type Created = {
+  id: number;
   name: string;
   email: string;
   roleLabel: string;
   warehouseLabel: string | null;
-  temporaryPassword: string;
-  emailed: boolean;
+  emailStatus: EmailStatus;
 };
 
 export default function UserCreateDrawer({
@@ -98,8 +104,7 @@ export default function UserCreateDrawer({
       name: string;
       roleLabel: string;
       warehouseLabel: string | null;
-      temporaryPassword: string;
-      emailed: boolean;
+      emailStatus: EmailStatus;
     }>("/admin/users", {
       body: {
         firstName: (draft.firstName ?? "").trim(),
@@ -121,12 +126,12 @@ export default function UserCreateDrawer({
 
     toast.success(`${result.data.name} added as ${result.data.roleLabel}.`);
     setCreated({
+      id: result.data.id,
       name: result.data.name,
       email: result.data.email,
       roleLabel: result.data.roleLabel,
       warehouseLabel: result.data.warehouseLabel,
-      temporaryPassword: result.data.temporaryPassword,
-      emailed: result.data.emailed,
+      emailStatus: result.data.emailStatus,
     });
     setOpen(false);
     reset();
@@ -335,30 +340,46 @@ export default function UserCreateDrawer({
               {created.name} added as {created.roleLabel}
               {created.warehouseLabel ? ` at ${created.warehouseLabel}` : ""}
             </h2>
-            <p className="mt-2 text-sm text-verdigris-200/75">
-              {created.emailed
-                ? `The password below was also emailed to ${created.email}.`
-                : `The email to ${created.email} did not go out — hand the password over yourself.`}{" "}
-              It is shown here <strong className="text-verdigris-50">once</strong> and cannot be read
-              back afterwards.
-            </p>
-            <div className="mt-4 flex items-center gap-2 rounded-lg border border-verdigris-300/20 bg-ink-900/60 px-4 py-3">
-              <code className="flex-1 select-all font-mono text-lg tracking-wider text-verdigris-50">
-                {created.temporaryPassword}
-              </code>
-              <button
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard
-                    ?.writeText(created.temporaryPassword)
-                    .then(() => toast.success("Copied."));
-                }}
-                className="rounded-lg border border-verdigris-300/25 px-3 py-1.5 text-xs text-verdigris-100 hover:border-verdigris-300/50"
-              >
-                Copy
-              </button>
-            </div>
-            <div className="mt-5 flex justify-end">
+
+            {/*
+              Three states, three different sentences, because they need
+              three different things done about them. "Could not send"
+              and "sending is switched off in this environment" look the
+              same to the user and are nothing alike.
+            */}
+            {created.emailStatus === "SENT" ? (
+              <p className="mt-2 text-sm text-verdigris-200/80">
+                Their sign-in details have been emailed to{" "}
+                <strong className="text-verdigris-50">{created.email}</strong>. They will be asked to
+                choose their own password the first time they sign in.
+              </p>
+            ) : (
+              <>
+                <p className="mt-2 text-sm text-verdigris-200/80">
+                  The account exists, but the email to{" "}
+                  <strong className="text-verdigris-50">{created.email}</strong>{" "}
+                  {created.emailStatus === "SUPPRESSED" ? (
+                    <>
+                      was not sent — outgoing email is switched off in this environment
+                      (<code className="font-mono text-xs">APP_ENV</code> is not{" "}
+                      <code className="font-mono text-xs">production</code>).
+                    </>
+                  ) : (
+                    <>did not go out.</>
+                  )}{" "}
+                  Until it arrives, nobody can sign in to this account.
+                </p>
+                <p className="mt-2 text-sm text-verdigris-200/60">
+                  The password is stored only as a hash and cannot be read back or shown here.
+                  Sending again issues a new one.
+                </p>
+              </>
+            )}
+
+            <div className="mt-5 flex items-center justify-end gap-2">
+              {created.emailStatus === "SENT" ? null : (
+                <ResendInvite userId={created.id} label="Send again" />
+              )}
               <button
                 type="button"
                 onClick={() => setCreated(null)}

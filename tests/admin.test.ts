@@ -542,6 +542,7 @@ describe("OpenAPI: admin endpoints", () => {
       "/api/v1/admin/users",
       "/api/v1/admin/users/bulk",
       "/api/v1/admin/users/{id}",
+      "/api/v1/admin/users/{id}/invite",
       "/api/v1/admin/users/{id}/overrides",
       "/api/v1/admin/users/{id}/overrides/{overrideId}",
       "/api/v1/admin/users/{id}/photo",

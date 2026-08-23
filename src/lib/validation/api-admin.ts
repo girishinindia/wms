@@ -317,6 +317,17 @@ export const createUserRequestSchema = z
   })
   .openapi("CreateUserRequest");
 
+/**
+ * `SENT` · it arrived. `SUPPRESSED` · `APP_ENV` is not production, so
+ * nothing was sent — correct in development, an outage on a live site.
+ * `FAILED` · the provider rejected it.
+ *
+ * Three values rather than a boolean, because the screen has to say
+ * something true and "did not go out" and "is switched off here" call
+ * for different sentences and different next steps.
+ */
+export const inviteStatusSchema = z.enum(["SENT", "SUPPRESSED", "FAILED"]);
+
 export const createUserResponseSchema = z
   .object({
     id: z.number().int(),
@@ -324,11 +335,26 @@ export const createUserResponseSchema = z
     name: z.string(),
     roleLabel: z.string(),
     warehouseLabel: z.string().nullable(),
-    /** Shown once, to whoever created the account. Not stored. */
-    temporaryPassword: z.string(),
-    emailed: z.boolean(),
+    /**
+     * No `temporaryPassword`, deliberately.
+     *
+     * It leaves the server exactly once, inside the email addressed to
+     * the person it belongs to. Returning it here put it in the network
+     * tab, in any logging proxy, and on screen in front of whoever
+     * happened to be standing there. The way back from a send that did
+     * not happen is `POST /admin/users/{id}/invite`, which mints a new
+     * one — the old password only exists as a hash, which is the point.
+     */
+    emailStatus: inviteStatusSchema,
   })
   .openapi("CreateUserResponse");
+
+export const inviteResponseSchema = z
+  .object({
+    email: z.string(),
+    emailStatus: inviteStatusSchema,
+  })
+  .openapi("InviteResponse");
 
 export const assignRoleRequestSchema = z
   .object({

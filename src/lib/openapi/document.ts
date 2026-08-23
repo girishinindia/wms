@@ -37,6 +37,7 @@ import {
   createCitiesResponseSchema,
   createUserRequestSchema,
   createUserResponseSchema,
+  inviteResponseSchema,
   overrideRequestSchema,
   roleMatrixRequestSchema,
   roleMatrixResponseSchema,
@@ -963,16 +964,48 @@ adminPath({
     "WAREHOUSE_ADMIN, a SUPER_ADMIN, or anyone at a site that is not " +
     "theirs. IMPORTER and SALES_AGENT are never created here — they " +
     "belong to a company record and arrive with it.\n\n" +
-    "`temporaryPassword` is returned **once**, in this response, and is " +
-    "stored nowhere readable: `must_change_password` is set, so the " +
-    "holder is stopped at a change-password screen on first sign-in. It " +
-    "is also emailed to them directly; the notification that tells the " +
-    "super admins deliberately does not carry it, because `announce` " +
-    "persists what it renders.",
+    "The temporary password is **never returned**. It leaves the server " +
+    "once, inside an email addressed to the new user, and is held only " +
+    "as an argon2 hash; `must_change_password` is set, so its holder is " +
+    "stopped at a change-password screen on first sign-in. The " +
+    "notification that tells the super admins does not carry it either, " +
+    "because `announce` persists what it renders into `wms.notification`.\n\n" +
+    "`emailStatus` reports what became of that email — `SENT`, " +
+    "`SUPPRESSED` (outgoing mail is off because `APP_ENV` is not " +
+    "`production`) or `FAILED`. Anything but `SENT` means nobody can sign " +
+    "in to the new account yet; `POST /api/v1/admin/users/{id}/invite` " +
+    "issues a fresh password and sends it again.",
   request: createUserRequestSchema,
   response: createUserResponseSchema,
   responses: {
     409: errorResponse("That email address or mobile number is already in use."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/users/{id}/invite",
+  operationId: "resendUserInvite",
+  summary: "Send sign-in details again",
+  permission: "user.create",
+  description:
+    "Issues a **new** temporary password for an existing account and " +
+    "emails it. The previous one is not repeated and cannot be — it is " +
+    "held only as an argon2 hash, which is the property that lets this " +
+    "system promise a password is never readable back.\n\n" +
+    "Guarded by `user.create` rather than `user.update` because it hands " +
+    "over a working credential, which is the same act as creating the " +
+    "account. `mayActOnUser` narrows it to the caller's own people, so a " +
+    "warehouse admin cannot re-issue a super admin's password and read " +
+    "it out of their own inbox.\n\n" +
+    "Sets `must_change_password`, clears any login lockout, and drops the " +
+    "account's cached actor so live sessions re-read it. Refused for an " +
+    "account that is not `ACTIVE` — sending working credentials to a " +
+    "suspended login reads as reinstatement. Limited to three sends per " +
+    "account per hour, keyed on the recipient rather than the caller.",
+  response: inviteResponseSchema,
+  responses: {
+    404: errorResponse("No such user."),
+    429: errorResponse("Sign-in details have just been sent to this account."),
   },
 });
 
