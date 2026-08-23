@@ -84,7 +84,8 @@ export type AdminNavIcon =
   | "image"
   | "help"
   | "rupee"
-  | "key";
+  | "key"
+  | "clock";
 
 /** A collapsible section. Its children are ordinary items and are what
  *  `visibleNav` returns — the group itself grants nothing. */
@@ -251,6 +252,24 @@ export const USERS_ITEMS: AdminNavItem[] = [
     permission: "role.read",
     allOnly: true,
     icon: "key",
+  },
+  /**
+   * The audit log, `allOnly` — and for once not because of seniority.
+   *
+   * `audit_log.read` is granted at WAREHOUSE to a warehouse admin and at
+   * OWN to an importer. Both grants are currently unusable: the columns
+   * that would scope the log to a branch or a person —
+   * `actor_warehouse_id` and `actor_path` — are never written, so there
+   * is nothing to narrow by. Until the writer fills them in, a
+   * WAREHOUSE-scoped grant would open the whole log, contact details
+   * and all. The page checks the same thing again.
+   */
+  {
+    href: "/admin/audit",
+    label: "Audit log",
+    permission: "audit_log.read",
+    allOnly: true,
+    icon: "clock",
   },
 ];
 

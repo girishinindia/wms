@@ -35,6 +35,7 @@ import {
   assignRoleRequestSchema,
   createCitiesRequestSchema,
   createCitiesResponseSchema,
+  auditEntryResponseSchema,
   createUserRequestSchema,
   createUserResponseSchema,
   inviteResponseSchema,
@@ -1007,6 +1008,30 @@ adminPath({
     404: errorResponse("No such user."),
     429: errorResponse("Sign-in details have just been sent to this account."),
   },
+});
+
+adminPath({
+  path: "/api/v1/admin/audit/{id}",
+  operationId: "readAuditEntry",
+  method: "get",
+  summary: "One audit entry, in full",
+  permission: "audit_log.read",
+  description:
+    "The list screen deliberately does not select `before`, `after` or " +
+    "`diff` — those carry whatever the record held, which for an importer " +
+    "means contact details, GSTIN and PAN. This is the one place they are " +
+    "handed over, for a single row, to somebody who asked for it.\n\n" +
+    "**ALL scope only.** `audit_log.read` is also granted at WAREHOUSE to " +
+    "a warehouse admin and at OWN to an importer, but the two columns " +
+    "that would make those grants meaningful — `actor_warehouse_id` and " +
+    "`actor_path`, both indexed, one with a `wms.audit_for_subtree()` " +
+    "function written against it — are never populated by the writer. " +
+    "With nothing to narrow by, honouring a WAREHOUSE grant would open " +
+    "the entire log rather than one branch of it, so it is refused.\n\n" +
+    "`wms.audit_log` is append-only: a trigger refuses UPDATE and DELETE, " +
+    "so there is no write half to this endpoint and never will be.",
+  response: auditEntryResponseSchema,
+  responses: { 404: errorResponse("No such entry.") },
 });
 
 adminPath({

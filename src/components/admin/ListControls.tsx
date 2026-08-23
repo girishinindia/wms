@@ -47,6 +47,7 @@ export function ListToolbar({
   extraFilters,
   action,
   singular,
+  showStatus = true,
 }: {
   base: string;
   list: ListState;
@@ -59,6 +60,15 @@ export function ListToolbar({
   action?: ReactNode;
   /** "transporter", for the count line when there is exactly one. */
   singular?: string;
+  /**
+   * Whether to draw the Active / Inactive select.
+   *
+   * On by default, so every screen that had it keeps it unchanged. Off
+   * for the audit log, where nothing is active or inactive — a control
+   * that cannot change what you see is worse than no control, because
+   * somebody tries it and concludes the page is broken.
+   */
+  showStatus?: boolean;
 }) {
   const from = list.total === 0 ? 0 : (list.page - 1) * list.size + 1;
   const to = Math.min(list.total, list.page * list.size);
@@ -127,16 +137,18 @@ export function ListToolbar({
 
           {/* Row two: everything that narrows the list. */}
           <div className="col-span-full row-start-2 flex flex-wrap items-center gap-2">
-            <select
-              name="status"
-              defaultValue={list.status}
-              aria-label="Status"
-              className={selectClass}
-            >
-              <option value="all" className="bg-ink-850">All</option>
-              <option value="active" className="bg-ink-850">Active</option>
-              <option value="inactive" className="bg-ink-850">Inactive</option>
-            </select>
+            {showStatus ? (
+              <select
+                name="status"
+                defaultValue={list.status}
+                aria-label="Status"
+                className={selectClass}
+              >
+                <option value="all" className="bg-ink-850">All</option>
+                <option value="active" className="bg-ink-850">Active</option>
+                <option value="inactive" className="bg-ink-850">Inactive</option>
+              </select>
+            ) : null}
             {extraFilters}
             <select
               name="size"

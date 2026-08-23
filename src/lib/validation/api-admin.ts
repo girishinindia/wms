@@ -356,6 +356,42 @@ export const inviteResponseSchema = z
   })
   .openapi("InviteResponse");
 
+/**
+ * One audit entry, in full.
+ *
+ * `before` and `after` are `unknown` rather than a shape, and that is
+ * the honest type: they hold whatever the record held at the time, and
+ * the record types they cover range from a city to an expense. Pinning
+ * a shape here would be a lie that goes stale the next time a table
+ * gains a column.
+ */
+export const auditEntryResponseSchema = z
+  .object({
+    id: z.string(),
+    occurredAt: z.string(),
+    actorName: z.string().nullable(),
+    actorEmail: z.string().nullable(),
+    actorRoles: z.array(z.string()),
+    action: z.string(),
+    operation: z.string(),
+    entityType: z.string(),
+    entityId: z.string(),
+    entityLabel: z.string().nullable(),
+    result: z.string(),
+    reason: z.string().nullable(),
+    errorCode: z.string().nullable(),
+    ip: z.string().nullable(),
+    userAgent: z.string().nullable(),
+    requestId: z.string().nullable(),
+    correlationId: z.string().nullable(),
+    source: z.string(),
+    durationMs: z.number().int().nullable(),
+    changedKeys: z.array(z.string()),
+    before: z.record(z.string(), z.unknown()).nullable(),
+    after: z.record(z.string(), z.unknown()).nullable(),
+  })
+  .openapi("AuditEntry");
+
 export const assignRoleRequestSchema = z
   .object({
     role: roleKeySchema,

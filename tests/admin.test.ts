@@ -211,6 +211,7 @@ describe("admin navigation: grouping", () => {
     expect(isGroup(full!) && full.children.map((c) => c.href)).toEqual([
       "/admin/users",
       "/admin/roles",
+      "/admin/audit",
     ]);
   });
 
@@ -526,6 +527,7 @@ describe("OpenAPI: admin endpoints", () => {
 
     // Mirrors src/app/api/v1/admin/**/route.ts.
     expect(documented).toEqual([
+      "/api/v1/admin/audit/{id}",
       "/api/v1/admin/cities",
       "/api/v1/admin/cities/{id}",
       "/api/v1/admin/expenses/{id}/approve",

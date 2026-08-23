@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import {
   BellIcon,
+  ClockIcon,
   ImageIcon,
   HelpIcon,
   KeyIcon,
@@ -79,6 +80,7 @@ const ICONS = {
   help: HelpIcon,
   rupee: RupeeIcon,
   key: KeyIcon,
+  clock: ClockIcon,
 } as const;
 
 export type AdminUser = {

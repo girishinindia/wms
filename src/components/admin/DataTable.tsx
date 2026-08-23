@@ -62,6 +62,9 @@ export type DataTableProps<T> = {
   filters?: ReactNode;
   /** Right-hand toolbar slot — usually the Add button. */
   action?: ReactNode;
+  /** Server mode: whether the Active / Inactive select is drawn. Off for
+   *  lists where nothing has a status — see `ListToolbar`. */
+  showStatus?: boolean;
   /** Rendered above the table while at least one row is selected. */
   bulk?: (selected: T[], clear: () => void) => ReactNode;
   enableSelection?: boolean;
@@ -92,6 +95,7 @@ export default function DataTable<T>({
   singular,
   filters,
   action,
+  showStatus = true,
   bulk,
   enableSelection = true,
   searchKeys,
@@ -163,7 +167,15 @@ export default function DataTable<T>({
   return (
     <div>
       {serverMode ? (
-        <ListToolbar base={base!} list={list!} label={label} singular={singular} extraFilters={filters} action={action} />
+        <ListToolbar
+          base={base!}
+          list={list!}
+          label={label}
+          singular={singular}
+          extraFilters={filters}
+          action={action}
+          showStatus={showStatus}
+        />
       ) : (
         <ClientToolbar
           table={table}

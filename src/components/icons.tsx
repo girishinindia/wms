@@ -315,3 +315,11 @@ export const KeyIcon = (p: P) => (
     <path d="M11.5 12H21m-3 0v3.5M21 12v3" />
   </svg>
 );
+
+/** A clock — the audit log, where every row is first of all a "when". */
+export const ClockIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3.5 2" />
+  </svg>
+);
