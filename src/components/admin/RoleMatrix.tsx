@@ -184,6 +184,20 @@ export default function RoleMatrix({ matrix }: { matrix: Matrix }) {
 
   const cell = "px-3 py-2 text-center";
 
+  /**
+   * The verb headings over each column.
+   *
+   * They were `text-verdigris-200/40`, which flattens to #4e665f on the
+   * card — 2.86:1, under even the 3:1 floor for large text, and these
+   * are 0.72rem. On a dark screen they were simply not there. At /65
+   * they land at 5.5:1, past AA for small text, while still sitting a
+   * long way under the resource names (15:1) so the grid still reads
+   * content-first. The light theme lifts /65 to a solid ink of its own,
+   * so both themes move together.
+   */
+  const colHead =
+    "text-[0.74rem] font-medium uppercase tracking-[0.06em] text-verdigris-200/65";
+
   return (
     <>
       <Card>
@@ -214,24 +228,21 @@ export default function RoleMatrix({ matrix }: { matrix: Matrix }) {
                   <tr key={module} className="bg-verdigris-100/[0.03]">
                     <td
                       colSpan={VERBS.length + 2}
-                      className="px-5 py-2 font-mono text-[0.72rem] uppercase tracking-[0.12em] text-verdigris-300"
+                      // verdigris-200 rather than -300: a module heading
+                      // should not be quieter than the verbs beneath it.
+                      className="px-5 py-2 font-mono text-[0.76rem] font-semibold uppercase tracking-[0.12em] text-verdigris-200"
                     >
                       {module.replace(/_/g, " ").toLowerCase()}
                     </td>
                   </tr>
                   <tr key={`${module}-head`} className="border-b border-verdigris-300/[0.06]">
-                    <td className="px-5 py-1.5 text-[0.72rem] text-verdigris-200/40">&nbsp;</td>
+                    <td className={`px-5 py-1.5 ${colHead}`}>&nbsp;</td>
                     {VERBS.map((v) => (
-                      <td
-                        key={v}
-                        className="px-3 py-1.5 text-center text-[0.72rem] text-verdigris-200/40"
-                      >
+                      <td key={v} className={`px-3 py-1.5 text-center ${colHead}`}>
                         {v}
                       </td>
                     ))}
-                    <td className="px-3 py-1.5 text-right text-[0.72rem] text-verdigris-200/40">
-                      scope
-                    </td>
+                    <td className={`px-3 py-1.5 text-right ${colHead}`}>scope</td>
                   </tr>
 
                   {[...byResource.entries()].map(([resource, actions]) => {
