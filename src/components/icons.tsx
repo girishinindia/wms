@@ -307,3 +307,11 @@ export const RupeeIcon = (p: P) => (
     <path d="M7 4h10M7 8.5h10M7 20l7.5-7.5a4.25 4.25 0 0 0-3-7.25H7" />
   </svg>
 );
+
+/** A key — what a role opens. */
+export const KeyIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <circle cx="8" cy="12" r="3.5" />
+    <path d="M11.5 12H21m-3 0v3.5M21 12v3" />
+  </svg>
+);

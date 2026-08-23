@@ -7,11 +7,13 @@ import UserRoles, {
   type ScopeOption,
 } from "@/components/admin/UserRoles";
 import UserNameEditor from "@/components/admin/UserNameEditor";
+import UserOverrides, { type Grantable, type Override } from "@/components/admin/UserOverrides";
 import UserStatus from "@/components/admin/UserStatus";
 import Avatar from "@/components/admin/Avatar";
 import { Card, Denied, Facts, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { getDb } from "@/db";
 import { grantFor, pageGuard } from "@/lib/auth/guard";
+import { listOverrides } from "@/lib/roles/matrix";
 import { actorWarehouseIds, mayActOnUser, mayManageUser } from "@/lib/users/authority";
 import { sql } from "drizzle-orm";
 
@@ -172,6 +174,32 @@ export default async function UserDetailPage({
     label: `${i.company_name} (${i.code})`,
   }));
 
+  /**
+   * The exceptions card needs three lists, and they are three different
+   * questions: what exceptions exist, what the TARGET holds (the only
+   * things a deny can take away), and what the VIEWER holds (the only
+   * things an allow can hand out).
+   *
+   * Sequential, never Promise.all — see src/db/index.ts on pipelining.
+   */
+  const overrides: Override[] = canAssign ? await listOverrides(id) : [];
+
+  const heldRows = canAssign
+    ? await getDb().execute<{ permission: string; scope: string }>(sql`
+        select permission, scope::text as scope
+          from wms.user_effective_permission
+         where user_id = ${id}
+         order by permission
+      `)
+    : [];
+
+  /** Rule 1 made visible: you cannot hand out what you do not hold. */
+  const iHold: Grantable[] = manageable
+    ? guard.actor.permissions
+        .map((p) => ({ key: p.permission, description: null, maxScope: p.scope }))
+        .sort((a, b) => a.key.localeCompare(b.key))
+    : [];
+
   return (
     <>
       <Link
@@ -288,6 +316,18 @@ export default async function UserDetailPage({
         manageable={manageable}
         lockedReason={lockedReason}
       />
+
+      {canAssign ? (
+        <div className="mt-6">
+          <UserOverrides
+            userId={user.id}
+            overrides={overrides}
+            held={heldRows.map((h) => ({ key: h.permission, scope: h.scope }))}
+            grantable={iHold}
+            manageable={manageable}
+          />
+        </div>
+      ) : null}
     </>
   );
 }

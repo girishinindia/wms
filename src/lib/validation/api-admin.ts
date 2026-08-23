@@ -388,6 +388,54 @@ export const receiptListResponseSchema = z
   .object({ receipts: z.array(receiptResponseSchema) })
   .openapi("ExpenseReceiptList");
 
+export const roleMatrixRequestSchema = z
+  .object({
+    /**
+     * A diff, never the whole matrix.
+     *
+     * 156 permissions posted as a complete set means two people saving a
+     * minute apart silently undo each other. `scope: null` removes.
+     */
+    changes: z
+      .array(
+        z.object({
+          permission: z.string().trim().min(3).max(80),
+          scope: z.enum(["OWN", "WAREHOUSE", "ALL"]).nullable(),
+        }),
+      )
+      .min(1, "Nothing to change")
+      .max(200),
+    reason: z.string().trim().min(5, "Say why").max(300),
+  })
+  .openapi("RoleMatrixRequest");
+
+export const roleMatrixResponseSchema = z
+  .object({
+    added: z.number().int(),
+    changed: z.number().int(),
+    removed: z.number().int(),
+    /** How many people this just affected. */
+    holders: z.number().int(),
+  })
+  .openapi("RoleMatrixResponse");
+
+export const overrideRequestSchema = z
+  .object({
+    permission: z.string().trim().min(3).max(80),
+    effect: z.enum(["ALLOW", "DENY"]),
+    /** Required for ALLOW, refused for DENY — a deny removes the
+     *  permission however wide it was. */
+    scope: optional(z.enum(["OWN", "WAREHOUSE", "ALL"])),
+    reason: z.string().trim().min(5, "Say why").max(300),
+    /** `YYYY-MM-DD`. The exception lifts itself at the end of that day. */
+    expiresAt: optional(z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date")),
+  })
+  .refine((v) => v.effect !== "ALLOW" || Boolean(v.scope), {
+    message: "Choose how wide the allowance goes",
+    path: ["scope"],
+  })
+  .openapi("PermissionOverrideRequest");
+
 export const okAdminResponseSchema = z
   .object({ ok: z.literal(true) })
   .openapi("OkAdminResponse");

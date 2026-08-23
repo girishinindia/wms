@@ -134,9 +134,11 @@ export function Table({ head, children }: { head: ReactNode[]; children: ReactNo
   );
 }
 
-export function Row({ children }: { children: ReactNode }) {
+export function Row({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <tr className="border-b border-verdigris-300/[0.06] last:border-0 hover:bg-verdigris-100/[0.03]">
+    <tr
+      className={`border-b border-verdigris-300/[0.06] last:border-0 hover:bg-verdigris-100/[0.03] ${className}`}
+    >
       {children}
     </tr>
   );

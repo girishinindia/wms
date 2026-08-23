@@ -7,6 +7,7 @@ import {
   BellIcon,
   ImageIcon,
   HelpIcon,
+  KeyIcon,
   RupeeIcon,
   WarehouseIcon,
   BoxIcon,
@@ -75,6 +76,7 @@ const ICONS = {
   image: ImageIcon,
   help: HelpIcon,
   rupee: RupeeIcon,
+  key: KeyIcon,
 } as const;
 
 export type AdminUser = {

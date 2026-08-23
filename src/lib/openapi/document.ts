@@ -37,6 +37,9 @@ import {
   createCitiesResponseSchema,
   createUserRequestSchema,
   createUserResponseSchema,
+  overrideRequestSchema,
+  roleMatrixRequestSchema,
+  roleMatrixResponseSchema,
   decideExpenseRequestSchema,
   receiptListResponseSchema,
   receiptResponseSchema,
@@ -319,7 +322,7 @@ const adminPath = (config: {
   summary: string;
   description: string;
   permission: string;
-  method?: "post" | "get" | "patch" | "delete";
+  method?: "post" | "get" | "patch" | "put" | "delete";
   request?: z.ZodTypeAny;
   response: z.ZodTypeAny;
   status?: number;
@@ -866,6 +869,82 @@ adminPath({
   params: idParam,
   response: receiptListResponseSchema,
   responses: { 404: errorResponse("No such expense.") },
+});
+
+adminPath({
+  path: "/api/v1/admin/roles/{key}",
+  operationId: "updateRolePermissions",
+  method: "put",
+  summary: "Rewrite what a role is allowed to do",
+  permission: "role.update",
+  description:
+    "The most dangerous endpoint here, and the guards say so.\n\n" +
+    "The body is a DIFF, never the whole matrix: 156 permissions posted " +
+    "as a complete set means two people saving a minute apart silently " +
+    "undo each other. `scope: null` removes a permission.\n\n" +
+    "Three rules, all checked before ANY line is written, so a refusal " +
+    "never leaves a role meaning something nobody chose:\n\n" +
+    "1. No line may grant more than the caller holds themselves, at a " +
+    "scope wider than they hold it.\n" +
+    "2. No role at or above the caller's own `level`, and none that is " +
+    "`is_protected` — SUPER_ADMIN, IMPORTER and SALES_AGENT.\n" +
+    "3. The change may not leave the role with no permissions at all; " +
+    "its holders would get a blank screen and no explanation.\n\n" +
+    "`role.update` is held by the super admin alone, and stays that way " +
+    "because `role_permission` has no warehouse column: a warehouse " +
+    "admin editing STORAGE_MANAGER would change it at every site.\n\n" +
+    "Every holder of the role is dropped from the actor cache, so the " +
+    "change lands on their very next request.",
+  params: z.object({ key: z.string().openapi({ example: "STORAGE_MANAGER" }) }),
+  request: roleMatrixRequestSchema,
+  response: roleMatrixResponseSchema,
+  responses: {
+    404: errorResponse("No such role."),
+    409: errorResponse("That would leave the role with nothing at all."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/users/{id}/overrides",
+  operationId: "addPermissionOverride",
+  summary: "Make one exception for one person",
+  permission: "role.assign",
+  status: 201,
+  description:
+    "An exception to what somebody's roles grant, with a reason that is " +
+    "required and an end date that is not.\n\n" +
+    "`DENY` takes a permission away, however wide the role granted it; " +
+    "it needs no scope and no authority beyond managing the account, " +
+    "because taking something away is never an escalation.\n\n" +
+    "`ALLOW` adds one the roles do not carry and MUST name a scope. It " +
+    "is bounded by the same rule the role matrix uses: nobody hands out " +
+    "what they do not hold, at a width they do not hold it at.\n\n" +
+    "Either way the account must be one the caller may manage — so a " +
+    "warehouse admin may make exceptions for their own people and for " +
+    "nobody else's, and an importer's account is refused outright.",
+  params: idParam,
+  request: overrideRequestSchema,
+  response: okAdminResponseSchema,
+  responses: {
+    404: errorResponse("No such user."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/users/{id}/overrides/{overrideId}",
+  operationId: "liftPermissionOverride",
+  method: "delete",
+  summary: "Lift an exception",
+  permission: "role.assign",
+  description:
+    "The row is revoked rather than removed, so \"why could they do that " +
+    "in March\" is still answerable in June.",
+  params: z.object({
+    id: z.string().openapi({ example: "12" }),
+    overrideId: z.string().openapi({ example: "34" }),
+  }),
+  response: okAdminResponseSchema,
+  responses: { 404: errorResponse("That exception is not active.") },
 });
 
 adminPath({

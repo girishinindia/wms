@@ -74,7 +74,8 @@ export type AdminNavIcon =
   | "warehouse"
   | "image"
   | "help"
-  | "rupee";
+  | "rupee"
+  | "key";
 
 /** A collapsible section. Its children are ordinary items and are what
  *  `visibleNav` returns — the group itself grants nothing. */
@@ -245,6 +246,22 @@ export const ADMIN_NAV: AdminNavNode[] = [
     children: WAREHOUSE_ITEMS,
   },
   { href: "/admin/users", label: "Users", permission: "user.read", icon: "shield" },
+  /**
+   * Roles, directly under Users — it is user administration, and the
+   * menu is long enough already.
+   *
+   * `allOnly` on `role.read`: `role_permission` has no warehouse column,
+   * so editing STORAGE_MANAGER changes it at every site in the company.
+   * That is a platform decision, and the route asks the same question
+   * the link does.
+   */
+  {
+    href: "/admin/roles",
+    label: "Roles",
+    permission: "role.read",
+    allOnly: true,
+    icon: "key",
+  },
   {
     label: "Master",
     icon: "database",
