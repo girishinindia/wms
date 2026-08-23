@@ -3,6 +3,7 @@ import { type NextRequest } from "next/server";
 import { fail, handler, ok, toResponse } from "@/lib/api/respond";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
+import { mayActOnUser } from "@/lib/users/authority";
 import { clearUserPhoto, MAX_BYTES, PhotoError, setUserPhoto } from "@/lib/users/photo";
 
 export const runtime = "nodejs";
@@ -41,6 +42,11 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       if (grant.scope === "OWN" && targetUserId !== actor.session.userId) {
         return fail("FORBIDDEN", "You do not have permission to do that.", requestId);
       }
+      // And WAREHOUSE scope covers only the caller's own people.
+      if (targetUserId !== actor.session.userId) {
+        const reach = await mayActOnUser(actor, targetUserId, "user.update", "change its photo");
+        if (reach !== true) return fail("FORBIDDEN", reach.reason, requestId);
+      }
       const declared = Number(request.headers.get("content-length") ?? 0);
       if (declared > MAX_BYTES) {
         return fail("VALIDATION_FAILED", `That image is over ${Math.round(MAX_BYTES / 1024)} KB`, requestId);
@@ -71,6 +77,11 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
       });
       if (grant.scope === "OWN" && targetUserId !== actor.session.userId) {
         return fail("FORBIDDEN", "You do not have permission to do that.", requestId);
+      }
+      // And WAREHOUSE scope covers only the caller's own people.
+      if (targetUserId !== actor.session.userId) {
+        const reach = await mayActOnUser(actor, targetUserId, "user.update", "change its photo");
+        if (reach !== true) return fail("FORBIDDEN", reach.reason, requestId);
       }
       const result = await clearUserPhoto(targetUserId, actor, {
         requestId,

@@ -35,6 +35,8 @@ import {
   assignRoleRequestSchema,
   createCitiesRequestSchema,
   createCitiesResponseSchema,
+  createUserRequestSchema,
+  createUserResponseSchema,
   okAdminResponseSchema,
   rejectImporterRequestSchema,
   revokeRoleRequestSchema,
@@ -822,6 +824,35 @@ adminPath({
   responses: {
     404: errorResponse("No such importer."),
     409: errorResponse("Already decided."),
+  },
+});
+
+adminPath({
+  path: "/api/v1/admin/users",
+  operationId: "createUser",
+  summary: "Add a member of staff",
+  permission: "user.create",
+  status: 201,
+  description:
+    "Creates the login and binds its first role in one statement, so an " +
+    "account can never exist without the role it was created for.\n\n" +
+    "Who may create whom comes from `wms.role_creation_rule` read against " +
+    "the CALLER's own live assignments: a SUPER_ADMIN may create anyone " +
+    "anywhere; a WAREHOUSE_ADMIN may create the warehouse roles for a " +
+    "site they are themselves assigned to, and cannot create another " +
+    "WAREHOUSE_ADMIN, a SUPER_ADMIN, or anyone at a site that is not " +
+    "theirs. IMPORTER and SALES_AGENT are never created here — they " +
+    "belong to a company record and arrive with it.\n\n" +
+    "`temporaryPassword` is returned **once**, in this response, and is " +
+    "stored nowhere readable: `must_change_password` is set, so the " +
+    "holder is stopped at a change-password screen on first sign-in. It " +
+    "is also emailed to them directly; the notification that tells the " +
+    "super admins deliberately does not carry it, because `announce` " +
+    "persists what it renders.",
+  request: createUserRequestSchema,
+  response: createUserResponseSchema,
+  responses: {
+    409: errorResponse("That email address or mobile number is already in use."),
   },
 });
 

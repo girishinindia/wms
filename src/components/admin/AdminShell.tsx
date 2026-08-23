@@ -339,7 +339,12 @@ export default function AdminShell({
               </span>
             </span>
             <p className="mt-1.5 font-mono text-[0.72rem] uppercase tracking-[0.14em] text-verdigris-400">
-              {user.roles.join(" · ") || "no role"} · <span className="text-verdigris-300">my profile</span>
+              {/* De-duplicated: a warehouse admin over three sites holds
+                  three assignments of the same role, and "WAREHOUSE_ADMIN ·
+                  WAREHOUSE_ADMIN · WAREHOUSE_ADMIN" is noise, not
+                  information. The sites are on their profile. */}
+              {[...new Set(user.roles)].join(" · ") || "no role"} ·{" "}
+              <span className="text-verdigris-300">my profile</span>
             </p>
           </a>
           <button

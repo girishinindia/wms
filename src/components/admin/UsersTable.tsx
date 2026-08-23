@@ -2,7 +2,7 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { EyeIcon, PencilIcon, TrashIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
@@ -44,11 +44,15 @@ export default function UsersTable({
   canUpdate,
   canDelete,
   selfId,
+  action,
 }: {
   rows: UserListRow[];
   canUpdate: boolean;
   canDelete: boolean;
   selfId: number;
+  /** "Add user", rendered in the toolbar's first row beside the search
+   *  box — outside the search form, like every other list. */
+  action?: ReactNode;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -228,6 +232,7 @@ export default function UsersTable({
         columns={columns}
         data={rows}
         label="users"
+        action={action}
         enableSelection={canUpdate || canDelete}
         searchKeys={["name", "email", "mobile", "status", "company"]}
         emptyTitle="No users yet."

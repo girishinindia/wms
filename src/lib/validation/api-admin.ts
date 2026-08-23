@@ -276,9 +276,49 @@ export const roleKeySchema = z.enum([
   "STORAGE_MANAGER",
   "PACKAGE_MANAGER",
   "DISPATCH_MANAGER",
+  "EXPENSE_ADMIN",
+  "EXPENSE_MANAGER",
   "IMPORTER",
   "SALES_AGENT",
 ]);
+
+/**
+ * Creating a staff login.
+ *
+ * The role is checked against the enum here and against
+ * `role_creation_rule` in `lib/users/authority` — this says "that is a
+ * role", the rule table says "and you may hand it out". Importer and
+ * Sales Agent pass this schema and are refused there, because the
+ * refusal belongs with the reason.
+ */
+export const createUserRequestSchema = z
+  .object({
+    firstName: z.string().trim().min(1, "Required").max(80),
+    lastName: z.string().trim().min(1, "Required").max(80),
+    email: z.string().trim().toLowerCase().email("Enter a valid email address").max(160),
+    mobile: z
+      .string()
+      .trim()
+      .regex(/^[6-9][0-9]{9}$/, "Enter a 10-digit Indian mobile number"),
+    role: roleKeySchema,
+    /** Required for a WAREHOUSE-domain role, refused for the others. */
+    warehouseId: z.number().int().positive().optional(),
+    note: optional(z.string().trim().max(300)),
+  })
+  .openapi("CreateUserRequest");
+
+export const createUserResponseSchema = z
+  .object({
+    id: z.number().int(),
+    email: z.string(),
+    name: z.string(),
+    roleLabel: z.string(),
+    warehouseLabel: z.string().nullable(),
+    /** Shown once, to whoever created the account. Not stored. */
+    temporaryPassword: z.string(),
+    emailed: z.boolean(),
+  })
+  .openapi("CreateUserResponse");
 
 export const assignRoleRequestSchema = z
   .object({

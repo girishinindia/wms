@@ -6,6 +6,7 @@ import { fail, handler, ok, toResponse } from "@/lib/api/respond";
 import { applyToUser } from "@/lib/accounts/lifecycle";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
+import { mayActOnUser } from "@/lib/users/authority";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +41,12 @@ export async function DELETE(
       if (targetUserId === actor.session.userId) {
         return fail("CONFLICT", "You cannot delete your own account from here.", requestId);
       }
+      // Nobody holds user.delete below ALL today, so this changes
+      // nothing yet. It is here so that granting it at WAREHOUSE
+      // tomorrow does not quietly hand one branch the power to delete
+      // another's staff.
+      const reach = await mayActOnUser(actor, targetUserId, "user.delete", "delete it");
+      if (reach !== true) return fail("FORBIDDEN", reach.reason, requestId);
       const reason = request.nextUrl.searchParams.get("reason") ?? "Deleted from the users screen";
       const linked = await applyToUser(targetUserId, "DELETE", actor, {
         requestId, ip: clientIp(request.headers), userAgent: request.headers.get("user-agent"),

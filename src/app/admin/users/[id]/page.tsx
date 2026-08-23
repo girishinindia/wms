@@ -12,6 +12,7 @@ import Avatar from "@/components/admin/Avatar";
 import { Card, Denied, Facts, PageHeader, StatusBadge } from "@/components/admin/ui";
 import { getDb } from "@/db";
 import { grantFor, pageGuard } from "@/lib/auth/guard";
+import { actorWarehouseIds, mayActOnUser, mayManageUser } from "@/lib/users/authority";
 import { sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -118,6 +119,16 @@ export default async function UserDetailPage({
   const user = users[0];
   if (!user) notFound();
 
+  /**
+   * The list is narrowed to the viewer's own people; typing a URL must
+   * not be a way round it. Read scope is checked against the target the
+   * same way every write is.
+   */
+  if (id !== guard.actor.session.userId) {
+    const readable = await mayActOnUser(guard.actor, id, "user.read", "open it");
+    if (readable !== true) return <Denied what="this account" />;
+  }
+
   const assignments: Assignment[] = roleRows.map((r) => ({
     id: r.id,
     role: r.role,
@@ -134,10 +145,28 @@ export default async function UserDetailPage({
     scope: r.scope,
   }));
 
-  const warehouses: ScopeOption[] = warehouseRows.map((w) => ({
-    id: w.id,
-    label: `${w.name} (${w.code})`,
-  }));
+  /**
+   * The same question the API asks, asked here so the panel is not
+   * offered at all rather than offered and refused.
+   *
+   * It is deliberately asked after the queries above: `mayManageUser`
+   * reads the target's live assignments, which is exactly what decides
+   * whether this account is one the viewer may touch — their own row,
+   * an importer's, or somebody who works at another branch.
+   */
+  const manage = canAssign ? await mayManageUser(guard.actor, id) : ({ ok: false as const, reason: "" });
+  const manageable = manage === true;
+  const lockedReason = manage === true ? null : manage.reason;
+
+  // A warehouse admin picks from their own sites; a super admin from all.
+  const assignScope = grantFor(guard.actor, "role.assign");
+  const mine = actorWarehouseIds(guard.actor);
+  const warehouses: ScopeOption[] = warehouseRows
+    .filter((w) => assignScope?.scope === "ALL" || mine.includes(w.id))
+    .map((w) => ({
+      id: w.id,
+      label: `${w.name} (${w.code})`,
+    }));
   const importers: ScopeOption[] = importerRows.map((i) => ({
     id: i.id,
     label: `${i.company_name} (${i.code})`,
@@ -253,9 +282,11 @@ export default async function UserDetailPage({
       <UserRoles
         userId={user.id}
         assignments={assignments}
-        grantable={grantable}
+        grantable={manageable ? grantable : []}
         warehouses={warehouses}
         importers={importers}
+        manageable={manageable}
+        lockedReason={lockedReason}
       />
     </>
   );

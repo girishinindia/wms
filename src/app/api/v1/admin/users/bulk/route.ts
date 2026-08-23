@@ -7,6 +7,7 @@ import { fail, handler, ok, toResponse } from "@/lib/api/respond";
 import { applyToUser } from "@/lib/accounts/lifecycle";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
+import { mayActOnUser } from "@/lib/users/authority";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,25 @@ export async function POST(request: NextRequest) {
     try {
       const parsed = bodySchema.safeParse(await request.json().catch(() => null));
       if (!parsed.success) return fail("VALIDATION_FAILED", "Send action and ids", requestId);
-      const { action, ids, reason } = parsed.data;
+      const { action, ids } = parsed.data;
+
+      /**
+       * A reason is not optional as far as the database is concerned.
+       *
+       * `users_check` refuses a SUSPENDED row whose `deactivation_reason`
+       * is null, and the Deactivate button on the users screen sends no
+       * reason at all — so every bulk deactivate answered "Deactivated 0.
+       * Skipped N — Failed query…". Found by pressing the button. The
+       * single-row toggle beside it has always defaulted the same way.
+       */
+      const reason =
+        parsed.data.reason ??
+        (action === "deactivate"
+          ? "Deactivated from the users screen"
+          : action === "delete"
+            ? "Deleted from the users screen"
+            : undefined);
+
       const { actor } = await requirePermission(action === "delete" ? "user.delete" : "user.update", {
         entityType: "user",
       });
@@ -45,6 +64,16 @@ export async function POST(request: NextRequest) {
         if (id === actor.session.userId && action !== "activate") {
           skipped.push({ id, reason: "that is your own account" }); continue;
         }
+        // Skipped rather than refused, like the two above it: a bulk
+        // action over a mixed selection should do what it can and say
+        // what it did not, not fail the lot.
+        const reach = await mayActOnUser(
+          actor,
+          id,
+          action === "delete" ? "user.delete" : "user.update",
+          "change it",
+        );
+        if (reach !== true) { skipped.push({ id, reason: "not one of your warehouses" }); continue; }
         try {
           await applyToUser(
             id,

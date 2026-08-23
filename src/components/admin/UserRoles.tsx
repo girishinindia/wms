@@ -46,12 +46,20 @@ export default function UserRoles({
   grantable,
   warehouses,
   importers,
+  manageable = true,
+  lockedReason = null,
 }: {
   userId: number;
   assignments: Assignment[];
   grantable: GrantableRole[];
   warehouses: ScopeOption[];
   importers: ScopeOption[];
+  /** False when this account is not one the viewer may touch — their
+   *  own row, an importer's, or somebody at another branch. Decided on
+   *  the server by `mayManageUser`, and re-decided by the API. */
+  manageable?: boolean;
+  /** Why, in a sentence, when it is false. */
+  lockedReason?: string | null;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -154,7 +162,7 @@ export default function UserRoles({
                     >
                       permanent
                     </span>
-                  ) : revokingId === a.id ? (
+                  ) : !manageable ? null : revokingId === a.id ? (
                     <span className="inline-flex items-center gap-2">
                       <input
                         type="text"
@@ -200,7 +208,12 @@ export default function UserRoles({
         )}
       </Card>
 
-      {grantable.length > 0 ? (
+      {!manageable && lockedReason ? (
+        <Card className="p-5">
+          <h2 className="text-sm font-semibold text-verdigris-50">Roles are read-only here</h2>
+          <p className="mt-1.5 text-xs leading-5 text-verdigris-200/60">{lockedReason}</p>
+        </Card>
+      ) : grantable.length > 0 ? (
         <Card className="p-5">
           <h2 className="text-sm font-semibold text-verdigris-50">Grant a role</h2>
           <p className="mt-1 text-xs text-verdigris-200/50">

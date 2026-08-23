@@ -4,9 +4,12 @@ import { type NextRequest } from "next/server";
 import { getDb } from "@/db";
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { auditQuietly } from "@/lib/audit";
-import { requirePermission } from "@/lib/auth/guard";
+import { requirePermission, type Actor } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { invalidateUser } from "@/lib/cache/actor";
+import { announce } from "@/lib/notify/announce";
+import { absoluteUrl } from "@/lib/url";
+import { isImmutableRole, mayManageUser } from "@/lib/users/authority";
 import { assignRoleRequestSchema, revokeRoleRequestSchema } from "@/lib/validation/api-admin";
 
 export const runtime = "nodejs";
@@ -66,11 +69,43 @@ export async function POST(
       }
       const input = parsed.data;
 
-      const target = await getDb().execute<{ id: number; email: string; status: string }>(sql`
-        select id, email::text as email, status::text as status
+      const target = await getDb().execute<{
+        id: number;
+        email: string;
+        status: string;
+        name: string;
+      }>(sql`
+        select id, email::text as email, status::text as status,
+               trim(first_name || ' ' || last_name) as name
           from wms.users where id = ${targetUserId} and deleted_at is null
       `);
       if (target.length === 0) return fail("NOT_FOUND", "No such user", requestId);
+
+      /**
+       * ── May this actor touch THIS account at all? ───────────────
+       *
+       * Distinct from the question below it, and the reason a warehouse
+       * admin could previously reach past their own branch: the rule
+       * lookup asks "may you grant STORAGE_MANAGER at site 4", which is
+       * yes if site 4 is theirs — but says nothing about whether the
+       * person receiving it is one of their people or another branch's
+       * manager. This asks that.
+       */
+      const may = await mayManageUser(actor, targetUserId);
+      if (may !== true) {
+        return fail("FORBIDDEN", may.reason, requestId);
+      }
+
+      // An immutable role is granted with the account it belongs to, by
+      // the importer and sales-agent flows. Never from here.
+      if (isImmutableRole(input.role)) {
+        return fail(
+          "FORBIDDEN",
+          "Importer and Sales Agent roles are bound to a company record and cannot be granted here.",
+          requestId,
+          { fields: { role: "Cannot be granted" } },
+        );
+      }
 
       // ── May this actor grant this role at all? ──────────────────
       const actorRoles = actor.roles.map((r) => r.role);
@@ -197,6 +232,17 @@ export async function POST(
         requestId,
       });
 
+      await tell("user.role_assigned", {
+        actor,
+        requestId,
+        targetUserId,
+        targetName: target[0]!.name,
+        role: input.role,
+        warehouseId: needs === "warehouse" ? (input.warehouseId ?? null) : null,
+        importerId: needs === "importer" ? (input.importerId ?? null) : null,
+        assignmentId: rows[0]!.id,
+      });
+
       return ok({ ok: true as const }, requestId, 201);
     } catch (error) {
       return translate(error, requestId);
@@ -248,15 +294,29 @@ export async function DELETE(
         id: number;
         role: string;
         is_immutable: boolean;
+        warehouse_id: number | null;
+        importer_id: number | null;
+        name: string;
       }>(sql`
-        select ura.id, ura.role::text as role, r.is_immutable
+        select ura.id, ura.role::text as role, r.is_immutable,
+               ura.warehouse_id, ura.importer_id,
+               trim(u.first_name || ' ' || u.last_name) as name
           from wms.user_role_assignment ura
           join wms.role r on r.key = ura.role
+          join wms.users u on u.id = ura.user_id
          where ura.id = ${assignmentId} and ura.user_id = ${targetUserId}
            and ura.revoked_at is null
       `);
       if (before.length === 0) {
         return fail("NOT_FOUND", "That role assignment is not active", requestId);
+      }
+
+      // The same question the grant path asks: is this account one of
+      // yours to touch? A warehouse admin revoking another branch's
+      // manager was possible until this line existed.
+      const may = await mayManageUser(actor, targetUserId);
+      if (may !== true) {
+        return fail("FORBIDDEN", may.reason, requestId);
       }
 
       // Checked here for the message; the `ura_protect_immutable` trigger
@@ -296,11 +356,89 @@ export async function DELETE(
         requestId,
       });
 
+      await tell("user.role_revoked", {
+        actor,
+        requestId,
+        targetUserId,
+        targetName: before[0]!.name,
+        role: before[0]!.role,
+        warehouseId: before[0]!.warehouse_id,
+        importerId: before[0]!.importer_id,
+        assignmentId,
+        reason,
+      });
+
       return ok({ ok: true as const }, requestId);
     } catch (error) {
       return translate(error, requestId);
     }
   })();
+}
+
+/**
+ * Tell the super admins, and never at the cost of the change itself.
+ *
+ * `announce` resolves its own audience from `notification_rule`, so who
+ * hears about a role change is a row rather than a list in this file.
+ * Everything it needs that the rule cannot know — the person's name, the
+ * site, who did it — is passed in here.
+ *
+ * The whole thing is wrapped in a catch. A role that was granted and an
+ * email that did not send is a smaller problem than a 500 on a request
+ * whose database work has already committed.
+ */
+async function tell(
+  eventKey: "user.role_assigned" | "user.role_revoked",
+  input: {
+    actor: Actor;
+    requestId: string;
+    targetUserId: number;
+    targetName: string;
+    role: string;
+    warehouseId: number | null;
+    importerId: number | null;
+    assignmentId: number;
+    reason?: string;
+  },
+): Promise<void> {
+  try {
+    // One query for the two possible labels; only one of them is ever
+    // non-null, and both are null for a platform role.
+    const [scope] = await getDb().execute<{ label: string | null }>(sql`
+      select coalesce(
+               (select w.name from wms.warehouse w where w.id = ${input.warehouseId}),
+               (select i.company_name from wms.importer i where i.id = ${input.importerId})
+             ) as label
+    `);
+
+    const [role] = await getDb().execute<{ name: string }>(sql`
+      select name from wms.role where key::text = ${input.role}
+    `);
+
+    await announce({
+      eventKey,
+      values: {
+        name: input.targetName,
+        role: role?.name ?? input.role,
+        whereSuffix: scope?.label ? ` at ${scope.label}` : "",
+        actorName: `${input.actor.session.firstName} ${input.actor.session.lastName}`.trim(),
+        reason: input.reason ?? "—",
+        signInUrl: absoluteUrl("/admin/users") ?? "",
+      },
+      dedupeSuffix: `assignment-${input.assignmentId}`,
+      actorUserId: input.actor.session.userId,
+      entityType: "user_role_assignment",
+      entityId: String(input.assignmentId),
+      warehouseId: input.warehouseId,
+      importerId: input.importerId,
+      correlationId: input.requestId,
+    });
+  } catch (error) {
+    console.error(`[roles] ${eventKey} not announced`, {
+      userId: input.targetUserId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 /**

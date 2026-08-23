@@ -6,6 +6,7 @@ import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { applyToUser } from "@/lib/accounts/lifecycle";
+import { mayActOnUser } from "@/lib/users/authority";
 import { setUserStatusRequestSchema } from "@/lib/validation/api-admin";
 
 export const runtime = "nodejs";
@@ -78,6 +79,21 @@ export async function PATCH(
           requestId,
         );
       }
+      /**
+       * A WAREHOUSE-scoped `user.update` sails through
+       * `requirePermission`, because a create and a list legitimately
+       * name no warehouse. Here the warehouse is a property of the
+       * TARGET, so it has to be checked against them: without this line
+       * one branch's admin could suspend another branch's.
+       */
+      const reach = await mayActOnUser(
+        actor,
+        targetUserId,
+        "user.update",
+        status === "SUSPENDED" ? "suspend it" : "reinstate it",
+      );
+      if (reach !== true) return fail("FORBIDDEN", reach.reason, requestId);
+
       if (before[0]!.status === status) {
         return ok({ ok: true as const }, requestId);
       }

@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getDb } from "@/db";
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
+import { mayActOnUser } from "@/lib/users/authority";
 import { auditQuietly } from "@/lib/audit";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
@@ -48,6 +49,11 @@ export async function PATCH(
       // OWN scope covers only yourself — and "yourself" is /api/v1/profile.
       if (grant.scope === "OWN" && targetUserId !== actor.session.userId) {
         return fail("FORBIDDEN", "You do not have permission to do that.", requestId);
+      }
+      // WAREHOUSE scope is narrowed against the target, not the request.
+      if (targetUserId !== actor.session.userId) {
+        const reach = await mayActOnUser(actor, targetUserId, "user.update", "rename it");
+        if (reach !== true) return fail("FORBIDDEN", reach.reason, requestId);
       }
       const parsed = bodySchema.safeParse(await request.json().catch(() => null));
       if (!parsed.success) {
