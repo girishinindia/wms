@@ -93,6 +93,15 @@ export default function RoleMatrix({ matrix }: { matrix: Matrix }) {
   const valueOf = (key: string): string | null =>
     key in draft ? draft[key]! : (byKey.get(key)?.scope ?? null);
 
+  /** How many the role holds right now, draft included — so the count
+   *  in the footer moves as boxes are ticked rather than lagging until
+   *  the save lands. */
+  const granted = useMemo(
+    () => matrix.permissions.filter((p) => valueOf(p.key) !== null).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [matrix.permissions, draft, byKey],
+  );
+
   const changes = useMemo(
     () =>
       Object.entries(draft)
@@ -366,6 +375,22 @@ export default function RoleMatrix({ matrix }: { matrix: Matrix }) {
             ))}
           </table>
         </StickyTableBox>
+
+        {/*
+          A bar along the bottom, like every list in the panel. There is
+          nothing to page through here — it is one role's whole matrix —
+          so it carries the count instead. The change bar below is a
+          different thing: it appears only once something is ticked, and
+          it is an action, not a status line.
+        */}
+        <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-2 border-t border-verdigris-300/10 bg-ink-850 px-5 py-3">
+          <span className="text-xs text-verdigris-200/60">
+            {granted} of {matrix.permissions.length} permissions granted
+          </span>
+          <span className="text-xs text-verdigris-200/45">
+            held by {matrix.holders} {matrix.holders === 1 ? "person" : "people"}
+          </span>
+        </div>
       </Card>
 
       {matrix.editable && changes.length > 0 ? (

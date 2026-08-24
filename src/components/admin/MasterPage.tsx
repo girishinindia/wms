@@ -8,6 +8,7 @@ import MasterTable, {
 import { Denied, PageHeader } from "@/components/admin/ui";
 import { getDb } from "@/db";
 import {
+  countLabel,
   finishList,
   likePattern,
   parseListQuery,
@@ -484,9 +485,16 @@ export default async function MasterPage({
     id: Number(r.id),
     isActive: Boolean(r.is_active),
     inUse: Number(r.in_use ?? 0),
+    /**
+     * `countLabel`, not string concatenation — this column read
+     * "1 warehouses" on every type referenced exactly once, which is
+     * most of them. The dependents carry a plural noun; `countLabel`
+     * derives the singular the same way the row counts above do.
+     */
     inUseDetail: resource.dependents
-      .map((d, i) => `${Number(r[`dep_${i}`] ?? 0)} ${d.noun}`)
-      .filter((s) => !s.startsWith("0 "))
+      .map((d, i) => ({ n: Number(r[`dep_${i}`] ?? 0), noun: d.noun }))
+      .filter((d) => d.n > 0)
+      .map((d) => countLabel(d.n, d.noun))
       .join(", "),
     parentId: r.parent_id === undefined ? null : Number(r.parent_id),
     parentLabel: (r.parent_label as string | null) ?? null,

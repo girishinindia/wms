@@ -239,8 +239,40 @@ export function SortHeader({
   );
 }
 
+/**
+ * The bar along the bottom of every list.
+ *
+ * It used to `return null` when everything fitted on one page, which is
+ * why Warehouse Types, Vehicle Types, Countries, Expense categories,
+ * FAQ categories, Transporters and Vehicles — six rows, thirteen, one,
+ * twelve, four, three, three — had no footer at all while the long
+ * lists did. A bar that comes and goes depending on how much data
+ * happens to be in the table reads as a rendering bug, and it takes the
+ * row count with it.
+ *
+ * So it always renders. What changes is the contents: the page controls
+ * appear only when there is more than one page, and a single-page list
+ * gets the count instead. Same bar, same height, same place.
+ */
 export function Pager({ base, list }: { base: string; list: ListState }) {
-  if (list.pages <= 1) return null;
+  const from = list.total === 0 ? 0 : (list.page - 1) * list.size + 1;
+  const to = Math.min(list.total, list.page * list.size);
+
+  if (list.pages <= 1) {
+    return (
+      <nav
+        aria-label="Pagination"
+        className="flex flex-wrap items-center justify-between gap-2 border-t border-verdigris-300/10 px-5 py-3"
+      >
+        <span className="text-xs text-verdigris-200/60">
+          {list.total === 0 ? "Nothing to show" : `All ${list.total} on one page`}
+        </span>
+        {/* Page 1 of 1, stated rather than implied: the reader can see
+            the bar is the pager, and that there is nowhere else to go. */}
+        <span className="text-xs text-verdigris-200/45">Page 1 of 1</span>
+      </nav>
+    );
+  }
 
   // Window of page numbers around the current one, with the ends pinned.
   const around = new Set<number>([1, list.pages, list.page - 1, list.page, list.page + 1]);
@@ -282,8 +314,11 @@ export function Pager({ base, list }: { base: string; list: ListState }) {
       aria-label="Pagination"
       className="flex flex-wrap items-center justify-between gap-2 border-t border-verdigris-300/10 px-5 py-3"
     >
-      <span className="text-xs text-verdigris-200/45">
-        Page {list.page} of {list.pages}
+      <span className="text-xs text-verdigris-200/60">
+        {from}–{to} of {list.total}
+        <span className="ml-2 text-verdigris-200/45">
+          page {list.page} of {list.pages}
+        </span>
       </span>
       <div className="flex items-center gap-1">
         {link(list.page - 1, "‹ Prev", false, list.page <= 1)}

@@ -501,10 +501,26 @@ function ClientToolbar<T>({
   );
 }
 
+/** The client-mode twin of `Pager`, and it always renders for the same
+ *  reason — see the note there on lists that fit on one page. */
 function ClientPager<T>({ table }: { table: Table<T> }) {
   const pages = table.getPageCount();
-  if (pages <= 1) return null;
+  const rows = table.getFilteredRowModel().rows.length;
+  if (pages <= 1) {
+    return (
+      <nav
+        aria-label="Pagination"
+        className="flex flex-wrap items-center justify-between gap-2 border-t border-verdigris-300/10 px-5 py-3"
+      >
+        <span className="text-xs text-verdigris-200/60">
+          {rows === 0 ? "Nothing to show" : `All ${rows} on one page`}
+        </span>
+        <span className="text-xs text-verdigris-200/45">Page 1 of 1</span>
+      </nav>
+    );
+  }
   const page = table.getState().pagination.pageIndex + 1;
+  const size = table.getState().pagination.pageSize;
   const btn =
     "rounded-lg px-2.5 py-1 text-xs text-verdigris-200/70 transition-colors hover:bg-verdigris-100/5 hover:text-verdigris-100 disabled:opacity-30 disabled:hover:bg-transparent";
   return (
@@ -512,8 +528,13 @@ function ClientPager<T>({ table }: { table: Table<T> }) {
       aria-label="Pagination"
       className="flex flex-wrap items-center justify-between gap-2 border-t border-verdigris-300/10 px-5 py-3"
     >
-      <span className="text-xs text-verdigris-200/45">
-        Page {page} of {pages}
+      {/* The same line the server-mode pager shows, so the two do not
+          read as different components. */}
+      <span className="text-xs text-verdigris-200/60">
+        {size * (page - 1) + 1}–{Math.min(rows, size * page)} of {rows}
+        <span className="ml-2 text-verdigris-200/45">
+          page {page} of {pages}
+        </span>
       </span>
       <div className="flex items-center gap-1">
         <button type="button" className={btn} onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>

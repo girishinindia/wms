@@ -67,6 +67,23 @@ export default async function RolesPage() {
             ))}
           </Table>
         )}
+
+        {/*
+          A bar along the bottom, like every other table in the panel.
+          This screen has no pagination to put there — the roles are a
+          fixed set — but a card whose table just stops is the odd one
+          out, and the count is worth stating.
+        */}
+        {roles.length > 0 ? (
+          <div className="sticky bottom-0 z-10 border-t border-verdigris-300/10 bg-ink-850 px-5 py-3">
+            <span className="text-xs text-verdigris-200/60">
+              {roles.length} roles ·{" "}
+              <span className="text-verdigris-200/45">
+                {roles.filter((r) => r.lockedReason === null).length} you may edit
+              </span>
+            </span>
+          </div>
+        ) : null}
       </Card>
     </>
   );

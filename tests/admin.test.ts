@@ -721,3 +721,67 @@ describe("tables keep their header and pager in view", () => {
     expect(matrix).toMatch(/sticky top-0 z-10 bg-ink-850[\s\S]{0,120}\{v\}/);
   });
 });
+
+describe("every list has a bar along the bottom", () => {
+  const src = (path: string) =>
+    readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
+      .replace(/\{?\/\*[\s\S]*?\*\/\}?/g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+  const controls = src("src/components/admin/ListControls.tsx");
+  const dataTable = src("src/components/admin/DataTable.tsx");
+
+  it("does not vanish when everything fits on one page", () => {
+    /**
+     * The reported bug. Both pagers began with `if (pages <= 1) return
+     * null`, so Warehouse types (6 rows), Vehicle types (13), Countries
+     * (1), Expense categories (12), FAQ categories (4), Transporters
+     * (3), Vehicles (3), Importers (3) and Sales agents (3) had no
+     * footer at all, while the long lists did. A bar that appears and
+     * disappears depending on how much data happens to be in the table
+     * reads as a rendering fault — and it takes the row count with it.
+     */
+    expect(controls).not.toMatch(/if \(list\.pages <= 1\) return null/);
+    expect(dataTable).not.toMatch(/if \(pages <= 1\) return null/);
+  });
+
+  it("says so, rather than rendering an empty bar", () => {
+    // Same height, same border, something true written in it.
+    expect(controls).toMatch(/on one page/);
+    expect(controls).toMatch(/Nothing to show/);
+    expect(dataTable).toMatch(/on one page/);
+  });
+
+  it("keeps both pagers saying the same thing on a multi-page list", () => {
+    // The server pager and the client pager sit in the same slot on
+    // different screens; a reader should not be able to tell them apart.
+    for (const [name, code] of [
+      ["server", controls],
+      ["client", dataTable],
+    ] as const) {
+      expect(code, name).toMatch(/aria-label="Pagination"/);
+      expect(code, name).toMatch(/of \{(list\.total|rows)\}/);
+      expect(code, name).toMatch(/page \{(list\.page|page)\} of \{(list\.pages|pages)\}/);
+    }
+  });
+
+  it("gives the two tables with no pagination a footer of their own", () => {
+    /**
+     * `/admin/roles` and the role matrix are fixed sets — there is
+     * nothing to page through — but a card whose table simply stops is
+     * the odd one out on a screen where every other list has a bar.
+     */
+    expect(src("src/app/admin/roles/page.tsx")).toMatch(/sticky bottom-0[\s\S]{0,300}roles/);
+    expect(src("src/components/admin/RoleMatrix.tsx")).toMatch(
+      /sticky bottom-0[\s\S]{0,300}permissions granted/,
+    );
+  });
+
+  it("counts dependents with countLabel, not string concatenation", () => {
+    // The In use column read "1 warehouses" on every type referenced
+    // exactly once, which is most of them.
+    const page = src("src/components/admin/MasterPage.tsx");
+    expect(page).toMatch(/countLabel\(d\.n, d\.noun\)/);
+    expect(page).not.toMatch(/\$\{Number\(r\[`dep_\$\{i\}`\] \?\? 0\)\} \$\{d\.noun\}/);
+  });
+});
