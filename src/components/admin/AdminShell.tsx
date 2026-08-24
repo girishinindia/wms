@@ -175,11 +175,41 @@ export default function AdminShell({
   const [theme, setTheme] = useState<Theme>("dark");
   const [font, setFont] = useState<FontStep>(DEFAULT_FONT);
   useEffect(() => {
-    setTheme(readTheme());
-    setFont(readFont());
-    // Leaving the panel by a client route (sign-out) should not carry
-    // the light theme onto the marketing page.
-    return () => clearPrefs();
+    /**
+     * Re-APPLY, not merely mirror.
+     *
+     * The boot script covers a full page load, but a client navigation
+     * that passed through a screen this shell does not own can leave
+     * `<html>` stripped of both attributes. Applying them again here
+     * means arriving on any admin screen repairs the panel instead of
+     * leaving the buttons claiming one theme while the page shows the
+     * other. Idempotent when nothing is wrong, which is most of the time.
+     */
+    const saved = readTheme();
+    const size = readFont();
+    setTheme(saved);
+    setFont(size);
+    applyTheme(saved);
+    applyFont(size);
+    return () => {
+      /**
+       * Clear only when the panel is genuinely being left.
+       *
+       * This used to run unconditionally, and "the shell unmounted" is
+       * not the same fact as "the user left the admin area". A client
+       * navigation to an /admin URL with no page behind it — an
+       * undeployed route, a stale link, a typo — unmounts the shell as
+       * well, and took the light theme with it: the panel snapped to
+       * dark while localStorage still said light. The router has
+       * already moved the address by the time cleanup runs, so ask it
+       * where we actually went.
+       *
+       * Sign-out clears explicitly too, so this never has to be the
+       * only thing standing between the light theme and the marketing
+       * page.
+       */
+      if (!window.location.pathname.startsWith("/admin")) clearPrefs();
+    };
   }, []);
   const switchTheme = () => {
     const next: Theme = theme === "dark" ? "light" : "dark";
@@ -298,6 +328,10 @@ export default function AdminShell({
     // Logout must never appear to fail — a user on a shared terminal who
     // reads "could not sign out" walks away from a live session.
     if (!result.ok) toast.info("Signed out locally.");
+    // The one client-route exit from the panel. Said here rather than
+    // left to the unmount, so the marketing page never inherits the
+    // admin's light palette however the cleanup is guarded.
+    clearPrefs();
     router.push("/sign-in");
     router.refresh();
   }

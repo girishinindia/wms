@@ -176,6 +176,11 @@ html[data-theme="light"] .text-amber-300,
 html[data-theme="light"] .text-amber-100\/90 {
   color: #92400e;
 }
+html[data-theme="light"] .text-amber-200\/90,
+html[data-theme="light"] .text-amber-300\/80,
+html[data-theme="light"] .text-amber-300\/70 {
+  color: #92400e;
+}
 html[data-theme="light"] .text-rose-100,
 html[data-theme="light"] .text-rose-200,
 html[data-theme="light"] .text-rose-300,
@@ -183,8 +188,21 @@ html[data-theme="light"] .text-rose-100\/90,
 html[data-theme="light"] .text-rose-200\/80,
 html[data-theme="light"] .text-rose-200\/60,
 html[data-theme="light"] .text-rose-200\/70,
+html[data-theme="light"] .text-rose-300\/80,
 html[data-theme="light"] .text-rose-300\/85 {
   color: #9f1239;
+}
+/* Emerald was missed when amber and rose were done, and it is the tint
+   the APPROVED pill is drawn in — so "approved" was pale mint on white
+   in every expense list. The same green carries the Allow side of a
+   permission override and the Approve button in the drawer, all of
+   which had the same problem for the same reason. */
+html[data-theme="light"] .text-emerald-100,
+html[data-theme="light"] .text-emerald-200,
+html[data-theme="light"] .text-emerald-300,
+html[data-theme="light"] .text-emerald-200\/90,
+html[data-theme="light"] .text-emerald-300\/80 {
+  color: #065f46;
 }
 /* Icon buttons and other borders drawn at 15% teal vanish on white. */
 html[data-theme="light"] .border-verdigris-300\/15,
@@ -199,6 +217,14 @@ html[data-theme="light"] .border-verdigris-300\/25 {
 html[data-theme="light"] .border-rose-400\/25,
 html[data-theme="light"] .border-rose-400\/30 {
   border-color: color-mix(in oklab, #9f1239 45%, transparent);
+}
+html[data-theme="light"] .border-emerald-400\/30,
+html[data-theme="light"] .border-emerald-400\/35 {
+  border-color: color-mix(in oklab, #065f46 45%, transparent);
+}
+html[data-theme="light"] .border-amber-400\/30,
+html[data-theme="light"] .border-amber-400\/35 {
+  border-color: color-mix(in oklab, #92400e 45%, transparent);
 }
 html[data-theme="light"] ::selection {
   background: color-mix(in oklab, var(--color-patina) 30%, transparent);
