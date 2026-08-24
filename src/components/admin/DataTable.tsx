@@ -19,6 +19,7 @@ import { ChevronIcon } from "@/components/icons";
 import { countLabel, DEFAULT_PAGE_SIZE, listHref, PAGE_SIZES, type ListState } from "@/lib/admin/listing";
 
 import { ListToolbar, Pager } from "./ListControls";
+import StickyTableBox from "./StickyTableBox";
 import { Empty } from "./ui";
 
 /**
@@ -81,9 +82,22 @@ export type DataTableProps<T> = {
 /**
  * Header cells: a distinct band above the rows, white and bold, so the
  * column names read at a glance rather than as a faint rule.
+ *
+ * Two properties here exist for the sticky head rather than for looks:
+ *
+ *   · The background is OPAQUE (`bg-ink-850`, the card's own colour)
+ *     and sits on the cells. A sticky `<thead>` is transparent, and
+ *     `bg-ink-900/70` let the rows show through it as they passed.
+ *
+ *   · The underline is an inset shadow, not `border-b-2` on the row.
+ *     The table is `border-collapse: collapse`, where a collapsed
+ *     border belongs to the table rather than to the row it was
+ *     declared on — so it stays behind while the head pins, and the
+ *     header loses its rule at exactly the moment it needs one. A
+ *     shadow is painted by the cell and travels with it.
  */
 const HEADER =
-  "bg-ink-900/70 px-4 py-3 text-[0.84rem] font-bold uppercase tracking-[0.08em] text-verdigris-50";
+  "sticky top-0 z-20 bg-ink-850 shadow-[inset_0_-2px_0_0_color-mix(in_oklab,var(--color-verdigris-300)_28%,transparent)] px-4 py-3 text-[0.84rem] font-bold uppercase tracking-[0.08em] text-verdigris-50";
 
 export default function DataTable<T>({
   columns,
@@ -207,11 +221,19 @@ export default function DataTable<T>({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto">
+      <StickyTableBox>
         <table className="w-full border-collapse text-sm">
+          {/*
+            The pinning lives on the CELLS (see `HEADER`), not here.
+            `position: sticky` on `<thead>` needs a much newer browser
+            than the same thing on `<th>`, and the background has to be
+            on the cells anyway — a sticky row is transparent, and the
+            rows scroll straight through it otherwise.
+          */}
           <thead>
             {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id} className="border-b-2 border-verdigris-300/25">
+              // The underline moved onto the cells — see `HEADER`.
+              <tr key={hg.id}>
                 {hg.headers.map((header) => {
                   const canSort = header.column.getCanSort();
                   const sorted = header.column.getIsSorted();
@@ -315,9 +337,18 @@ export default function DataTable<T>({
             )}
           </tbody>
         </table>
-      </div>
+      </StickyTableBox>
 
-      {serverMode ? <Pager base={base!} list={list!} /> : <ClientPager table={table} />}
+      {/*
+        The pager sits below the box rather than inside it, so it is
+        always on screen without being `position: fixed` and without a
+        z-index to lose. `sticky bottom-0` is the backstop for the one
+        case the box cannot cover: a window short enough that the box
+        hits its minimum height and the page starts scrolling again.
+      */}
+      <div className="sticky bottom-0 z-10 bg-ink-850">
+        {serverMode ? <Pager base={base!} list={list!} /> : <ClientPager table={table} />}
+      </div>
     </div>
   );
 }

@@ -30,7 +30,10 @@ export default async function RolesPage() {
         {roles.length === 0 ? (
           <Empty title="No roles." hint="Something is wrong with the seed." />
         ) : (
-          <Table head={["Role", "Where", "Level", "Permissions", "People", ""]}>
+          // Twenty-one rows: the header scrolls out of sight long
+          // before the list does, and "which column was that number?"
+          // is the question this screen exists to answer.
+          <Table sticky head={["Role", "Where", "Level", "Permissions", "People", ""]}>
             {roles.map((r) => (
               <Row key={r.key} className={r.lockedReason ? "opacity-60" : ""}>
                 <Cell>

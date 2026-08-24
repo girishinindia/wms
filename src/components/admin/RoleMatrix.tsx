@@ -7,6 +7,7 @@ import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
 
+import StickyTableBox from "./StickyTableBox";
 import { Card, ConfirmDialog } from "./ui";
 
 /**
@@ -220,12 +221,41 @@ export default function RoleMatrix({ matrix }: { matrix: Matrix }) {
           </label>
         </div>
 
-        <div className="overflow-x-auto">
+        <StickyTableBox>
           <table className="w-full text-sm">
-            <tbody>
-              {[...groups.entries()].map(([module, byResource]) => (
-                <>
-                  <tr key={module} className="bg-verdigris-100/[0.03]">
+            {/*
+              One `<tbody>` per module, and not for tidiness.
+
+              A sticky row sticks only while its CONTAINING BLOCK is in
+              view. With every module in one tbody, all ten band rows
+              would pin at `top: 0` at once and pile on top of each
+              other. A tbody each makes the sticking hand over: the next
+              module's band pushes the previous one out as it arrives,
+              which is what a section header should do.
+
+              It also gives the array a real key. The `<>` this replaces
+              was the element being keyed over, and a fragment cannot
+              take one.
+            */}
+            {[...groups.entries()].map(([module, byResource]) => (
+              <tbody key={module}>
+                  {/*
+                    The band is NOT sticky, and that was a deliberate
+                    retreat.
+
+                    Chrome does not confine a sticky table row to its
+                    row group — measured: at scrollTop 1100, six module
+                    bands were all pinned at `top: 0` simultaneously,
+                    stacked. It LOOKS right most of the way down,
+                    because same-z-index elements paint in DOM order and
+                    the last stuck band is usually the module you are
+                    in. It stops being right at the bottom of the list:
+                    at maximum scroll the visible band read "package"
+                    while the rows under it were "storage". A section
+                    header that names the wrong section is worse than
+                    one that scrolls away.
+                  */}
+                  <tr className="bg-verdigris-100/[0.03]">
                     <td
                       colSpan={VERBS.length + 2}
                       // verdigris-200 rather than -300: a module heading
@@ -235,14 +265,29 @@ export default function RoleMatrix({ matrix }: { matrix: Matrix }) {
                       {module.replace(/_/g, " ").toLowerCase()}
                     </td>
                   </tr>
-                  <tr key={`${module}-head`} className="border-b border-verdigris-300/[0.06]">
-                    <td className={`px-5 py-1.5 ${colHead}`}>&nbsp;</td>
+                  {/*
+                    The verb row IS sticky, and the pile-up that sank
+                    the bands is harmless here: every module's verb row
+                    carries the same seven words, so whichever one wins
+                    the paint order is indistinguishable from the one
+                    you wanted. It answers the only question this grid
+                    is asked while scrolling — "which column is delete?"
+                  */}
+                  <tr>
+                    <td className={`sticky top-0 z-10 bg-ink-850 px-5 py-1.5 ${colHead}`}>&nbsp;</td>
                     {VERBS.map((v) => (
-                      <td key={v} className={`px-3 py-1.5 text-center ${colHead}`}>
+                      <td
+                        key={v}
+                        className={`sticky top-0 z-10 bg-ink-850 px-3 py-1.5 text-center ${colHead}`}
+                      >
                         {v}
                       </td>
                     ))}
-                    <td className={`px-3 py-1.5 text-right ${colHead}`}>scope</td>
+                    <td
+                      className={`sticky top-0 z-10 bg-ink-850 px-3 py-1.5 text-right shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--color-verdigris-300)_12%,transparent)] ${colHead}`}
+                    >
+                      scope
+                    </td>
                   </tr>
 
                   {[...byResource.entries()].map(([resource, actions]) => {
@@ -317,11 +362,10 @@ export default function RoleMatrix({ matrix }: { matrix: Matrix }) {
                       </tr>
                     );
                   })}
-                </>
-              ))}
-            </tbody>
+              </tbody>
+            ))}
           </table>
-        </div>
+        </StickyTableBox>
       </Card>
 
       {matrix.editable && changes.length > 0 ? (

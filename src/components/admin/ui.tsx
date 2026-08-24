@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 
 import Spinner from "@/components/Spinner";
 
+import StickyTableBox from "./StickyTableBox";
+
 /**
  * The handful of shapes every admin screen is made of.
  *
@@ -112,25 +114,64 @@ export function StatusBadge({ value }: { value: string }) {
   );
 }
 
-export function Table({ head, children }: { head: ReactNode[]; children: ReactNode }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-verdigris-300/10">
-            {head.map((cell, i) => (
-              <th
-                key={i}
-                className="px-4 py-3 text-left font-mono text-[0.72rem] font-medium uppercase tracking-[0.14em] text-verdigris-400"
-              >
-                {cell}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
+/**
+ * The plain table, for lists short enough not to need `DataTable`.
+ *
+ * `sticky` is opt-in and OFF by default: giving a four-row card its own
+ * scroll region is worse than leaving it alone — a scrollbar appears,
+ * the box reserves height it does not need, and nothing was gained.
+ * Screens with enough rows to scroll the header out of sight turn it
+ * on; `/admin/roles` is the one that does today.
+ */
+export function Table({
+  head,
+  children,
+  sticky = false,
+}: {
+  head: ReactNode[];
+  children: ReactNode;
+  sticky?: boolean;
+}) {
+  const inner = (
+    <table className="w-full border-collapse text-sm">
+      <thead>
+        <tr>
+          {head.map((cell, i) => (
+            <th
+              key={i}
+              /**
+               * When it pins, two things have to move onto the CELL: an
+               * opaque background, because a sticky row is transparent
+               * and the rows would scroll through it; and the rule as
+               * an inset shadow rather than `border-b` on the row,
+               * because under `border-collapse: collapse` that border
+               * belongs to the table and stays behind when the head
+               * moves away from it.
+               */
+              className={`px-4 py-3 text-left font-mono text-[0.72rem] font-medium uppercase tracking-[0.14em] text-verdigris-400 ${
+                sticky
+                  ? "sticky top-0 z-20 bg-ink-850 shadow-[inset_0_-1px_0_0_color-mix(in_oklab,var(--color-verdigris-300)_16%,transparent)]"
+                  : "border-b border-verdigris-300/10"
+              }`}
+            >
+              {cell}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>{children}</tbody>
+    </table>
+  );
+
+  /**
+   * `overflow-x-auto` alone is a scroll container on BOTH axes — see
+   * `StickyTableBox` for the measurement — so a sticky head inside one
+   * has nothing to stick to. A sticky table gets the measured box.
+   */
+  return sticky ? (
+    <StickyTableBox>{inner}</StickyTableBox>
+  ) : (
+    <div className="overflow-x-auto">{inner}</div>
   );
 }
 

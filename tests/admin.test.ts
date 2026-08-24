@@ -598,3 +598,126 @@ describe("OpenAPI: admin endpoints", () => {
     }
   });
 });
+
+describe("tables keep their header and pager in view", () => {
+  const src = (path: string) =>
+    readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
+      .replace(/\{?\/\*[\s\S]*?\*\/\}?/g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+  const dataTable = src("src/components/admin/DataTable.tsx");
+  const box = src("src/components/admin/StickyTableBox.tsx");
+
+  it("never wraps a table in a bare overflow-x-auto again", () => {
+    /**
+     * The regression this whole thing exists for. `overflow-x: auto`
+     * with `overflow-y: visible` is not a thing: CSS computes the
+     * `visible` axis to `auto`, so the wrapper became a scroll
+     * container on BOTH axes while never actually scrolling — its
+     * `scrollHeight` and `clientHeight` were identical — and a sticky
+     * header anchored to it instead of to anything that moves.
+     *
+     * Measured on the cities screen: at `scrollY 596` the header sat at
+     * `top: -286`. Removing that one class put it at `top: 0`.
+     */
+    expect(dataTable).not.toMatch(/overflow-x-auto/);
+    expect(dataTable).toMatch(/<StickyTableBox>/);
+    expect(box).toMatch(/overflow-auto/);
+    expect(box).not.toMatch(/overflow-x-auto/);
+  });
+
+  it("pins the header on the cells, with something opaque behind it", () => {
+    /**
+     * A sticky row is transparent, so the rows scroll straight through
+     * it unless the CELLS carry a background. `bg-ink-900/70` — what
+     * this used to be — is translucent and did exactly that.
+     */
+    const header = dataTable.slice(dataTable.indexOf("const HEADER ="));
+    const decl = header.slice(0, header.indexOf(";"));
+    expect(decl).toMatch(/sticky top-0 z-20 bg-ink-850/);
+    // Scoped to HEADER: `bg-ink-900/70` is still correct elsewhere in
+    // the file (the Active toggle uses it), and it is only translucent
+    // BEHIND A STICKY ROW that it becomes a bug.
+    expect(decl).not.toMatch(/bg-ink-900\/70/);
+  });
+
+  it("draws the header rule with a shadow, not a collapsed border", () => {
+    /**
+     * The table is `border-collapse: collapse`, where a border declared
+     * on a row belongs to the TABLE rather than the row — so it stays
+     * behind when the head pins, and the header loses its underline at
+     * exactly the moment it needs one. A shadow is painted by the cell
+     * and travels with it.
+     */
+    expect(dataTable).toMatch(/shadow-\[inset_0_-2px_0_0_color-mix/);
+    expect(dataTable).not.toMatch(/border-b-2 border-verdigris-300\/25/);
+  });
+
+  it("keeps the pager below the box and pinned", () => {
+    expect(dataTable).toMatch(/sticky bottom-0 z-10 bg-ink-850[\s\S]{0,200}Pager/);
+  });
+
+  it("measures its own height instead of hard-coding one", () => {
+    /**
+     * The chrome above and below the rows measured a consistent 392px
+     * across three screens, which is tempting to freeze as
+     * `calc(100vh - 24.5rem)`. It moves when a subtitle wraps to two
+     * lines, when the toolbar wraps, and when the bulk-actions bar
+     * appears — and a frozen number leaves the pager half off-screen in
+     * exactly those cases.
+     */
+    expect(box).not.toMatch(/calc\(100vh/);
+    expect(box).toMatch(/window\.innerHeight - top - reserve/);
+    // The offset is taken in DOCUMENT space. `getBoundingClientRect().top`
+    // alone shrinks as the page scrolls, which would shrink the box,
+    // which would scroll the page further.
+    expect(box).toMatch(/getBoundingClientRect\(\)\.top \+ window\.scrollY/);
+  });
+
+  it("re-measures when the things around it move", () => {
+    // A window resize is the one case that would have been noticed. The
+    // toolbar wrapping and the bulk bar appearing are the two that
+    // would not.
+    expect(box).toMatch(/new ResizeObserver\(fit\)/);
+    expect(box).toMatch(/window\.addEventListener\("resize", fit\)/);
+    expect(box).toMatch(/observer\.disconnect\(\)/);
+  });
+
+  it("never collapses to nothing on a short window", () => {
+    expect(box).toMatch(/MIN_HEIGHT = \d+/);
+    expect(box).toMatch(/Math\.max\(MIN_HEIGHT/);
+  });
+
+  it("leaves short tables alone in the plain Table", () => {
+    /**
+     * `sticky` is opt-in. Giving a four-row card its own scroll region
+     * adds a scrollbar and reserves height for nothing.
+     */
+    const ui = src("src/components/admin/ui.tsx");
+    expect(ui).toMatch(/sticky = false/);
+    expect(src("src/components/admin/UserRoles.tsx")).not.toMatch(/<Table\s+sticky/);
+    expect(src("src/app/admin/roles/page.tsx")).toMatch(/<Table sticky/);
+  });
+
+  it("does not pin the role matrix's module bands", () => {
+    /**
+     * Chrome does not confine a sticky table row to its row group.
+     * Measured at scrollTop 1100: six module bands pinned at `top: 0`
+     * at once, stacked, with paint order deciding which one showed. It
+     * reads correctly most of the way down and then lies at the bottom
+     * — at maximum scroll the visible band said "package" while the
+     * rows beneath it were "storage".
+     *
+     * The verb row is sticky instead, and the same pile-up is harmless
+     * there because every module's verb row carries the same seven
+     * words.
+     */
+    const matrix = src("src/components/admin/RoleMatrix.tsx");
+    const from = matrix.indexOf("colSpan={VERBS.length + 2}");
+    // The band's own <td>, and not a character further — the verb row
+    // that follows it is sticky on purpose.
+    const band = matrix.slice(from, matrix.indexOf("</td>", from));
+    expect(band).not.toMatch(/sticky/);
+    expect(matrix).toMatch(/sticky top-0 z-10 bg-ink-850[\s\S]{0,120}\{v\}/);
+  });
+});
