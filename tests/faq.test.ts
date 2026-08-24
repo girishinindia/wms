@@ -99,9 +99,9 @@ describe("where the FAQ screens sit, and who may reach them", () => {
     expect(visibleNav(scoped)).toEqual([]);
 
     const labels = visibleNav(scoped.map((p) => ({ ...p, scope: "ALL" as const }))).map((i) => i.label);
-    // Sidebar order: the Master section sits second, above Notifications,
-    // so "FAQ categories" comes before the bell and "FAQs" is last.
-    expect(labels).toEqual(["Dashboard", "FAQ categories", "Notifications", "FAQs"]);
+    // Sidebar order: Master sits fourth, below Notifications, so the
+    // bell comes first and "FAQs" is last.
+    expect(labels).toEqual(["Dashboard", "Notifications", "FAQ categories", "FAQs"]);
   });
 
   it("keeps the answer out of the table and out of the sort keys", async () => {

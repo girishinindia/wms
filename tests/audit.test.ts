@@ -175,6 +175,26 @@ describe("who may read the audit log", () => {
     ]);
   });
 
+  it("counts as being inside its own section", async () => {
+    /**
+     * A group's `match` decides two things: whether the section is
+     * highlighted, and whether it opens itself when you arrive by a
+     * link. A child whose href the regex does not cover looks like it
+     * belongs to no section at all — which is exactly what
+     * `/admin/audit` did while the match still read `(users|roles)`.
+     *
+     * Asserted across EVERY group, so the next child added anywhere
+     * cannot repeat it.
+     */
+    const { ADMIN_NAV, inSection, isGroup } = await import("@/components/admin/nav");
+    for (const node of ADMIN_NAV) {
+      if (!isGroup(node)) continue;
+      for (const child of node.children) {
+        expect(inSection(node.match, child.href), `${node.label} → ${child.href}`).toBe(true);
+      }
+    }
+  });
+
   it("offers nothing to do TO a row", () => {
     /**
      * The table is append-only at the database — a trigger refuses

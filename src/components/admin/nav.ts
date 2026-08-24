@@ -285,12 +285,6 @@ export const USERS_ITEMS: AdminNavItem[] = [
  */
 export const ADMIN_NAV: AdminNavNode[] = [
   { href: "/admin", label: "Dashboard", permission: null, icon: "chart" },
-  {
-    label: "Master",
-    icon: "database",
-    match: "/admin/master",
-    children: MASTER_ITEMS,
-  },
   /**
    * Notifications, like the dashboard, has NO permission of its own.
    *
@@ -310,8 +304,14 @@ export const ADMIN_NAV: AdminNavNode[] = [
   {
     label: "Users & Roles",
     icon: "shield",
-    match: "/admin/(users|roles)",
+    match: "/admin/(users|roles|audit)",
     children: USERS_ITEMS,
+  },
+  {
+    label: "Master",
+    icon: "database",
+    match: "/admin/master",
+    children: MASTER_ITEMS,
   },
   {
     label: "Warehouses",

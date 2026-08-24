@@ -220,9 +220,9 @@ describe("admin navigation: grouping", () => {
     // `groupNav` walks that array — so this is the list, top to bottom.
     expect(groupNav(visibleNav(SUPER_ADMIN)).map((n) => n.label)).toEqual([
       "Dashboard",
-      "Master",
       "Notifications",
       "Users & Roles",
+      "Master",
       "Warehouses",
       "Transporters & Vehicles",
       "Importers & agents",
