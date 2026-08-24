@@ -65,10 +65,21 @@ describe("admin navigation", () => {
     // Dashboard and Notifications ride along; cities does not, because
     // adding master data is not a warehouse admin's job.
     //
-    // The order is `ADMIN_NAV`'s: Users sits in "Users & Roles" above
+    // The order is `ADMIN_NAV`'s: "Users & Roles" sits above
     // "Importers & agents". Asserted as an ordered list on purpose —
     // this is the array the sidebar renders from.
-    expect(labels).toEqual(["Dashboard", "Notifications", "Users", "Importers"]);
+    //
+    // Business hierarchy is in the list because it is keyed on plain
+    // `user.read` rather than `allOnly`, unlike Roles and the Audit log
+    // beside it. That is the point of the screen: a branch manager
+    // reviewing who works for them, scoped to their own sites.
+    expect(labels).toEqual([
+      "Dashboard",
+      "Notifications",
+      "Users",
+      "Business hierarchy",
+      "Importers",
+    ]);
   });
 
   /**
@@ -191,18 +202,24 @@ describe("admin navigation: grouping", () => {
   it("keeps a group that earned some of its children, holding only those", () => {
     /**
      * The other half of the same rule, and the one a warehouse admin
-     * actually meets: they hold `user.read` but not `role.read`, so
-     * "Users & Roles" opens onto Users alone.
+     * actually meets: they hold `user.read` but neither `role.read` nor
+     * `audit_log.read` at ALL, so "Users & Roles" opens onto the two
+     * entries keyed on `user.read` and nothing else.
      *
-     * Worth its own test because the two entries in that section are
-     * deliberately keyed differently — `role.read` is `allOnly` because
-     * `role_permission` has no warehouse column, `user.read` is not —
-     * and a partially-earned group is exactly what that produces.
+     * Worth its own test because the four entries in that section are
+     * deliberately keyed differently. Roles and the Audit log are
+     * `allOnly` — `role_permission` has no warehouse column, and the
+     * audit log's scoping columns are never written. Users and Business
+     * hierarchy are not, because both CAN be narrowed honestly. A
+     * partially-earned group is exactly what that produces.
      */
     const nodes = groupNav(visibleNav([{ permission: "user.read", scope: "WAREHOUSE" }]));
     const group = nodes.find((n) => isGroup(n) && n.label === "Users & Roles");
     expect(group).toBeDefined();
-    expect(isGroup(group!) && group.children.map((c) => c.href)).toEqual(["/admin/users"]);
+    expect(isGroup(group!) && group.children.map((c) => c.href)).toEqual([
+      "/admin/users",
+      "/admin/org",
+    ]);
 
     // A super admin, who holds both, gets both.
     const full = groupNav(visibleNav(SUPER_ADMIN)).find(
@@ -212,6 +229,7 @@ describe("admin navigation: grouping", () => {
       "/admin/users",
       "/admin/roles",
       "/admin/audit",
+      "/admin/org",
     ]);
   });
 

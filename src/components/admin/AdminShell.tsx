@@ -10,6 +10,7 @@ import {
   HelpIcon,
   KeyIcon,
   RupeeIcon,
+  SitemapIcon,
   WarehouseIcon,
   BoxIcon,
   BuildingIcon,
@@ -81,6 +82,7 @@ const ICONS = {
   rupee: RupeeIcon,
   key: KeyIcon,
   clock: ClockIcon,
+  sitemap: SitemapIcon,
 } as const;
 
 export type AdminUser = {

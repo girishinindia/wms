@@ -316,6 +316,16 @@ export const KeyIcon = (p: P) => (
   </svg>
 );
 
+/** A node with two below it — the business hierarchy. */
+export const SitemapIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="9" y="3" width="6" height="4" rx="1" />
+    <rect x="3" y="17" width="6" height="4" rx="1" />
+    <rect x="15" y="17" width="6" height="4" rx="1" />
+    <path d="M12 7v5m0 0H6v5m6-5h6v5" />
+  </svg>
+);
+
 /** A clock — the audit log, where every row is first of all a "when". */
 export const ClockIcon = (p: P) => (
   <svg {...base} {...p}>

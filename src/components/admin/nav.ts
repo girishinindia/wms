@@ -85,7 +85,8 @@ export type AdminNavIcon =
   | "help"
   | "rupee"
   | "key"
-  | "clock";
+  | "clock"
+  | "sitemap";
 
 /** A collapsible section. Its children are ordinary items and are what
  *  `visibleNav` returns — the group itself grants nothing. */
@@ -271,6 +272,21 @@ export const USERS_ITEMS: AdminNavItem[] = [
     allOnly: true,
     icon: "clock",
   },
+  /**
+   * The whole structure in one place: sites, roles, people, permissions.
+   *
+   * Keyed on `user.read` and deliberately NOT `allOnly`, unlike Roles
+   * and the Audit log. This one CAN be scoped honestly —
+   * `user_role_assignment.warehouse_id` is populated on every warehouse
+   * assignment — so a branch manager reviewing who works for them is
+   * the ordinary use of the screen rather than an exception to it.
+   */
+  {
+    href: "/admin/org",
+    label: "Business hierarchy",
+    permission: "user.read",
+    icon: "sitemap",
+  },
 ];
 
 /**
@@ -304,7 +320,7 @@ export const ADMIN_NAV: AdminNavNode[] = [
   {
     label: "Users & Roles",
     icon: "shield",
-    match: "/admin/(users|roles|audit)",
+    match: "/admin/(users|roles|audit|org)",
     children: USERS_ITEMS,
   },
   {

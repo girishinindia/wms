@@ -172,6 +172,7 @@ describe("who may read the audit log", () => {
       "/admin/users",
       "/admin/roles",
       "/admin/audit",
+      "/admin/org",
     ]);
   });
 
