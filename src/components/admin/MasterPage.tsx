@@ -14,7 +14,13 @@ import {
   parseListQuery,
   type RawSearchParams,
 } from "@/lib/admin/listing";
-import { activeColumnFor, pluralise, resolveResource, type MasterResource } from "@/lib/admin/master-registry";
+import {
+  activeColumnFor,
+  pluralise,
+  resolveResource,
+  routeFor,
+  type MasterResource,
+} from "@/lib/admin/master-registry";
 import { grantFor, pageGuard } from "@/lib/auth/guard";
 import { actorWarehouseIds } from "@/lib/users/authority";
 
@@ -714,7 +720,15 @@ export default async function MasterPage({
         spec={spec}
         rows={data}
         list={list}
-        base={`/admin/master/${resource.slug}`}
+        /**
+         * The resource's OWN route, not an assumption about where it
+         * lives. `base` is the GET form's action and the href every
+         * sort header, pager link and Clear link is built from, so
+         * getting it wrong is a 404 on the first keystroke rather than
+         * a cosmetic slip — which is exactly what FAQs, Transporters,
+         * Vehicles and Expenses did until now.
+         */
+        base={routeFor(resource)}
         filters={filters}
       />
     </>

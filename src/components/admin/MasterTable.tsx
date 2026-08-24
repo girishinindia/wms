@@ -164,11 +164,39 @@ const asDraft = (row: MasterRow | null, spec: MasterSpec): Draft => {
   return d;
 };
 
+/**
+ * Whether a `showWhen` field is currently switched off.
+ *
+ * `values` is the live draft while editing and the saved row on the
+ * view panel, and both store a boolean as the STRING "true" — the draft
+ * because every field is a string in one flat map, the row because it
+ * arrives that way from the server. Comparing against the string is
+ * therefore the honest test, not a coercion mistake.
+ */
+function hiddenBy(field: MasterField, values: Record<string, unknown>): boolean {
+  if (!field.showWhen) return false;
+  return (String(values[field.showWhen.field] ?? "") === "true") !== field.showWhen.equals;
+}
+
 /** Only send what the user actually typed; `""` means "leave it out",
  *  which is what the server's optional() preprocessing expects. */
 function payload(draft: Draft, spec: MasterSpec): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const field of spec.fields) {
+    /**
+     * A field its condition has switched off is sent EMPTY, not
+     * omitted.
+     *
+     * Omitting it means "leave whatever is there alone", which is how a
+     * carrier ends up not blacklisted with a reason still on the
+     * record — the exact row that started this. Sending "" clears the
+     * column. The write route does the same again server-side.
+     */
+    if (hiddenBy(field, draft)) {
+      if (field.type === "boolean") out[field.key] = false;
+      else out[field.key] = "";
+      continue;
+    }
     const raw = draft[field.key] ?? "";
     if (field.type === "boolean") {
       out[field.key] = raw === "true";
@@ -872,7 +900,14 @@ function MasterDrawer({
                       },
                     ]
                   : []),
-                ...spec.fields.map((f) => ({
+                /**
+                 * The panel builds its own list instead of reusing the
+                 * form's loop below, so `showWhen` has to be honoured
+                 * HERE too. Gating only the form left "Why blacklisted
+                 * — " sitting on the panel of every carrier who is not
+                 * blacklisted: the box was gone, the empty line stayed.
+                 */
+                ...spec.fields.filter((f) => !hiddenBy(f, row.values)).map((f) => ({
                   label: f.label,
                   mono: f.mono,
                   // Same formatting as the cells. The first cut of this
@@ -1131,6 +1166,18 @@ function MasterDrawer({
             ) : null}
 
             {spec.fields.map((f) => (drawer.mode === "create" && spec.bulkCreate ? null : (
+              /**
+               * `showWhen` gates one field on another's tick.
+               *
+               * Against the live DRAFT, not the saved row: this branch
+               * only ever runs with `view` false — the panel above
+               * returns first — and reading the draft is what makes
+               * unticking hide the box as you watch rather than on the
+               * next open. `payload()` then sends the hidden field
+               * empty, so the value leaves with the box instead of
+               * travelling on invisibly.
+               */
+              hiddenBy(f, draft) ? null : (
               <div key={f.key}>
                 <label htmlFor={`f-${f.key}`} className="text-[0.84rem] font-medium text-verdigris-200/70">
                   {f.label}{f.required && !view ? " *" : ""}
@@ -1236,6 +1283,7 @@ function MasterDrawer({
                 )}
                 {errors[f.key] ? <p className="mt-1 text-xs text-rose-300">{errors[f.key]}</p> : null}
               </div>
+              )
             )))}
           </form>
           )}

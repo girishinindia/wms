@@ -8,7 +8,12 @@ import { grantFor, requirePermission, type Actor } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { deleteOne, dependentCounts, dropPublicCache, identifier } from "@/lib/admin/master-ops";
 import { invalidateGeo } from "@/lib/admin/geo";
-import { activeColumnFor, resolveResource, type MasterResource } from "@/lib/admin/master-registry";
+import {
+  activeColumnFor,
+  resolveResource,
+  type MasterField,
+  type MasterResource,
+} from "@/lib/admin/master-registry";
 import { announceSubmitted } from "@/lib/expenses/ops";
 import { actorWarehouseIds } from "@/lib/users/authority";
 import { constraintNameOf, isCheckViolation, isUniqueViolation } from "@/lib/db-errors";
@@ -206,6 +211,21 @@ export async function POST(
         }
       }
       for (const field of resource.fields) {
+        /**
+         * A conditional field whose condition is off is written NULL,
+         * not skipped.
+         *
+         * `blankOptional` turns "" into `undefined`, so a cleared box
+         * arrives as "leave it alone" — which is how a carrier ends up
+         * not blacklisted with a reason still on the record. The screen
+         * hides the box; this is what empties the column, and it holds
+         * for a direct API call too.
+         */
+        if (switchedOff(resource, field, input)) {
+          columns.push(identifier(field.column));
+          values.push(sql`null`);
+          continue;
+        }
         const value = input[field.key];
         if (value === undefined) continue;
         columns.push(identifier(field.column));
@@ -388,6 +408,12 @@ export async function PATCH(
 
       const sets: SQL[] = [];
       for (const field of resource.fields) {
+        // Same rule as create: the condition being off empties the
+        // column, whether or not the request mentioned the field.
+        if (switchedOff(resource, field, input)) {
+          sets.push(sql`${identifier(field.column)} = null`);
+          continue;
+        }
         if (!(field.key in input)) continue;
         const value = input[field.key];
         sets.push(sql`${identifier(field.column)} = ${value ?? null}`);
@@ -598,6 +624,34 @@ export async function DELETE(
  * create) or sits on the existing ROW (on update and delete). Both are
  * measured against the caller's own live assignments.
  */
+/**
+ * Is this field's `showWhen` condition currently unmet?
+ *
+ * The registry gates "Why blacklisted" on the blacklisted tick. The
+ * SCREEN hides the box, but a screen is not a control: an API call can
+ * send a reason with `blacklisted: false`, and the table's CHECK only
+ * ever guarded the other direction ("blacklisted implies a reason"), so
+ * nothing refused it. One carrier in production carries exactly that.
+ *
+ * Read from the REQUEST, not from the stored row, and deliberately: on
+ * an update that turns the tick off, the row still says `true` while
+ * the request says `false`, and the request is the new truth. A field
+ * the request does not mention leaves the condition unmet only if the
+ * controlling field is itself absent and falsy — which for a boolean
+ * the drawer always sends is not a case that arises.
+ */
+function switchedOff(
+  resource: MasterResource,
+  field: MasterField,
+  input: Record<string, unknown>,
+): boolean {
+  if (!field.showWhen) return false;
+  // Only when the request actually decides the controlling field.
+  // Otherwise a PATCH of one unrelated column would blank the reason.
+  if (!(field.showWhen.field in input)) return false;
+  return Boolean(input[field.showWhen.field]) !== field.showWhen.equals;
+}
+
 function outsideScope(
   resource: MasterResource,
   actor: Actor,
@@ -758,6 +812,22 @@ function translate(error: unknown, requestId: string, slug: string) {
    */
   if (isCheckViolation(error)) {
     const named = constraintNameOf(error);
+    /**
+     * One constraint gets a sentence rather than its own name, because
+     * its name explains nothing to the person who tripped it: the tick
+     * and the reason are one fact, and the table now refuses either
+     * without the other.
+     */
+    if (named === "transporter_blacklist_reason_check") {
+      return fail(
+        "VALIDATION_FAILED",
+        "A blacklisted carrier needs a reason, and a reason belongs only to a blacklisted carrier.",
+        requestId,
+        // Both halves in one line: the constraint is symmetric, so a
+        // caller reaching it directly could have tripped either.
+        { fields: { blacklistReason: "Goes with the tick above — required when it is on, empty when it is off" } },
+      );
+    }
     return fail(
       "VALIDATION_FAILED",
       named

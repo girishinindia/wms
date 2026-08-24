@@ -70,6 +70,19 @@ export type MasterField = {
    * text of a paragraph is not a thing anyone wants.
    */
   hideInTable?: boolean;
+  /**
+   * Only ask for this when another field says so.
+   *
+   * "Why blacklisted" is the case it was built for. The box sat open
+   * whatever the tick said, so a carrier could carry a reason while not
+   * being blacklisted — and one does, in production.
+   *
+   * HIDDEN AND CLEARED, never merely hidden. A field that keeps a value
+   * out of sight is how that stale reason survived; the drawer must
+   * send what it shows. The write route applies the same rule again,
+   * because a screen is not a control.
+   */
+  showWhen?: { field: string; equals: boolean };
 };
 
 export type MasterDependent = {
@@ -84,6 +97,16 @@ export type MasterResource = {
   table: string;
   label: string;
   singular: string;
+  /**
+   * Where this resource's screen actually lives.
+   *
+   * Defaults to `/admin/master/<slug>` — see `routeFor`. Four resources
+   * are top-level sections instead, and hard-coding the master path is
+   * what broke search, sorting, paging and every filter on all four of
+   * them: the toolbar posts its GET form to this path, so the wrong one
+   * is not a cosmetic mistake, it is a 404 on the first keystroke.
+   */
+  route?: string;
   /** `master.vehicle_type`; the handler appends `.create` / `.update` /
    *  `.delete`. */
   permission: string;
@@ -824,6 +847,8 @@ const faqCategory: MasterResource = {
  */
 const faq: MasterResource = {
   slug: "faqs",
+  // A top-level section, not a Master child — see `route` above.
+  route: "/admin/faqs",
   table: "faq",
   label: "FAQs",
   singular: "FAQ",
@@ -899,6 +924,8 @@ const faq: MasterResource = {
  */
 const transporter: MasterResource = {
   slug: "transporters",
+  // A top-level section, not a Master child — see `route` above.
+  route: "/admin/transporters",
   table: "transporter",
   label: "Transporters",
   singular: "transporter",
@@ -935,7 +962,18 @@ const transporter: MasterResource = {
       label: "Why blacklisted",
       type: "textarea",
       hideInTable: true,
-      hint: "Required whenever the tick above is on — the table refuses the row otherwise.",
+      /**
+       * Gated on the tick, and cleared when it comes off.
+       *
+       * The box used to stand open whatever the tick said, and the CHECK
+       * on the table only ever guarded one direction — "blacklisted
+       * implies a reason" — so a carrier could carry a reason while not
+       * being blacklisted. One in production does. Migration 26 clears
+       * those and makes the constraint symmetric; this is the half that
+       * stops it being typed again.
+       */
+      showWhen: { field: "blacklisted", equals: true },
+      hint: "Kept on the record. Clearing the tick above clears this too.",
     },
     { key: "notes", column: "notes", label: "Notes", type: "textarea", hideInTable: true },
   ],
@@ -1033,6 +1071,8 @@ const transporter: MasterResource = {
  */
 const vehicle: MasterResource = {
   slug: "vehicles",
+  // A top-level section, not a Master child — see `route` above.
+  route: "/admin/vehicles",
   table: "vehicle",
   label: "Vehicles",
   singular: "vehicle",
@@ -1207,6 +1247,8 @@ const expenseCategory: MasterResource = {
  */
 const expense: MasterResource = {
   slug: "expenses",
+  // A top-level section, not a Master child — see `route` above.
+  route: "/admin/expenses",
   table: "expense",
   label: "Expenses",
   singular: "expense",
@@ -1365,6 +1407,22 @@ export function resolveResource(slug: string): MasterResource | null {
   return Object.prototype.hasOwnProperty.call(MASTER_RESOURCES, slug)
     ? MASTER_RESOURCES[slug as MasterSlug]
     : null;
+}
+
+/**
+ * Where a resource's screen lives.
+ *
+ * The default is right for the seven resources that really are Master
+ * children. It was ALSO applied to the four that are not — FAQs,
+ * Transporters, Vehicles and Expenses are top-level sections — and
+ * since the toolbar posts its GET form to this path, every one of them
+ * answered a search, a filter, a sort or a page change with a 404. Not
+ * a broken link somewhere quiet: the first keystroke in the search box.
+ *
+ * One function, so the default and the exceptions cannot disagree.
+ */
+export function routeFor(resource: MasterResource): string {
+  return resource.route ?? `/admin/master/${resource.slug}`;
 }
 
 /**
