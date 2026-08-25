@@ -6,7 +6,6 @@ import type { ReactNode } from "react";
 import AdminShell from "@/components/admin/AdminShell";
 import { ForceChangePassword } from "@/components/admin/ProfileForms";
 import { visibleNav } from "@/components/admin/nav";
-import { PREFS_BOOT_SCRIPT } from "@/lib/admin/prefs";
 import { currentActor, grantFor, importerGateFor } from "@/lib/auth/guard";
 import { isAgentOnly } from "@/lib/sales-agents/scope";
 
@@ -40,13 +39,11 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   // A temporary password opens exactly one door: the form that replaces
   // it. Rendering the gate here, in the layout, means no admin URL can
   // route around it.
+  // The theme and text size are applied by the root layout's head, which
+  // covers this branch and every other one without each having to
+  // remember to say so.
   if (actor.session.mustChangePassword) {
-    return (
-      <>
-        <script dangerouslySetInnerHTML={{ __html: PREFS_BOOT_SCRIPT }} />
-        <ForceChangePassword name={actor.session.firstName} />
-      </>
-    );
+    return <ForceChangePassword name={actor.session.firstName} />;
   }
 
   /**
@@ -92,12 +89,17 @@ export default async function AdminLayout({ children }: { children: ReactNode })
     );
   }
 
+  /*
+   * Theme and text size are NOT applied here any more.
+   *
+   * This layout renders inside `<body>`, and a script there loses to
+   * the stylesheet in `<head>`: the browser paints the dark background
+   * first and repaints when the script arrives — invisible on a fast
+   * connection, a black blink on a real one. It runs from the root
+   * layout's head now, where nothing can paint ahead of it.
+   */
   return (
     <>
-      {/* Theme and text size, applied before first paint so a light,
-          larger panel does not flash dark and small on the way in.
-          Static string from prefs.ts; nothing user-supplied is in it. */}
-      <script dangerouslySetInnerHTML={{ __html: PREFS_BOOT_SCRIPT }} />
       <AdminShell
         items={items}
         lock={lock}

@@ -126,11 +126,64 @@ describe("an unknown /admin address keeps the panel", () => {
     expect(readFileSync(page, "utf8")).not.toMatch(/min-h-screen/);
   });
 
-  it("keeps the boot script in the admin layout", () => {
-    // It is what applies the saved theme before first paint on every
-    // one of those full page loads.
-    const layout = readFileSync(join(root, "src/app/admin/layout.tsx"), "utf8");
-    expect(layout).toMatch(/PREFS_BOOT_SCRIPT/);
+  it("applies the theme from the root layout's head, not from inside the body", () => {
+    /**
+     * Where the script sits decides whether the panel blinks.
+     *
+     * In the admin layout it rendered inside `<body>`, roughly 3,500
+     * bytes into the document, while the stylesheet that paints the
+     * dark background sits in `<head>` at byte 200. Everything between
+     * is a window where the browser has the CSS, has a body, and has
+     * no theme — so it paints dark and repaints light when the script
+     * lands. One machine serves the whole document in a single chunk
+     * and the window is 0ms; over a real connection it is a network
+     * segment, and it was reported as a black blink.
+     *
+     * From the head it cannot lose: nothing paints before a body
+     * exists, and a parser-blocking script in the head runs before
+     * there is one.
+     */
+    const rootLayout = readFileSync(join(root, "src/app/layout.tsx"), "utf8");
+    const head = rootLayout.slice(rootLayout.indexOf("<head>"), rootLayout.indexOf("</head>"));
+    expect(head, "PREFS_BOOT_SCRIPT must be inside the root <head>").toMatch(/PREFS_BOOT_SCRIPT/);
+
+    // And nowhere else — a second copy in a nested layout would render
+    // in the body again and quietly reintroduce the race.
+    const adminLayout = readFileSync(join(root, "src/app/admin/layout.tsx"), "utf8");
+    expect(adminLayout).not.toMatch(/PREFS_BOOT_SCRIPT/);
+  });
+
+  it("uses a parser-blocking tag, not next/script", () => {
+    /**
+     * `beforeInteractive` reads like the right strategy and measures as
+     * the wrong one: Next injects it as a deferred load rather than a
+     * parser-blocking tag, so the theme is applied well after first
+     * paint. Swapping the plain tag for it turned a clean load into six
+     * dark frames on /admin/audit under throttling. The name is about
+     * hydration, not painting.
+     */
+    const rootLayout = readFileSync(join(root, "src/app/layout.tsx"), "utf8");
+    // The comment above the tag explains why next/script is wrong, so
+    // the assertion has to look at code rather than prose.
+    const code = rootLayout.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(code).not.toMatch(/next\/script/);
+    expect(code).not.toMatch(/beforeInteractive/);
+    expect(code).toMatch(/<script dangerouslySetInnerHTML=\{\{ __html: PREFS_BOOT_SCRIPT \}\} \/>/);
+  });
+
+  it("asks the address before it touches anything, so marketing is untouched", () => {
+    /**
+     * The root layout wraps the public site too. Only the admin ever
+     * writes these keys, but someone who chose the light panel should
+     * not find the marketing pages repainted — so the script tests the
+     * path first. `(\/|$)` rather than a bare prefix, or a future
+     * /administrators would be mistaken for the panel.
+     */
+    const prefs = readFileSync(join(root, "src/lib/admin/prefs.ts"), "utf8");
+    const script = prefs.slice(prefs.indexOf("export const PREFS_BOOT_SCRIPT"));
+    expect(script).toMatch(/\^\\\\\/admin\(\\\\\/\|\$\)/);
+    // The guard has to come first, before either preference is read.
+    expect(script.indexOf("location.pathname")).toBeLessThan(script.indexOf("getItem"));
   });
 
   it("does not throw the theme away just because the shell unmounted", () => {

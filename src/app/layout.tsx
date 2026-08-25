@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/Toast";
+import { PREFS_BOOT_SCRIPT } from "@/lib/admin/prefs";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -69,6 +70,41 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} ${jetbrains.variable} h-full antialiased`}
     >
+      <head>
+        {/*
+          The admin panel's theme and text size, applied before the
+          browser is able to paint anything.
+
+          This has to be in the HEAD. It used to sit in the admin
+          layout, which renders inside `<body>` — roughly 3,500 bytes
+          in, while the stylesheet that paints the dark background is
+          200 bytes in. Everything between those two points is a window
+          in which the browser has the CSS, has a body, and has no
+          theme: it paints dark, then repaints light when the script
+          finally arrives. On one machine the document lands in a single
+          chunk and that window is 0ms; over a real connection it is a
+          network segment wide, and it was reported as a black blink —
+          worst on the heaviest screen, because that is the one with the
+          longest wait.
+
+          A synchronous script here cannot lose that race. A page has
+          nothing to paint until the head is finished.
+
+          A bare `<script>`, NOT `next/script`. `beforeInteractive`
+          sounds like the right tool and is the opposite of it: it is
+          injected as a deferred load rather than a parser-blocking
+          tag, so the theme arrives well after first paint. Measured
+          under throttling it turned a clean load into six dark frames
+          on /admin/audit, where the plain tag gives none. The name
+          describes hydration, not painting.
+
+          Static and identical for every request, so this layout still
+          renders statically, and it reads the address before it does
+          anything — the marketing pages this layout also wraps are left
+          exactly as designed. Nothing in the string is user-supplied.
+        */}
+        <script dangerouslySetInnerHTML={{ __html: PREFS_BOOT_SCRIPT }} />
+      </head>
       <body className="flex min-h-full flex-col font-sans">
         <a
           href="#main"

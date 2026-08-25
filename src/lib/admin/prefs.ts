@@ -66,11 +66,29 @@ export function clearPrefs(): void {
 }
 
 /**
- * Runs before React, from a <script> in the admin layout. Reads the same
- * two keys and applies them the same way. Kept tiny and dependency-free
- * because it is inlined verbatim.
+ * Runs before React, from a <script> in the ROOT layout's <head>. Reads
+ * the same two keys and applies them the same way. Kept tiny and
+ * dependency-free because it is inlined verbatim.
+ *
+ * Why the head of the root layout and not the admin layout, where it
+ * used to live: a nested layout renders inside `<body>`, and the
+ * stylesheet that paints the dark background is in `<head>` — 200 bytes
+ * in, against roughly 3,500 for the script. Everything between the two
+ * is a window in which the browser has the CSS, has a body, and has no
+ * theme, so it paints dark and repaints light a moment later. Locally
+ * the whole document arrives in one chunk and the window is 0ms; over a
+ * real connection it is a network segment wide, and it was reported as
+ * a black blink on the heaviest screen. From the head this cannot
+ * happen: nothing paints before a body exists, and a synchronous script
+ * in the head runs before there is one.
+ *
+ * The path test is what keeps it honest. Only the admin sets these
+ * keys, but the root layout wraps the marketing site too, and a visitor
+ * who once chose the light panel should not find the public pages
+ * repainted. `(\\/|$)` rather than a plain prefix so a future
+ * `/administrators` is not mistaken for the panel.
  */
-export const PREFS_BOOT_SCRIPT = `(function(){try{var t=localStorage.getItem(${JSON.stringify(
+export const PREFS_BOOT_SCRIPT = `(function(){try{if(!/^\\/admin(\\/|$)/.test(location.pathname))return;var t=localStorage.getItem(${JSON.stringify(
   THEME_KEY,
 )});if(t==="light")document.documentElement.setAttribute("data-theme","light");var f=Number(localStorage.getItem(${JSON.stringify(
   FONT_KEY,
