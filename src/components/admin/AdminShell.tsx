@@ -50,8 +50,10 @@ import Avatar from "./Avatar";
 import { useUnreadCount } from "@/lib/notifications/unread";
 
 import { groupNav, inSection, isGroup, type AdminNavItem } from "./nav";
+import NavProgress from "./NavProgress";
 import NotificationBell from "./NotificationBell";
 import RouterRecovery, { rememberIntent } from "./RouterRecovery";
+import { useNavigating, useNavStage } from "@/lib/admin/navigating";
 
 /**
  * The frame every admin page renders inside.
@@ -151,6 +153,16 @@ export default function AdminShell({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  /**
+   * Which page the browser is fetching, and how long it has been at it.
+   *
+   * Two different things read this: the sidebar marks the entry that
+   * was clicked, and `<main>` dims once the wait is long enough to make
+   * the stale content misleading. Both come from one store so they can
+   * never disagree about whether something is in flight.
+   */
+  const navigatingTo = useNavigating()?.href ?? null;
+  const navStage = useNavStage();
   const router = useRouter();
   const toast = useToast();
   const [signingOut, setSigningOut] = useState(false);
@@ -264,6 +276,15 @@ export default function AdminShell({
     // `/admin` would otherwise match every child route.
     const active =
       item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href);
+    /**
+     * The entry you just clicked, while the browser fetches it.
+     *
+     * Exact match, not `startsWith`: going to /admin/users must not
+     * light up /admin as well. This is the half of the waiting story
+     * that says WHICH page is coming — the bar at the top only says
+     * that one is.
+     */
+    const loading = navigatingTo === item.href;
     return (
       /**
        * A plain anchor, not `<Link>`, and deliberately so.
@@ -295,6 +316,9 @@ export default function AdminShell({
           rememberIntent(item.href);
         }}
         aria-current={active ? "page" : undefined}
+        // The row is busy, and a reader should be told so rather than
+        // left to infer it from an icon it cannot see.
+        aria-busy={loading || undefined}
         className={`flex items-center gap-3 rounded-lg text-sm transition-colors ${
           nested ? "px-3 py-1.5" : "px-3 py-2"
         } ${
@@ -303,7 +327,16 @@ export default function AdminShell({
             : "text-verdigris-200/70 hover:bg-verdigris-100/5 hover:text-verdigris-100"
         }`}
       >
-        <Icon className={nested ? "h-3.5 w-3.5 shrink-0" : "h-4 w-4 shrink-0"} />
+        {/*
+          The spinner takes the ICON's place rather than sitting beside
+          it. Adding one would shift every label 20px to the right at
+          the moment of the click, which reads as the menu flinching.
+        */}
+        {loading ? (
+          <Spinner className={nested ? "h-3.5 w-3.5 shrink-0" : "h-4 w-4 shrink-0"} />
+        ) : (
+          <Icon className={nested ? "h-3.5 w-3.5 shrink-0" : "h-4 w-4 shrink-0"} />
+        )}
         {/*
           The label needs a box of its own.
 
@@ -339,6 +372,7 @@ export default function AdminShell({
   return (
     <div className="flex min-h-screen bg-ink-900">
       <RouterRecovery />
+      <NavProgress />
       {/*
         The sidebar is the height of the SCREEN, not of the page.
 
@@ -552,7 +586,22 @@ export default function AdminShell({
           </div>
         ) : null}
 
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8">
+        {/*
+          `<main>` dims itself once a navigation has run long enough
+          that what is on screen has stopped being the answer to
+          anything. It is the element that knows where the content area
+          is, so no overlay has to reproduce the sidebar's width — or
+          get it wrong the first time the sidebar collapses.
+
+          `aria-busy` rather than `aria-hidden`: the content is still
+          there and still readable, it is simply out of date.
+        */}
+        <main
+          aria-busy={navStage === "dim" || undefined}
+          className={`min-w-0 flex-1 px-4 py-6 sm:px-8 sm:py-8 ${
+            navStage === "dim" ? "nav-dimmed" : ""
+          }`}
+        >
           {lock && !lock.verified && pathname !== "/admin" ? (
             <div className="mx-auto mt-10 max-w-md rounded-2xl border border-verdigris-300/10 bg-ink-850 p-8 text-center card-shadow">
               <span className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-amber-400/15 text-amber-300">

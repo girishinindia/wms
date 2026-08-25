@@ -231,6 +231,88 @@ html[data-theme="light"] ::selection {
   color: #0d2322;
 }
 
+/* ── Waiting for the next page ──────────────────────────────────
+   Every navigation in the panel is a full document load, so there is
+   no router event to drive a real percentage — nothing on this side
+   knows how far along the server is. An indeterminate bar is the
+   honest shape: it says "working", not "63% done", and it cannot be
+   caught lying when the page lands early.
+
+   It creeps toward 90% and stops. The last stretch belongs to the
+   arriving document, which completes it by replacing the page. A bar
+   that reached 100% and sat there would look stuck at exactly the
+   moment the user is most impatient. */
+@keyframes nav-progress-creep {
+  0%   { transform: scaleX(0.02); }
+  40%  { transform: scaleX(0.45); }
+  70%  { transform: scaleX(0.72); }
+  100% { transform: scaleX(0.9); }
+}
+
+.nav-progress {
+  transform-origin: left;
+  transform: scaleX(0.9);
+  animation: nav-progress-creep 6s cubic-bezier(0.15, 0.75, 0.35, 1) forwards;
+}
+
+/* Skeleton blocks, while a screen's data is still on its way.
+
+   A sweep across the block rather than a pulse of the whole thing:
+   a pulse dims and brightens the entire page at once, which is both
+   more distracting and easier to mistake for the content arriving.
+   The sweep stays local to each bar and reads as "not yet". */
+@keyframes skeleton-sweep {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+.skeleton-bar {
+  background-color: color-mix(in oklab, var(--color-verdigris-300) 12%, transparent);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in oklab, var(--color-verdigris-300) 10%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.6s linear infinite;
+}
+
+/* On white the same 12% tint is barely a smudge. */
+html[data-theme="light"] .skeleton-bar {
+  background-color: color-mix(in oklab, var(--color-verdigris-300) 22%, transparent);
+}
+
+/* The dim over the content while a slow page is on its way. Applied
+   by `<main>` rather than an overlay, so it covers exactly the content
+   area whatever the sidebar is doing, and the sidebar stays lit and
+   clickable — somebody who picked the wrong entry can pick another
+   without waiting for the first to arrive. */
+.nav-dimmed {
+  opacity: 0.45;
+  transition: opacity 180ms ease-out;
+}
+
+/* A permanently moving element is a migraine trigger for some people,
+   and prefers-reduced-motion is how they say so. The bar still
+   appears and still means the same thing — it simply does not crawl.
+   Same reasoning as the `motion-safe:` on the button spinner. */
+@media (prefers-reduced-motion: reduce) {
+  .nav-progress {
+    animation: none;
+    transform: scaleX(0.35);
+  }
+  .nav-dimmed {
+    transition: none;
+  }
+  /* The blocks stay, and still say "not loaded yet" by being blank.
+     Only the sweep goes. */
+  .skeleton-bar {
+    animation: none;
+    background-image: none;
+  }
+}
+
 html {
   scroll-behavior: smooth;
   -webkit-text-size-adjust: 100%;

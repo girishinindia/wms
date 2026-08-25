@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import Spinner from "@/components/Spinner";
 import { BellIcon } from "@/components/icons";
+import { startNavigation } from "@/lib/admin/navigating";
 import { api } from "@/lib/api/client";
 import {
   markAllReadLocally,
@@ -48,6 +50,7 @@ function ago(iso: string): string {
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
+  const [marking, setMarking] = useState(false);
   const { unread, items, loaded } = useNotifications();
   const wrap = useRef<HTMLDivElement>(null);
 
@@ -62,10 +65,18 @@ export default function NotificationBell() {
   }, [open]);
 
   async function markAll() {
+    /**
+     * A network call with nothing to show for it until it lands. The
+     * button used to sit there looking unclicked while the request was
+     * in flight, so a second click sent a second request.
+     */
+    if (marking) return;
+    setMarking(true);
     const result = await api<{ marked: number }>("/notifications/read", { body: { all: true } });
     // Written to the shared store, so the sidebar badge clears in the
     // same tick rather than a poll later.
     if (result.ok) markAllReadLocally();
+    setMarking(false);
   }
 
   async function openItem(item: Item) {
@@ -76,6 +87,13 @@ export default function NotificationBell() {
       void api("/notifications/read", { body: { ids: [item.id] } });
     }
     if (item.actionUrl && item.actionUrl.startsWith("/")) {
+      /**
+       * A full page load that no click handler sees: it is started from
+       * script, so the delegated listener arming the progress bar for
+       * ordinary links never fires. Told directly, or this is the one
+       * navigation left in the panel that looks like nothing happened.
+       */
+      startNavigation(item.actionUrl);
       window.location.assign(item.actionUrl);
     }
   }
@@ -110,9 +128,11 @@ export default function NotificationBell() {
               <button
                 type="button"
                 onClick={markAll}
-                className="text-xs text-verdigris-300 hover:text-verdigris-100"
+                disabled={marking}
+                className="inline-flex items-center gap-1.5 text-xs text-verdigris-300 hover:text-verdigris-100 disabled:opacity-60"
               >
-                Mark all read
+                {marking ? <Spinner className="h-3 w-3" /> : null}
+                {marking ? "Marking…" : "Mark all read"}
               </button>
             ) : null}
           </div>
