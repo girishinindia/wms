@@ -143,6 +143,20 @@ export type SendEmailInput = {
    */
   actionUrl?: string | null;
   actionLabel?: string;
+  /**
+   * Where a human reply should land, when this mail invites one.
+   *
+   * Every other message this system sends is a notification, and the
+   * default footer says so in as many words — "please do not reply to
+   * this email". A reply to a contact-form enquiry is the opposite: a
+   * person wrote in and is owed an answer they can answer back. Without
+   * this, their reply goes to EMAIL_FROM, which is a sending address
+   * and may well be nobody's inbox.
+   *
+   * Optional, and absent at every other call site, so nothing else
+   * changes behaviour.
+   */
+  replyTo?: { email: string; name?: string };
 };
 
 export async function sendEmail(input: SendEmailInput): Promise<SendOutcome> {
@@ -177,6 +191,9 @@ export async function sendEmail(input: SendEmailInput): Promise<SendOutcome> {
     to: [{ email: input.toEmail, name: input.toName || input.toEmail }],
     subject: input.subject,
     htmlContent: html,
+    // Brevo's own field name. Omitted entirely when the caller did not
+    // ask, so the payload for every existing sender is byte-identical.
+    ...(input.replyTo ? { replyTo: input.replyTo } : {}),
   });
 
   // The admin copy is best-effort on purpose. Failing the user's

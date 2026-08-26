@@ -306,3 +306,160 @@ describe("the unread count", () => {
     expect(store).toMatch(/enquiries\.status === "fulfilled"/);
   });
 });
+
+// ── Replying from the portal ─────────────────────────────────────────
+
+/**
+ * The reply button used to be a `mailto:` link.
+ *
+ * It handed the job to whatever mail client the machine had, and
+ * everything after that click happened somewhere this system could not
+ * see: no record that anybody answered, no way for a second super admin
+ * to know it was handled, and nothing to show when a customer says they
+ * never heard back.
+ */
+describe("replying to an enquiry", () => {
+  const replyMigration = readFileSync("/tmp/sql/28_enquiry_reply.sql", "utf8");
+  const lib = read("src/lib/enquiry/reply.ts");
+  const route = read("src/app/api/v1/admin/enquiries/[id]/replies/route.ts");
+  const thread = read("src/components/admin/EnquiryThread.tsx");
+
+  it("no longer opens an external mail client", () => {
+    /**
+     * The COMPOSE link is what went — the one carrying a `?subject=`
+     * that launched a mail client with a draft in it.
+     *
+     * A plain `mailto:` on the address in the details panel stays, and
+     * should: clicking somebody's email address to mail them is not the
+     * same thing as the product's reply button, and removing it would
+     * take away a convenience for no reason.
+     */
+    const detail = code("src/components/admin/EnquiryDetail.tsx");
+    expect(detail).not.toMatch(/mailto:[^`"']*\?subject=/);
+    expect(detail).not.toMatch(/Reply by email/);
+    expect(detail).toMatch(/<EnquiryThread/);
+  });
+
+  it("keeps the reply whatever the provider does", () => {
+    /**
+     * The row is written for SENT, FAILED and SUPPRESSED alike. A reply
+     * Brevo refused is still something a person typed and believed they
+     * sent — dropping it would be the same silence the mailto had, and
+     * they would have no way to get their words back.
+     */
+    expect(replyMigration).toMatch(/status\s+delivery_status not null/);
+    expect(lib).toMatch(/\.catch\(\(error: unknown\) => \(\{\s*status: "FAILED"/);
+
+    /**
+     * Nothing returns between working out the status and writing the
+     * row.
+     *
+     * The first version of this test only checked that the insert came
+     * AFTER the status — which an early `if (status !== "SENT") return`
+     * satisfies perfectly while dropping every failed reply on the
+     * floor. It passed the mutation. This reads the code between the
+     * two points and insists there is no way out of it.
+     */
+    const bare = code("src/lib/enquiry/reply.ts");
+    const between = bare.slice(
+      bare.indexOf("const status: ReplyStatus"),
+      bare.indexOf("insert into wms.enquiry_reply"),
+    );
+    expect(between.length).toBeGreaterThan(0);
+    expect(between, "an early return here would silently discard failed replies").not.toMatch(
+      /\breturn\b/,
+    );
+  });
+
+  it("does not show a suppressed reply as sent", () => {
+    /**
+     * `shouldReallySend()` gates every send on APP_ENV being
+     * production. On a deployment where that is not set, replies are
+     * stored and nobody receives them — so the screen has to say which
+     * of the three happened rather than showing a tick.
+     */
+    expect(lib).toMatch(/APP_ENV is not production/);
+    expect(thread).toMatch(/reply\.status === "SENT"/);
+    expect(thread).toMatch(/Saved, not sent/);
+  });
+
+  it("marks the enquiry answered only for a reply that went", () => {
+    /**
+     * A failed or suppressed reply did not answer anybody. Marking the
+     * enquiry replied because somebody typed into a box would hide
+     * exactly the rows that still need attention.
+     */
+    expect(replyMigration).toMatch(/if new\.status = 'SENT' then/);
+    expect(replyMigration).toMatch(/create trigger enquiry_reply_touches_enquiry/);
+  });
+
+  it("adds no eighth verb to the permission table", () => {
+    /**
+     * `enquiry.reply` was the plan and the schema overruled it:
+     * `permission_action_check` closes the verb set at seven, and
+     * RoleMatrix draws a column per verb across every resource — an
+     * eighth verb for one resource would add an empty column to
+     * twenty-nine rows. Replying is `enquiry.update`.
+     */
+    expect(replyMigration).not.toMatch(/'enquiry\.reply'/);
+    expect(route).toMatch(/requirePermission\("enquiry\.update"/);
+  });
+
+  it("loads the enquiry rather than trusting the request for it", () => {
+    /**
+     * The address, subject and quoted message all come from the row. If
+     * they came from the body, this route would send arbitrary text to
+     * an arbitrary address over the company's name — to anyone holding
+     * one permission.
+     */
+    expect(route).toMatch(/async function loadEnquiry/);
+    expect(route).toMatch(/select id, name, email::text as email, subject, message/);
+    const post = route.slice(route.indexOf("export async function POST"));
+    expect(post).toMatch(/toEmail|enquiry\.email/);
+    expect(post).not.toMatch(/parsed\.data\.(email|subject|to)/);
+  });
+
+  it("asks for a reply-to so the answer can be answered", () => {
+    /**
+     * The default footer says "please do not reply to this email",
+     * which is exactly wrong here. Without a reply-to, their reply goes
+     * to EMAIL_FROM — a sending address that may be nobody's inbox.
+     */
+    expect(lib).toMatch(/replyTo: env\.adminNotify/);
+    expect(lib).toMatch(/footerNote:/);
+    expect(read("src/lib/notify/email.ts")).toMatch(/replyTo\?: \{ email: string; name\?: string \}/);
+  });
+
+  it("leaves every other sender's payload untouched", () => {
+    // The field is spread in only when asked for, so an existing
+    // caller's Brevo body is byte-identical.
+    expect(read("src/lib/notify/email.ts")).toMatch(
+      /\.\.\.\(input\.replyTo \? \{ replyTo: input\.replyTo \} : \{\}\)/,
+    );
+  });
+
+  it("says Re: once, however long the thread runs", () => {
+    expect(lib).toMatch(/\^re:\\s/i);
+  });
+
+  it("matches the body length the column will accept", () => {
+    const check = replyMigration.match(/enquiry_reply_body_len check \(char_length\(btrim\(body\)\) between (\d+) and (\d+)\)/);
+    expect(check).not.toBeNull();
+    expect(route).toContain(`.min(${check![1]}`);
+    expect(route).toContain(`.max(${check![2]}`);
+  });
+
+  it("keeps the reply text out of the audit log", () => {
+    // Who was written to and whether it left is the accountability
+    // question; the words live on the screen that can also remove them.
+    /**
+     * Sliced from the CALL, not from the import at the top of the file
+     * — which is what the first version of this did, quietly asserting
+     * against the whole module and passing for the wrong reason.
+     */
+    const bare = code("src/app/api/v1/admin/enquiries/[id]/replies/route.ts");
+    const call = bare.slice(bare.indexOf("await auditQuietly({"));
+    expect(call).toMatch(/to: enquiry\.email/);
+    expect(call).not.toMatch(/parsed\.data\.body/);
+  });
+});

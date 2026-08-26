@@ -24,6 +24,14 @@ export type EnquiryRow = {
   message: string;
   createdAt: string;
   readAt: string | null;
+  /**
+   * When a reply actually went out — maintained by a trigger, and only
+   * for a reply the provider accepted. One that failed or was
+   * suppressed did not answer anybody, and marking the enquiry answered
+   * because somebody typed into a box would hide exactly the rows that
+   * still need attention.
+   */
+  repliedAt: string | null;
 };
 
 const b =
@@ -127,6 +135,18 @@ export default function EnquiriesTable({
             <span className="mt-0.5 line-clamp-2 block text-xs text-verdigris-200/80">
               {row.original.message}
             </span>
+            {/*
+              Answered or not, which is the question this screen is
+              really for — a read enquiry nobody replied to is the one
+              that costs a customer. Only shown when true, because an
+              "unanswered" tag on every fresh row would be noise on the
+              normal case.
+            */}
+            {row.original.repliedAt ? (
+              <span className="mt-1.5 inline-block rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[0.68rem] text-emerald-200">
+                replied {fmtDateTime(row.original.repliedAt)}
+              </span>
+            ) : null}
           </button>
         ),
       },
@@ -246,7 +266,15 @@ export default function EnquiriesTable({
         />
       </Card>
 
-      {open ? <EnquiryDetail row={open} onClose={() => setOpen(null)} /> : null}
+      {open ? (
+        <EnquiryDetail
+          row={open}
+          onClose={() => setOpen(null)}
+          // A reply that went out marks the enquiry answered on the
+          // server, so the list has to re-read to show it.
+          onSent={() => router.refresh()}
+        />
+      ) : null}
 
       {confirm ? (
         <ConfirmDialog

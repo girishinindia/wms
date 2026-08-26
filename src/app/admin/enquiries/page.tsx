@@ -38,9 +38,11 @@ export default async function EnquiriesPage() {
     message: string;
     created_at: string;
     read_at: string | null;
+    replied_at: string | null;
   }>(sql`
     select id, name, email::text as email, mobile, subject, message,
-           created_at::text as created_at, read_at::text as read_at
+           created_at::text as created_at, read_at::text as read_at,
+           replied_at::text as replied_at
       from wms.enquiry
      where deleted_at is null
      order by created_at desc
@@ -56,6 +58,7 @@ export default async function EnquiriesPage() {
     message: r.message,
     createdAt: r.created_at,
     readAt: r.read_at,
+    repliedAt: r.replied_at,
   }));
   const unread = items.filter((i) => i.readAt === null).length;
 

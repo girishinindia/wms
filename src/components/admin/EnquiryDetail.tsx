@@ -3,24 +3,29 @@
 import { XIcon } from "@/components/icons";
 import { fmtDateTime } from "@/lib/format/datetime";
 
+import EnquiryThread from "./EnquiryThread";
 import { FactList, IconButton } from "./ui";
 import type { EnquiryRow } from "./EnquiriesTable";
 
 /**
- * One enquiry, read in full.
+ * One enquiry, read in full, and answered.
  *
  * The list truncates the message to two lines because a table of
- * paragraphs is unreadable; this is where the paragraphs go. Everything
- * shown here is already on the row the list was given, so opening it
- * costs no request — unlike the audit drawer, which fetches, because
- * there the payloads are large and most are never opened.
+ * paragraphs is unreadable; this is where the paragraphs go. The
+ * enquiry itself is already on the row the list was given, so opening
+ * this costs no request — the thread below fetches its own, because
+ * most enquiries have none and shipping every reply body with 300 rows
+ * would be paying for the four somebody opens.
  */
 export default function EnquiryDetail({
   row,
   onClose,
+  onSent,
 }: {
   row: EnquiryRow;
   onClose: () => void;
+  /** Fired after a reply actually goes out, so the list can refresh. */
+  onSent?: () => void;
 }) {
   const received = fmtDateTime(row.createdAt);
 
@@ -77,16 +82,23 @@ export default function EnquiryDetail({
               {row.message}
             </p>
           </div>
-        </div>
 
-        <footer className="border-t border-verdigris-300/10 px-6 py-4">
-          <a
-            href={`mailto:${row.email}?subject=${encodeURIComponent(`Re: ${row.subject}`)}`}
-            className="inline-flex w-full items-center justify-center rounded-xl bg-verdigris-400 px-5 py-2.5 text-sm font-semibold text-ink-900 transition-colors hover:bg-patina"
-          >
-            Reply by email
-          </a>
-        </footer>
+          {/*
+            The thread, and the box to add to it.
+
+            This replaces a `mailto:` link, which handed the job to
+            whatever mail client the machine had and left nothing behind
+            — no record that anybody answered, and nothing to show when
+            a customer says they never heard back. Everything now
+            happens here and is kept.
+
+            It lives INSIDE the scrolling body rather than in a fixed
+            footer, because a growing conversation and a pinned button
+            fight over the same space: the reply box would sit below a
+            thread the reader has to scroll past to reach it.
+          */}
+          <EnquiryThread enquiryId={row.id} onSent={onSent} />
+        </div>
       </aside>
     </div>
   );
