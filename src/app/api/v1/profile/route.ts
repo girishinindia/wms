@@ -37,11 +37,13 @@ export async function GET() {
       const rows = await getDb().execute<{
         first_name: string; last_name: string; email: string; mobile: string;
         email_verified: boolean; mobile_verified: boolean; last_login_at: string | null;
+        photo_url: string | null;
       }>(sql`
         select first_name, last_name, email::text as email, mobile::text as mobile,
                email_verified_at is not null as email_verified,
                mobile_verified_at is not null as mobile_verified,
-               last_login_at::text as last_login_at
+               last_login_at::text as last_login_at,
+               photo_url
           from wms.users where id = ${actor.session.userId} and deleted_at is null
       `);
       const r = rows[0];
@@ -56,6 +58,9 @@ export async function GET() {
           mobileVerified: r.mobile_verified,
           roles: actor.roles.map((x) => x.role),
           lastLoginAt: r.last_login_at,
+          // The web profile page reads this straight from the table; a
+          // native client can only see what this endpoint returns.
+          photoUrl: r.photo_url,
         },
         requestId,
       );

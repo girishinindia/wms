@@ -26,7 +26,16 @@ export async function POST(request: NextRequest) {
     try {
       const env = authEnv();
       const store = await cookies();
-      const token = store.get(env.AUTH_COOKIE_NAME)?.value;
+      /**
+       * Bearer first, then the cookie — the same order as guard.ts and
+       * /auth/session. A native sign-out sends the token it holds in the
+       * Authorization header; a cookie-only read here meant the revoke
+       * silently did nothing and the "signed out" session stayed live on
+       * the server. A browser never sends the header, so nothing changes
+       * for the web.
+       */
+      const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+      const token = bearer || store.get(env.AUTH_COOKIE_NAME)?.value;
 
       if (token) {
         // Resolve first, so the audit row can name who signed out.

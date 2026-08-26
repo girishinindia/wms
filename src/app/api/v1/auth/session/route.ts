@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import { permissionsFor, rolesFor, findAccount } from "@/lib/auth/account";
 import { resolveSession } from "@/lib/auth/session";
@@ -25,8 +25,20 @@ export async function GET() {
   return handler(async ({ requestId }) => {
     try {
       const env = authEnv();
-      const store = await cookies();
-      const session = await resolveSession(store.get(env.AUTH_COOKIE_NAME)?.value);
+      /**
+       * Bearer first, then the cookie — the same order as guard.ts.
+       *
+       * The mobile app holds its session as a bearer token (login only
+       * returns one for platform ANDROID/IOS) and has no cookie jar, so
+       * a cookie-only read here meant a native client could sign in but
+       * never restore its session on the next launch. A browser never
+       * sends the header, so the web path is unchanged.
+       */
+      const [store, headerList] = await Promise.all([cookies(), headers()]);
+      const bearer = headerList.get("authorization")?.replace(/^Bearer\s+/i, "");
+      const session = await resolveSession(
+        bearer || store.get(env.AUTH_COOKIE_NAME)?.value,
+      );
 
       if (!session) {
         throw new HandledError("UNAUTHENTICATED", "Sign in to continue.");
