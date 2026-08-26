@@ -26,14 +26,22 @@ const personName = (label: string) =>
     .max(20, `${label} must be at most 20 characters`)
     .regex(ALPHA_ONLY, `${label} must be letters only, with no spaces`);
 
-const email = z
+/**
+ * Exported so forms outside auth reuse the RULE rather than a copy.
+ *
+ * The contact form asks for the same two things sign-up does. A second
+ * definition would be two rules that agree right up until one of them
+ * is edited, and the one nobody remembers is the one that gets it
+ * wrong.
+ */
+export const email = z
   .string({ required_error: "Email is required" })
   .trim()
   .min(1, "Email is required")
   .email("Enter a valid email address");
 
 /** Exactly 10 digits. The +91 in the UI is a display prefix only. */
-const mobile = z
+export const mobile = z
   .string({ required_error: "Mobile number is required" })
   .trim()
   .min(1, "Mobile number is required")

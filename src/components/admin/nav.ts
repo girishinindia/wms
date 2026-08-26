@@ -64,7 +64,7 @@ export type AdminNavItem = {
    * maps the name onto a hook and renders the pill; here it is only the
    * statement that this entry has something to count.
    */
-  badge?: "notifications";
+  badge?: "notifications" | "enquiries";
 };
 
 export type AdminNavIcon =
@@ -86,6 +86,7 @@ export type AdminNavIcon =
   | "rupee"
   | "key"
   | "clock"
+  | "mail"
   | "sitemap";
 
 /** A collapsible section. Its children are ordinary items and are what
@@ -316,6 +317,25 @@ export const ADMIN_NAV: AdminNavNode[] = [
     permission: null,
     icon: "bell",
     badge: "notifications",
+  },
+  /**
+   * Enquiry — the public contact form's inbox.
+   *
+   * `allOnly`, and keyed on `enquiry.read`, which 27_enquiry.sql grants
+   * to SUPER_ADMIN and nobody else. Two separate things have to be true
+   * for this to appear, on purpose: the grant can be widened from a
+   * console at any time, and `allOnly` is what makes widening it to a
+   * WAREHOUSE scope insufficient on its own — there is nothing in an
+   * enquiry to scope BY, so a narrower grant would silently mean "show
+   * them everything".
+   */
+  {
+    href: "/admin/enquiries",
+    label: "Enquiry",
+    permission: "enquiry.read",
+    allOnly: true,
+    icon: "mail",
+    badge: "enquiries",
   },
   {
     label: "Users & Roles",

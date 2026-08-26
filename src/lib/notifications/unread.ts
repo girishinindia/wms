@@ -41,6 +41,20 @@ export type NotificationState = {
   /** False until the first response lands, so the dropdown can say
    *  "Loading…" rather than "Nothing yet." */
   loaded: boolean;
+  /**
+   * Unread enquiries from the public contact form — a different inbox
+   * entirely, counted here rather than by a store of its own.
+   *
+   * The argument at the top of this file was about two timers and two
+   * numbers that disagree; a second poller for a second badge would be
+   * exactly that mistake with a different name. One tick, one place
+   * that knows what is outstanding.
+   *
+   * Always 0 for anybody who cannot read enquiries — the endpoint says
+   * so rather than refusing, so this costs a signed-in warehouse clerk
+   * one cheap request a minute and no denials in the log.
+   */
+  enquiries: number;
 };
 
 const POLL_MS = 60_000;
@@ -58,7 +72,11 @@ const PAGE = 10;
  */
 export const NOTIFICATIONS_CHANGED = "wms:notifications-changed";
 
-const EMPTY: NotificationState = { unread: 0, items: [], loaded: false };
+/** The same trick for the enquiry screen: marking or removing there
+ *  should move the sidebar badge now, not up to a minute later. */
+export const ENQUIRIES_CHANGED = "wms:enquiries-changed";
+
+const EMPTY: NotificationState = { unread: 0, items: [], loaded: false, enquiries: 0 };
 
 let state: NotificationState = EMPTY;
 const listeners = new Set<() => void>();
@@ -81,17 +99,41 @@ export async function refresh(): Promise<void> {
   if (inFlight) return;
   inFlight = true;
   try {
-    const result = await api<{ unread: number; items: NotificationItem[] }>(
-      `/notifications?limit=${PAGE}`,
-      { method: "GET" },
-    );
-    if (result.ok) {
-      set({ unread: result.data.unread, items: result.data.items, loaded: true });
+    /**
+     * Both counts on one tick.
+     *
+     * Two requests, not one — they are unrelated inboxes and folding
+     * enquiries into the notifications payload would couple two
+     * endpoints that have nothing to say to each other. What matters
+     * is that there is ONE timer and one place holding the answer, so
+     * the two badges cannot drift apart the way two independent
+     * pollers would.
+     *
+     * `allSettled`, so a failure on one does not take the other's
+     * number down with it.
+     */
+    const [notifications, enquiries] = await Promise.allSettled([
+      api<{ unread: number; items: NotificationItem[] }>(`/notifications?limit=${PAGE}`, {
+        method: "GET",
+      }),
+      api<{ unread: number }>("/admin/enquiries", { method: "GET" }),
+    ]);
+
+    if (notifications.status === "fulfilled" && notifications.value.ok) {
+      set({
+        unread: notifications.value.data.unread,
+        items: notifications.value.data.items,
+        loaded: true,
+      });
     } else {
       // A failed poll is not news. Keep the last good number and mark
       // the store loaded so the dropdown stops saying "Loading…"
       // forever on an account that cannot read notifications.
       set({ loaded: true });
+    }
+
+    if (enquiries.status === "fulfilled" && enquiries.value.ok) {
+      set({ enquiries: enquiries.value.data.unread });
     }
   } finally {
     inFlight = false;
@@ -134,6 +176,7 @@ function start() {
   timer = window.setInterval(tick, POLL_MS);
   document.addEventListener("visibilitychange", tick);
   window.addEventListener(NOTIFICATIONS_CHANGED, onChanged);
+  window.addEventListener(ENQUIRIES_CHANGED, onChanged);
 }
 
 function stop() {
@@ -141,6 +184,7 @@ function stop() {
   timer = null;
   document.removeEventListener("visibilitychange", tick);
   window.removeEventListener(NOTIFICATIONS_CHANGED, onChanged);
+  window.removeEventListener(ENQUIRIES_CHANGED, onChanged);
 }
 
 function onChanged() {
@@ -181,6 +225,15 @@ export function useUnreadCount(): number {
   return useSyncExternalStore(
     subscribe,
     () => state.unread,
+    () => 0,
+  );
+}
+
+/** The enquiry badge. Zero for anybody who cannot read them. */
+export function useEnquiryCount(): number {
+  return useSyncExternalStore(
+    subscribe,
+    () => state.enquiries,
     () => 0,
   );
 }

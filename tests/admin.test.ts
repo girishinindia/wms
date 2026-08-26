@@ -239,6 +239,7 @@ describe("admin navigation: grouping", () => {
     expect(groupNav(visibleNav(SUPER_ADMIN)).map((n) => n.label)).toEqual([
       "Dashboard",
       "Notifications",
+      "Enquiry",
       "Users & Roles",
       "Master",
       "Warehouses",
@@ -249,20 +250,29 @@ describe("admin navigation: grouping", () => {
     ]);
   });
 
-  it("counts unread on the notifications entry, and nowhere else", () => {
+  it("names each badge, and gives each its own count", () => {
     /**
      * The badge is declared here as a NAME rather than a number, because
      * this module is imported by the server layout and must stay free of
      * JSX and of anything that reads state. `AdminShell` maps the name
      * onto the hook.
      *
-     * Exactly one entry carries it: a second would mean a second
-     * subscriber to the same store showing a count of somebody else's
-     * thing.
+     * This used to assert exactly one badge existed, on the grounds
+     * that a second would be a second subscriber showing a count of
+     * somebody else's thing. Enquiry has one now, and the concern the
+     * old test was protecting is still the right one — so it is stated
+     * more precisely instead: every badge is a DISTINCT name, and every
+     * name maps to its own hook. Two entries sharing a name would be
+     * the bug that assertion was really about.
      */
     const badged = ADMIN_NAV_ITEMS.filter((i) => i.badge !== undefined);
-    expect(badged.map((i) => i.href)).toEqual(["/admin/notifications"]);
-    expect(badged[0]!.badge).toBe("notifications");
+    expect(badged.map((i) => i.href)).toEqual([
+      "/admin/notifications",
+      "/admin/enquiries",
+    ]);
+    const names = badged.map((i) => i.badge);
+    expect(names).toEqual(["notifications", "enquiries"]);
+    expect(new Set(names).size, "two entries share one badge name").toBe(names.length);
   });
 
   it("shows an importer only their own screens, under the importers group", () => {

@@ -58,6 +58,21 @@ export const BellIcon = (p: P) => (
   </svg>
 );
 
+/**
+ * An envelope, for the contact form's inbox.
+ *
+ * Drawn on the same 24×24 grid at the same 1.5 stroke as everything
+ * else here, so it carries the same visual weight as the bell directly
+ * above it in the sidebar rather than looking like a heavier icon
+ * somebody pasted in.
+ */
+export const MailIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="3" y="5.5" width="18" height="13" rx="2" />
+    <path d="m3.5 7 7.4 5.3a2 2 0 0 0 2.2 0L20.5 7" />
+  </svg>
+);
+
 export const LockIcon = (p: P) => (
   <svg {...base} {...p}>
     <rect x="4.5" y="10.5" width="15" height="10" rx="2" />

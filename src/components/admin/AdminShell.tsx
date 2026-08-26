@@ -21,6 +21,7 @@ import {
   GridIcon,
   LayersIcon,
   LockIcon,
+  MailIcon,
   MapIcon,
   MenuIcon,
   MoonIcon,
@@ -47,7 +48,7 @@ import {
 } from "@/lib/admin/prefs";
 
 import Avatar from "./Avatar";
-import { useUnreadCount } from "@/lib/notifications/unread";
+import { useEnquiryCount, useUnreadCount } from "@/lib/notifications/unread";
 
 import { groupNav, inSection, isGroup, type AdminNavItem } from "./nav";
 import NavProgress from "./NavProgress";
@@ -84,6 +85,7 @@ const ICONS = {
   rupee: RupeeIcon,
   key: KeyIcon,
   clock: ClockIcon,
+  mail: MailIcon,
   sitemap: SitemapIcon,
 } as const;
 
@@ -120,12 +122,31 @@ export type ImporterLock = {
  */
 function UnreadBadge() {
   const unread = useUnreadCount();
-  if (unread <= 0) return null;
+  return <CountPill count={unread} />;
+}
+
+/**
+ * The same pill for the Enquiry entry.
+ *
+ * A separate component rather than a prop on the one above, for the
+ * reason given there: each subscribes to ONE number, so a new
+ * notification re-renders the notifications pill and nothing else. Both
+ * read the same store on the same timer, so the two can never disagree
+ * about what is outstanding.
+ */
+function EnquiryBadge() {
+  const waiting = useEnquiryCount();
+  return <CountPill count={waiting} />;
+}
+
+/** The drawing, shared so the two badges cannot drift apart visually. */
+function CountPill({ count }: { count: number }) {
+  if (count <= 0) return null;
   return (
     <>
       {/* The real count, read aloud. "99+" is a drawing, not a number,
           so the spoken version always gives the figure itself. */}
-      <span className="sr-only">{unread} unread</span>
+      <span className="sr-only">{count} unread</span>
       <span
         // `tabular-nums` so the pill does not jitter in width as the
         // count changes; hidden from the reader because the line above
@@ -133,7 +154,7 @@ function UnreadBadge() {
         aria-hidden
         className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-amber-400 px-1.5 text-[0.7rem] font-bold tabular-nums text-ink-900"
       >
-        {unread > 99 ? "99+" : unread}
+        {count > 99 ? "99+" : count}
       </span>
     </>
   );
@@ -351,6 +372,7 @@ export default function AdminShell({
         */}
         <span className="min-w-0 flex-1 text-left">{item.label}</span>
         {item.badge === "notifications" ? <UnreadBadge /> : null}
+        {item.badge === "enquiries" ? <EnquiryBadge /> : null}
       </a>
     );
   }
