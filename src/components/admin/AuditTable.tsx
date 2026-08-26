@@ -4,6 +4,7 @@ import { type ColumnDef } from "@tanstack/react-table";
 import { useMemo, useState } from "react";
 
 import type { ListState } from "@/lib/admin/listing";
+import { fmtDay, fmtTime } from "@/lib/format/datetime";
 
 import AuditDetail from "./AuditDetail";
 import DataTable from "./DataTable";
@@ -75,15 +76,11 @@ export default function AuditTable({
         header: "When",
         meta: { className: "whitespace-nowrap text-xs text-verdigris-200/75" } satisfies ColumnMeta,
         cell: ({ getValue }) => {
-          const d = new Date(String(getValue()));
+          const iso = String(getValue());
           return (
             <>
-              <span className="block text-verdigris-100">
-                {d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
-              </span>
-              <span className="block text-[0.72rem] text-verdigris-200/65">
-                {d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-              </span>
+              <span className="block text-verdigris-100">{fmtDay(iso)}</span>
+              <span className="block text-[0.72rem] text-verdigris-200/65">{fmtTime(iso)}</span>
             </>
           );
         },

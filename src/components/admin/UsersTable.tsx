@@ -8,6 +8,7 @@ import { EyeIcon, PencilIcon, TrashIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import { fmtDateTime } from "@/lib/format/datetime";
 
 import Avatar from "./Avatar";
 import DataTable, { SelectAllHeader, SelectRowCell, Switch, type ColumnMeta } from "./DataTable";
@@ -163,9 +164,7 @@ export default function UsersTable({
         sortUndefined: "last",
         cell: ({ getValue }) => {
           const v = getValue() as string | null;
-          return v
-            ? new Date(v).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })
-            : "never";
+          return v ? fmtDateTime(v) : "never";
         },
       },
       {

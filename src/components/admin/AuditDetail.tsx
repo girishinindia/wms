@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { XIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { api } from "@/lib/api/client";
+import { fmtDay, fmtTime } from "@/lib/format/datetime";
 
 /**
  * One audit entry, opened.
@@ -55,15 +56,9 @@ function show(value: unknown): string {
   return JSON.stringify(value);
 }
 
-const when = (iso: string) =>
-  new Date(iso).toLocaleString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+/** Day and clock to the second — an audit entry is often opened to
+ *  settle exactly when something happened. */
+const when = (iso: string) => `${fmtDay(iso)}, ${fmtTime(iso)}`;
 
 export default function AuditDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const [detail, setDetail] = useState<Detail | null>(null);

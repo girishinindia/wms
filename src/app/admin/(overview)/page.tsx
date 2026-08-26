@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import CompanyProfileForm from "@/components/admin/CompanyProfileForm";
 import { Card, Empty, FactList, PageHeader, Stat, StatusBadge } from "@/components/admin/ui";
+import { fmtDay } from "@/lib/format/datetime";
 import { loadGeoOptions } from "@/lib/admin/geo";
 import { loadImporterProfile } from "@/lib/importer/profile";
 import { getDb } from "@/db";
@@ -227,7 +228,7 @@ async function AgentDashboard({ userId }: { userId: number }) {
           items={[
             { label: "Mobile", value: me.mobile, mono: true },
             { label: "Email", value: me.email ?? "—" },
-            { label: "Joined", value: new Date(me.joiningDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }) },
+            { label: "Joined", value: fmtDay(me.joiningDate) },
             { label: "City", value: me.cityLabel ?? "—" },
             {
               label: "Address",

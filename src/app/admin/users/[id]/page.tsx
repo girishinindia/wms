@@ -16,6 +16,7 @@ import { getDb } from "@/db";
 import { grantFor, pageGuard } from "@/lib/auth/guard";
 import { listOverrides } from "@/lib/roles/matrix";
 import { actorWarehouseIds, mayActOnUser, mayManageUser } from "@/lib/users/authority";
+import { fmtDateTime, fmtDay } from "@/lib/format/datetime";
 import { sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -281,19 +282,16 @@ export default async function UserDetailPage({
             },
             {
               label: "Last signed in",
-              value: user.last_login_at
-                ? new Date(user.last_login_at).toLocaleString("en-IN")
-                : "never",
+              // No options at all previously, which meant the machine's
+              // locale AND zone — the widest possible mismatch between a
+              // UTC server and a browser anywhere.
+              value: user.last_login_at ? fmtDateTime(user.last_login_at) : "never",
             },
             {
               label: "Created",
               value: (
                 <>
-                  {new Date(user.created_at).toLocaleDateString("en-IN", {
-                    day: "2-digit",
-                    month: "short",
-                    year: "numeric",
-                  })}
+                  {fmtDay(user.created_at)}
                   {user.created_by_email ? (
                     <span className="block text-xs text-verdigris-200/45">
                       by {user.created_by_email}

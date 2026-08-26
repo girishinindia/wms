@@ -8,6 +8,7 @@ import { EyeIcon, TrashIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import { fmtDateTime } from "@/lib/format/datetime";
 import { ENQUIRIES_CHANGED } from "@/lib/notifications/unread";
 
 import DataTable, { SelectAllHeader, SelectRowCell, type ColumnMeta } from "./DataTable";
@@ -163,10 +164,7 @@ export default function EnquiriesTable({
         meta: { width: 11 } satisfies ColumnMeta,
         cell: ({ row }) => (
           <span className="whitespace-nowrap text-xs text-verdigris-200/70">
-            {new Date(row.original.createdAt).toLocaleString("en-IN", {
-              day: "2-digit", month: "short", year: "numeric",
-              hour: "2-digit", minute: "2-digit",
-            })}
+            {fmtDateTime(row.original.createdAt)}
           </span>
         ),
       },

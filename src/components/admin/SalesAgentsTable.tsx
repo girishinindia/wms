@@ -8,6 +8,7 @@ import { EyeIcon, PencilIcon, TrashIcon, XIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import { fmtDay, fmtDateTime } from "@/lib/format/datetime";
 import type { GeoOptions } from "@/lib/admin/geo";
 import type { SalesAgentRow, SalesArea } from "@/lib/sales-agents/ops";
 import { ADULT_YEARS, latestAdultBirthDate } from "@/lib/validation/age";
@@ -63,8 +64,16 @@ function toDraft(row: SalesAgentRow | null, spec: SalesAgentsSpec): Draft {
 }
 
 const name = (r: SalesAgentRow) => `${r.firstName} ${r.lastName}`.trim();
-const fmtDate = (v: string | null) =>
-  v ? new Date(`${v}T00:00:00`).toLocaleDateString("en-IN", { dateStyle: "medium", timeZone: "Asia/Kolkata" }) : "—";
+/**
+ * A DATE column, not a timestamp — `joined_on` carries no clock.
+ *
+ * The `T00:00:00` matters and is kept: without it,
+ * `new Date("2026-08-26")` parses as UTC midnight, and a plain calendar
+ * day has no business being shifted by a timezone at all. Appending the
+ * time makes it parse as local midnight, which keeps the day somebody
+ * typed the day everybody reads.
+ */
+const fmtDate = (v: string | null) => (v ? fmtDay(`${v}T00:00:00`) : "—");
 
 export default function SalesAgentsTable({
   rows,
@@ -455,7 +464,7 @@ function AgentDrawer({
                 { label: "Status", value: <StatusBadge value={row.status} /> },
                 { label: "Active", value: row.isActive ? "Yes" : "No" },
                 { label: "Notes", value: row.notes ?? "—" },
-                { label: "Created", value: new Date(row.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }) },
+                { label: "Created", value: fmtDateTime(row.createdAt) },
               ]}
             />
           ) : (

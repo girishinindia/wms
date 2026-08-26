@@ -8,6 +8,7 @@ import { EyeIcon, PaperclipIcon, PencilIcon, TrashIcon, XIcon } from "@/componen
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import { fmtDateTime } from "@/lib/format/datetime";
 import AttachmentPanel from "./AttachmentPanel";
 import { formatPaise, paiseToInput } from "@/lib/money";
 import type { ListState } from "@/lib/admin/listing";
@@ -233,14 +234,7 @@ const fmtDay = (ymd: string) => {
   return month ? `${d} ${month} ${y}` : ymd;
 };
 
-const fmtDate = (iso: string | null) =>
-  iso
-    ? new Date(iso).toLocaleString("en-IN", {
-        dateStyle: "medium",
-        timeStyle: "short",
-        timeZone: "Asia/Kolkata",
-      })
-    : "—";
+const fmtDate = (iso: string | null) => fmtDateTime(iso);
 
 export default function MasterTable({
   spec,

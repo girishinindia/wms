@@ -8,6 +8,7 @@ import { EyeIcon, PencilIcon, TrashIcon } from "@/components/icons";
 import { useToast } from "@/components/Toast";
 import type { GeoOptions } from "@/lib/admin/geo";
 import { api } from "@/lib/api/client";
+import { fmtDay } from "@/lib/format/datetime";
 
 import DataTable, { type ColumnMeta } from "./DataTable";
 import ImporterEditDrawer, { type ImporterEditValues } from "./ImporterEditDrawer";
@@ -140,15 +141,7 @@ export default function ImportersTable({
         header: "Registered",
         meta: { className: "whitespace-nowrap text-xs text-verdigris-200/50" } satisfies ColumnMeta,
         cell: ({ getValue }) =>
-          new Date(String(getValue())).toLocaleDateString("en-IN", {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-            // Pinned: the server renders in UTC and the browser in IST,
-            // and a date that flips across midnight between the two is a
-            // hydration mismatch.
-            timeZone: "Asia/Kolkata",
-          }),
+          fmtDay(String(getValue())),
       },
       {
         id: "actions",

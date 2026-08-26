@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import { fmtDay } from "@/lib/format/datetime";
 
 import { Card, Cell, Empty, Row, Table } from "./ui";
 
@@ -148,11 +149,7 @@ export default function UserRoles({
                   {a.warehouseName ?? a.importerName ?? "platform-wide"}
                 </Cell>
                 <Cell className="whitespace-nowrap text-xs text-verdigris-200/50">
-                  {new Date(a.assignedAt).toLocaleDateString("en-IN", {
-                    day: "2-digit",
-                    month: "short",
-                    year: "numeric",
-                  })}
+                  {fmtDay(a.assignedAt)}
                 </Cell>
                 <Cell className="text-right">
                   {a.isImmutable ? (

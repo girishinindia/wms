@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import { fmtDay } from "@/lib/format/datetime";
 
 import { Card } from "./ui";
 
@@ -37,10 +38,7 @@ export type Grantable = { key: string; description: string | null; maxScope: str
 const SCOPES = ["OWN", "WAREHOUSE", "ALL"] as const;
 const rank = (s: string) => (s === "ALL" ? 3 : s === "WAREHOUSE" ? 2 : 1);
 
-const day = (iso: string | null) =>
-  iso
-    ? new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-    : null;
+const day = (iso: string | null) => (iso ? fmtDay(iso) : null);
 
 export default function UserOverrides({
   userId,

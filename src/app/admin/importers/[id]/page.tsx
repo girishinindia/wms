@@ -9,6 +9,7 @@ import { getDb } from "@/db";
 import { loadGeoOptions } from "@/lib/admin/geo";
 import { grantFor, importerIdOf, pageGuard } from "@/lib/auth/guard";
 import { missingFields } from "@/lib/importer/profile";
+import { fmtDay } from "@/lib/format/datetime";
 import { sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -176,7 +177,7 @@ export default async function ImporterDetailPage({
 
       <PageHeader
         title={row.company_name}
-        subtitle={`${row.code} · registered ${new Date(row.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} · ${row.origin === "SELF_REGISTERED" ? "self-registered" : "created by an admin"}`}
+        subtitle={`${row.code} · registered ${fmtDay(row.created_at)} · ${row.origin === "SELF_REGISTERED" ? "self-registered" : "created by an admin"}`}
         action={
           <div className="flex flex-wrap items-center gap-2">
             {canEdit ? (
@@ -272,10 +273,7 @@ export default async function ImporterDetailPage({
                 label: row.rejected_at ? "Rejected" : "Approved",
                 value: (
                   <>
-                    {new Date(row.rejected_at ?? row.approved_at ?? row.created_at).toLocaleString(
-                      "en-IN",
-                      { day: "2-digit", month: "short", year: "numeric" },
-                    )}
+                    {fmtDay(row.rejected_at ?? row.approved_at ?? row.created_at)}
                     {row.decided_by ? (
                       <span className="block text-xs text-verdigris-200/45">
                         by {row.decided_by}

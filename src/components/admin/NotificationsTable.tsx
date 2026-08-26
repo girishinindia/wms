@@ -8,6 +8,7 @@ import { EyeIcon, TrashIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
+import { fmtDateTime } from "@/lib/format/datetime";
 
 import DataTable, { SelectAllHeader, SelectRowCell, type ColumnMeta } from "./DataTable";
 import { NOTIFICATIONS_CHANGED } from "./NotificationBell";
@@ -156,11 +157,7 @@ export default function NotificationsTable({
         // nobody uses.
         meta: { className: "whitespace-nowrap text-xs text-verdigris-200/75" } satisfies ColumnMeta,
         cell: ({ getValue }) =>
-          new Date(String(getValue())).toLocaleString("en-IN", {
-            dateStyle: "medium",
-            timeStyle: "short",
-            timeZone: "Asia/Kolkata",
-          }),
+          fmtDateTime(String(getValue())),
       },
       {
         id: "actions",

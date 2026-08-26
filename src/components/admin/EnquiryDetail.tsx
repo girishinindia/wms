@@ -1,6 +1,7 @@
 "use client";
 
 import { XIcon } from "@/components/icons";
+import { fmtDateTime } from "@/lib/format/datetime";
 
 import { FactList, IconButton } from "./ui";
 import type { EnquiryRow } from "./EnquiriesTable";
@@ -21,10 +22,7 @@ export default function EnquiryDetail({
   row: EnquiryRow;
   onClose: () => void;
 }) {
-  const received = new Date(row.createdAt).toLocaleString("en-IN", {
-    day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
+  const received = fmtDateTime(row.createdAt);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
