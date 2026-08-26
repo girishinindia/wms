@@ -4,11 +4,49 @@ import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { constraintNameOf, isUniqueViolation } from "@/lib/db-errors";
+import { loadImporterProfile } from "@/lib/importer/profile";
 import { ImporterUpdateError, updateImporterAsAdmin } from "@/lib/importer/update";
 import { updateImporterRequestSchema } from "@/lib/validation/api-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * GET /api/v1/admin/importers/[id] — one company, for the review screen.
+ *
+ * The web detail page renders this server-side; a native client cannot.
+ * Same payload as `/importer/me` (`loadImporterProfile`), because the
+ * reviewer needs exactly what the applicant filled in — plus the same
+ * OWN-scope refusal as PATCH below: an importer's own grant belongs on
+ * `/importer/me`, never on an id they typed into a URL.
+ */
+export async function GET(
+  _: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  return handler(async ({ requestId }) => {
+    try {
+      const { id: rawId } = await context.params;
+      const id = Number(rawId);
+      if (!Number.isInteger(id) || id <= 0) {
+        return fail("NOT_FOUND", "No such importer", requestId);
+      }
+      const { grant } = await requirePermission("importer.read", {
+        entityType: "importer",
+        entityId: String(id),
+        importerId: id,
+      });
+      if (grant.scope === "OWN") {
+        return fail("FORBIDDEN", "Use your own company profile instead.", requestId);
+      }
+      const profile = await loadImporterProfile(id);
+      if (!profile) return fail("NOT_FOUND", "No such importer", requestId);
+      return ok(profile, requestId);
+    } catch (error) {
+      return toResponse(error, requestId);
+    }
+  })();
+}
 
 /**
  * PATCH /api/v1/admin/importers/[id] — a super admin corrects a company.
