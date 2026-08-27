@@ -3,11 +3,41 @@ import { type NextRequest } from "next/server";
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
-import { applyMatrix, RoleError } from "@/lib/roles/matrix";
+import { applyMatrix, readMatrix, RoleError } from "@/lib/roles/matrix";
 import { roleMatrixRequestSchema } from "@/lib/validation/api-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * GET /api/v1/admin/roles/[key] — one role's matrix, for a native
+ * client. The same loader the web drawer uses (`readMatrix`), so the
+ * grantable flags and the locked reasons come out identical; the phone
+ * renders it read-only, and edits stay on the web where the PUT below
+ * enforces the rules that make them survivable.
+ */
+export async function GET(
+  _: NextRequest,
+  context: { params: Promise<{ key: string }> },
+) {
+  return handler(async ({ requestId }) => {
+    try {
+      const { key } = await context.params;
+      const { actor, grant } = await requirePermission("role.read", {
+        entityType: "role",
+        entityId: key,
+      });
+      if (grant.scope !== "ALL") {
+        return fail("FORBIDDEN", "Roles are platform-level only.", requestId);
+      }
+      const matrix = await readMatrix(actor, key);
+      if (!matrix) return fail("NOT_FOUND", "No such role", requestId);
+      return ok(matrix, requestId);
+    } catch (error) {
+      return toResponse(error, requestId);
+    }
+  })();
+}
 
 /**
  * PUT /api/v1/admin/roles/[key] — rewrite what a role means.
