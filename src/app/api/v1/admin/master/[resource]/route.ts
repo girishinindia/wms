@@ -40,6 +40,254 @@ export const dynamic = "force-dynamic";
  * `deleteOne` / `setActive` below.
  */
 
+/** `m.is_active`, or the status-enum equivalent, per the registry. */
+function activeExpr(resource: MasterResource): SQL {
+  return resource.statusColumn
+    ? sql`(m.${identifier(resource.statusColumn.column)} = ${resource.statusColumn.activeValue})`
+    : sql`m.is_active`;
+}
+
+/**
+ * `orderBy` from the registry, with every column qualified onto `m`.
+ *
+ * The registry writes "sort_order, name"; unqualified, "name" turns
+ * ambiguous the moment the parent join adds a second name column, and
+ * the cities list 500s. Each term is validated against the identifier
+ * shape before it is interpolated — a literal from the registry, never
+ * from a request.
+ */
+function qualifiedOrder(resource: MasterResource): SQL {
+  const terms = resource.orderBy.split(",").map((raw) => {
+    const [column, direction] = raw.trim().split(/\s+/);
+    const dir = (direction ?? "").toLowerCase() === "desc" ? sql` desc` : sql``;
+    return sql`m.${identifier(column ?? "id")}${dir}`;
+  });
+  return sql.join(terms, sql`, `);
+}
+
+/**
+ * GET /api/v1/admin/master/[resource] — the rows, for a native client.
+ *
+ * The web renders these tables inside `MasterPage`; a phone cannot, so
+ * this answers a leaner cut of the same query, driven by the same
+ * registry: every field (dates as `YYYY-MM-DD` text — see the page on
+ * why the driver must never make a Date of a date), the parent, scope,
+ * link and pivot LABELS beside their ids, the approval columns where
+ * the resource has them, and the active parent options a form needs to
+ * offer. Scoped resources are narrowed to the caller's own sites with
+ * the page's own EXISTS shape — never by anything in the request.
+ */
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ resource: string }> },
+) {
+  return handler(async ({ requestId }) => {
+    try {
+      const { resource: slug } = await context.params;
+      const resource = resolveResource(slug);
+      if (!resource) return fail("NOT_FOUND", "No such master table", requestId);
+
+      const { actor, grant } = await requirePermission(`${resource.permission}.read`, {
+        entityType: resource.table,
+      });
+
+      const conditions: SQL[] = [sql`m.deleted_at is null`];
+
+      if (resource.scope && grant.scope === "WAREHOUSE") {
+        const mine = actorWarehouseIds(actor);
+        if (mine.length === 0) {
+          return ok({ rows: [], parentOptions: [] }, requestId);
+        }
+        const sites = sql.join(mine.map((w) => sql`${w}`), sql`, `);
+        if (resource.scope.via) {
+          conditions.push(sql`exists (
+            select 1 from wms.${identifier(resource.scope.via.table)} j
+             where j.${identifier(resource.scope.via.linkColumn)}
+                     = m.${identifier(resource.scope.via.localColumn)}
+               and j.${identifier(resource.scope.via.scopeColumn)} in (${sites})
+               and j.deleted_at is null
+          )`);
+        } else if (resource.scope.column) {
+          conditions.push(sql`m.${identifier(resource.scope.column)} in (${sites})`);
+        }
+      } else if (resource.scope && grant.scope === "OWN") {
+        conditions.push(sql`m.created_by = ${actor.session.userId}`);
+      }
+
+      const raw = (request.nextUrl.searchParams.get("status") ?? "").toLowerCase();
+      if (raw === "active") conditions.push(activeExpr(resource));
+      if (raw === "inactive") conditions.push(sql`not ${activeExpr(resource)}`);
+
+      const selected = resource.fields.map((f) =>
+        f.type === "date"
+          ? sql`to_char(m.${identifier(f.column)}, 'YYYY-MM-DD') as ${identifier(f.column)}`
+          : sql`m.${identifier(f.column)} as ${identifier(f.column)}`,
+      );
+
+      const links = resource.links ?? [];
+      const rows = await getDb().execute<Record<string, unknown>>(sql`
+        select m.id, ${activeExpr(resource)} as is_active,
+               ${sql.join(selected, sql`, `)}
+               ${
+                 resource.parent
+                   ? sql`, m.${identifier(resource.parent.column)} as parent_id,
+                          p.${identifier(resource.parent.labelColumn)}::text as parent_label`
+                   : sql``
+               }
+               ${
+                 resource.scope?.column
+                   ? sql`, m.${identifier(resource.scope.column)} as scope_id,
+                          ${
+                            resource.scope.codeColumn
+                              ? sql`(s.${identifier(resource.scope.codeColumn)} || ' · ' || s.${identifier(resource.scope.labelColumn)})`
+                              : sql`s.${identifier(resource.scope.labelColumn)}::text`
+                          } as scope_label`
+                   : sql``
+               }
+               ${
+                 links.length
+                   ? sql`, ${sql.join(
+                       links.map((l) => {
+                         const a = sql.raw(
+                           `l_${l.key.replace(/[^a-z0-9]/gi, "").toLowerCase()}`,
+                         );
+                         return sql`m.${identifier(l.column)} as ${identifier(`${l.column}_id`)},
+                                    ${a}.${identifier(l.labelColumn)}::text
+                                      as ${identifier(`${l.column}_label`)}`;
+                       }),
+                       sql`, `,
+                     )}`
+                   : sql``
+               }
+               ${
+                 resource.pivot
+                   ? sql`, (select string_agg(
+                             ${
+                               resource.pivot.optionCodeColumn
+                                 ? sql`o.${identifier(resource.pivot.optionCodeColumn)}`
+                                 : sql`o.${identifier(resource.pivot.optionLabelColumn)}`
+                             }, ', ' order by 1)
+                        from wms.${identifier(resource.pivot.table)} j
+                        join wms.${identifier(resource.pivot.optionTable)} o
+                          on o.id = j.${identifier(resource.pivot.optionColumn)}
+                       where j.${identifier(resource.pivot.localColumn)} = m.id
+                         and j.deleted_at is null) as pivot_label`
+                   : sql``
+               }
+               ${
+                 resource.approval
+                   ? sql`, m.${identifier(resource.approval.column)} as approval_status,
+                          m.approval_note as approval_note`
+                   : sql``
+               }
+          from wms.${identifier(resource.table)} m
+          ${
+            resource.parent
+              ? sql`left join wms.${identifier(resource.parent.table)} p
+                      on p.id = m.${identifier(resource.parent.column)}`
+              : sql``
+          }
+          ${
+            resource.scope?.column
+              ? sql`left join wms.${identifier(resource.scope.table)} s
+                      on s.id = m.${identifier(resource.scope.column)}`
+              : sql``
+          }
+          ${
+            links.length
+              ? sql.join(
+                  links.map((l) => {
+                    const a = sql.raw(
+                      `l_${l.key.replace(/[^a-z0-9]/gi, "").toLowerCase()}`,
+                    );
+                    return sql`left join wms.${identifier(l.table)} ${a}
+                                 on ${a}.id = m.${identifier(l.column)}`;
+                  }),
+                  sql` `,
+                )
+              : sql``
+          }
+         where ${sql.join(conditions, sql` and `)}
+         order by ${activeExpr(resource)} desc, ${qualifiedOrder(resource)}, m.id
+         limit 300
+      `);
+
+      const parentOptions = resource.parent
+        ? (
+            await getDb().execute<{
+              id: number;
+              label: string;
+              group_id: number | null;
+              group_label: string | null;
+            }>(sql`
+              select o.id, o.${identifier(resource.parent.labelColumn)}::text as label
+                     ${
+                       resource.parent.groupBy
+                         ? sql`, g.id as group_id,
+                                g.${identifier(resource.parent.groupBy.labelColumn)}::text as group_label`
+                         : sql`, null::bigint as group_id, null::text as group_label`
+                     }
+                from wms.${identifier(resource.parent.table)} o
+                ${
+                  resource.parent.groupBy
+                    ? sql`left join wms.${identifier(resource.parent.groupBy.table)} g
+                            on g.id = o.${identifier(resource.parent.groupBy.column)}`
+                    : sql``
+                }
+               where ${(() => {
+                 const a = activeColumnFor(resource.parent!.table);
+                 return a
+                   ? sql`o.${identifier(a.column)} = ${a.activeValue}`
+                   : sql`o.is_active`;
+               })()} and o.deleted_at is null
+               order by o.${identifier(resource.parent.labelColumn)}
+            `)
+          ).map((r) => ({
+            id: Number(r.id),
+            label: r.label,
+            groupId: r.group_id === null ? null : Number(r.group_id),
+            groupLabel: r.group_label,
+          }))
+        : [];
+
+      return ok(
+        {
+          rows: rows.map((r) => {
+            const out: Record<string, unknown> = {
+              id: Number(r.id),
+              isActive: Boolean(r.is_active),
+            };
+            for (const f of resource.fields) out[f.key] = r[f.column] ?? null;
+            if (resource.parent) {
+              out.parentId = r.parent_id === null ? null : Number(r.parent_id);
+              out.parentLabel = r.parent_label ?? null;
+            }
+            if (resource.scope?.column) {
+              out.scopeId = r.scope_id === null ? null : Number(r.scope_id);
+              out.scopeLabel = r.scope_label ?? null;
+            }
+            for (const l of links) {
+              out[l.key] =
+                r[`${l.column}_id`] === null ? null : Number(r[`${l.column}_id`]);
+              out[`${l.key}Label`] = r[`${l.column}_label`] ?? null;
+            }
+            if (resource.pivot) out.pivotLabel = r.pivot_label ?? null;
+            if (resource.approval) {
+              out.approvalStatus = r.approval_status ?? null;
+              out.approvalNote = r.approval_note ?? null;
+            }
+            return out;
+          }),
+          parentOptions,
+        },
+        requestId,
+      );
+    } catch (error) {
+      return toResponse(error, requestId);
+    }
+  })();
+}
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ resource: string }> },
