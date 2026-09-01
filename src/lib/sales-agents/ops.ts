@@ -366,6 +366,97 @@ export async function createSalesAgent(
   return { agent, login, tempPassword };
 }
 
+/**
+ * Keep the agent's LOGIN saying what their profile says.
+ *
+ * The two live in different tables — `wms.sales_agent` is the record the
+ * company keeps, `wms.users` is the credential they sign in with — and
+ * before this they drifted the moment an importer corrected a phone
+ * number: the dashboard (which reads the agent row) showed the new one
+ * while the agent's own Profile screen (which reads `users`) still
+ * showed the old. One of those is a lie whichever way you look at it.
+ *
+ * Only the fields that exist on both sides move. Verification is NOT
+ * reset: `createSalesAgent` marks an agent's email and mobile verified
+ * on the same authority — the importer vouching for their own staff —
+ * and an edit by that same importer carries exactly as much weight as
+ * the original. Sessions are left alone too: their number changing is
+ * not a re-authentication event.
+ *
+ * A collision with somebody else's live login is left to the caller as
+ * a CONFLICT rather than silently skipped, because "saved" while the
+ * login kept the old number is the drift this function exists to end.
+ */
+export class AgentLoginConflict extends Error {
+  constructor(readonly field: "email" | "mobile") {
+    super(
+      field === "email"
+        ? "Another account already uses that email address."
+        : "Another account already uses that mobile number.",
+    );
+    this.name = "AgentLoginConflict";
+  }
+}
+
+/**
+ * Asked BEFORE anything is written. Order matters more than it looks:
+ * checking after the agent row was updated is how you get the profile
+ * saying one number and the login another — the very split this pair of
+ * functions exists to close.
+ */
+async function assertLoginAvailable(
+  agent: SalesAgentRow,
+  input: Record<string, unknown>,
+): Promise<void> {
+  if (!agent.userId) return;
+
+  if (typeof input.email === "string" && input.email !== "") {
+    const clash = await getDb().execute<{ id: number }>(sql`
+      select id from wms.users
+       where email = ${input.email}::citext
+         and deleted_at is null and id <> ${agent.userId}
+       limit 1
+    `);
+    if (clash.length > 0) throw new AgentLoginConflict("email");
+  }
+  if (typeof input.mobile === "string" && input.mobile !== "") {
+    const clash = await getDb().execute<{ id: number }>(sql`
+      select id from wms.users
+       where mobile = ${input.mobile}::wms.mobile_in
+         and deleted_at is null and id <> ${agent.userId}
+       limit 1
+    `);
+    if (clash.length > 0) throw new AgentLoginConflict("mobile");
+  }
+}
+
+async function mirrorIdentityToLogin(
+  agent: SalesAgentRow,
+  input: Record<string, unknown>,
+): Promise<void> {
+  if (!agent.userId) return;
+
+  const sets: SQL[] = [];
+  if (typeof input.firstName === "string") {
+    sets.push(sql`first_name = ${input.firstName}`);
+  }
+  if (typeof input.lastName === "string") {
+    sets.push(sql`last_name = ${input.lastName}`);
+  }
+  if (typeof input.email === "string" && input.email !== "") {
+    sets.push(sql`email = ${input.email}::citext`);
+  }
+  if (typeof input.mobile === "string" && input.mobile !== "") {
+    sets.push(sql`mobile = ${input.mobile}::wms.mobile_in`);
+  }
+  if (sets.length === 0) return;
+
+  await getDb().execute(sql`
+    update wms.users set ${sql.join(sets, sql`, `)}
+     where id = ${agent.userId} and deleted_at is null
+  `);
+}
+
 export async function updateSalesAgent(
   agent: SalesAgentRow,
   input: Record<string, unknown>,
@@ -377,6 +468,10 @@ export async function updateSalesAgent(
   if (typeof input.isActive === "boolean" && input.status === undefined) {
     input = { ...input, status: input.isActive ? "ACTIVE" : "SUSPENDED" };
   }
+  // Before ANY write: a login collision must refuse the whole edit,
+  // not land on the agent row and then fail on the login.
+  await assertLoginAvailable(agent, input);
+
   const { sets, touched } = assignments(input);
   if (sets.length === 0) return agent;
   sets.push(sql`updated_by = ${actor.session.userId}`);
@@ -390,6 +485,7 @@ export async function updateSalesAgent(
     await applyToUser(agent.userId, input.isActive ? "REACTIVATE" : "SUSPEND", actor, meta,
       input.isActive ? "Sales agent profile reactivated" : "Sales agent profile deactivated", false);
   }
+  await mirrorIdentityToLogin(agent, input);
   const after = (await loadSalesAgent(agent.id))!;
   await auditQuietly({
     action: "sales_agent.updated",

@@ -118,6 +118,39 @@ export async function GET(
       if (raw === "active") conditions.push(activeExpr(resource));
       if (raw === "inactive") conditions.push(sql`not ${activeExpr(resource)}`);
 
+      /**
+       * Free-text search, over the columns this resource already
+       * declares as text — the registry IS the list, so a table gains
+       * search the moment it gains a field and no column name is
+       * written down twice. The parent's label joins in as well: a city
+       * is looked for by its state at least as often as by its name.
+       *
+       * It happens here rather than on the client because the listing
+       * is capped at 300 rows below. A filter applied after that cap
+       * would search the first 300 and quietly report "nothing" for
+       * everything past it — cities alone is already 226 and climbing.
+       */
+      const q = (request.nextUrl.searchParams.get("q") ?? "").trim();
+      if (q !== "") {
+        // A bound parameter stops injection; it does not stop LIKE from
+        // reading the term's OWN % and _ as wildcards. Someone looking
+        // for "50%" would match every row, and "_" every row too. These
+        // are a person's literal words, so their wildcards are escaped
+        // (backslash is Postgres's default LIKE escape character).
+        const like = `%${q.replace(/([\\%_])/g, "\\$1")}%`;
+        const targets: SQL[] = resource.fields
+          .filter((f) => f.type === "text")
+          .map((f) => sql`m.${identifier(f.column)}::text ilike ${like}`);
+        if (resource.parent) {
+          targets.push(
+            sql`p.${identifier(resource.parent.labelColumn)}::text ilike ${like}`,
+          );
+        }
+        if (targets.length > 0) {
+          conditions.push(sql`(${sql.join(targets, sql` or `)})`);
+        }
+      }
+
       const selected = resource.fields.map((f) =>
         f.type === "date"
           ? sql`to_char(m.${identifier(f.column)}, 'YYYY-MM-DD') as ${identifier(f.column)}`

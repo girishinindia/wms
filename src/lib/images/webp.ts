@@ -91,3 +91,111 @@ export function validateWebp(bytes: Uint8Array, limits: ImageLimits): { width: n
   }
   return size;
 }
+
+// ── Other formats, for the phone ────────────────────────────────────
+
+/**
+ * The formats a profile photo may arrive in.
+ *
+ * WebP alone was right while the only client was a browser, which
+ * crops and encodes to WebP before it posts. A phone cannot: Flutter
+ * has no reliable WebP encoder on both platforms, and shipping one
+ * would mean a native plugin per OS to save 20 KB on a 512px avatar.
+ *
+ * So JPEG and PNG are read here as well — read, not trusted: the same
+ * rule applies as ever, that the dimensions come out of the actual
+ * bytes and never out of a header the client typed. Everything else
+ * (the size cap, the edge limits) is unchanged, and the GALLERY stays
+ * WebP-only because its uploader is still a browser.
+ */
+export type ImageKind = "webp" | "jpeg" | "png";
+
+export type ImageInfo = {
+  width: number;
+  height: number;
+  kind: ImageKind;
+  contentType: string;
+  ext: string;
+};
+
+/** PNG: an 8-byte signature, then IHDR with two big-endian 32s. */
+function pngSize(bytes: Uint8Array): { width: number; height: number } {
+  const be32 = (at: number) =>
+    ((bytes[at]! << 24) | (bytes[at + 1]! << 16) | (bytes[at + 2]! << 8) | bytes[at + 3]!) >>> 0;
+  if (ascii(bytes, 12, 4) !== "IHDR") throw new ImageError("That PNG is malformed");
+  return { width: be32(16), height: be32(20) };
+}
+
+/**
+ * JPEG: walk the segment chain to the frame header.
+ *
+ * Not "read offset 163" — a JPEG's dimensions live in whichever SOFn
+ * marker the encoder chose, after however many APPn/COM segments it
+ * felt like writing. Walking is the only way that is right for every
+ * encoder, and a phone's camera pipeline is exactly the case that
+ * writes a fat EXIF block first.
+ */
+function jpegSize(bytes: Uint8Array): { width: number; height: number } {
+  let at = 2; // past SOI
+  while (at + 9 < bytes.length) {
+    if (bytes[at] !== 0xff) throw new ImageError("That JPEG is malformed");
+    const marker = bytes[at + 1]!;
+    // Standalone markers carry no length.
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      at += 2;
+      continue;
+    }
+    const length = (bytes[at + 2]! << 8) | bytes[at + 3]!;
+    if (length < 2) throw new ImageError("That JPEG is malformed");
+    // SOF0..SOF15, minus the four that are not frame headers.
+    const isFrame =
+      marker >= 0xc0 && marker <= 0xcf &&
+      marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc && marker !== 0xc9;
+    if (isFrame) {
+      return {
+        height: (bytes[at + 5]! << 8) | bytes[at + 6]!,
+        width: (bytes[at + 7]! << 8) | bytes[at + 8]!,
+      };
+    }
+    // Start of scan: the entropy-coded data begins, no header follows.
+    if (marker === 0xda) break;
+    at += 2 + length;
+  }
+  throw new ImageError("That JPEG has no frame header");
+}
+
+/** Which of the three this is, by its bytes alone. */
+export function sniff(bytes: Uint8Array): ImageKind {
+  if (bytes.length >= 12 && ascii(bytes, 0, 4) === "RIFF" && ascii(bytes, 8, 4) === "WEBP") {
+    return "webp";
+  }
+  if (bytes.length >= 24 && bytes[0] === 0x89 && ascii(bytes, 1, 3) === "PNG") return "png";
+  if (bytes.length >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8) return "jpeg";
+  throw new ImageError("That is not a WebP, JPEG or PNG image");
+}
+
+/**
+ * The multi-format validator. Same limits, same refusals, one more
+ * question answered: what should this be stored and served as.
+ */
+export function validateImage(bytes: Uint8Array, limits: ImageLimits): ImageInfo {
+  if (bytes.length === 0) throw new ImageError("No image was sent");
+  if (bytes.length > limits.maxBytes) {
+    throw new ImageError(`That image is over ${Math.round(limits.maxBytes / 1024)} KB`);
+  }
+  const kind = sniff(bytes);
+  const size =
+    kind === "webp" ? webpSize(bytes) : kind === "png" ? pngSize(bytes) : jpegSize(bytes);
+  if (size.width < limits.minEdge || size.height < limits.minEdge) {
+    throw new ImageError(`Images must be at least ${limits.minEdge}px on each side`);
+  }
+  if (size.width > limits.maxEdge || size.height > limits.maxEdge) {
+    throw new ImageError(`Images are ${limits.maxEdge}px at most on each side`);
+  }
+  return {
+    ...size,
+    kind,
+    contentType: kind === "webp" ? "image/webp" : kind === "png" ? "image/png" : "image/jpeg",
+    ext: kind === "jpeg" ? "jpg" : kind,
+  };
+}

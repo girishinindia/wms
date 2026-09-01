@@ -8,7 +8,14 @@ import { getDb } from "@/db";
 import { auditQuietly } from "@/lib/audit";
 import type { Actor } from "@/lib/auth/guard";
 import { invalidateUser } from "@/lib/cache/actor";
-import { ImageError, PROFILE_LIMITS, validateWebp, webpSize as readWebpSize } from "@/lib/images/webp";
+import {
+  ImageError,
+  type ImageInfo,
+  PROFILE_LIMITS,
+  validateImage,
+  validateWebp,
+  webpSize as readWebpSize,
+} from "@/lib/images/webp";
 import { configured, deleteObject, keyFromUrl, photoFolder, publicUrl, putObject } from "@/lib/storage/bunny";
 
 /**
@@ -47,7 +54,8 @@ export function webpSize(bytes: Uint8Array): { width: number; height: number } {
   }
 }
 
-/** A profile photo specifically: square-ish, small, 512px at most. */
+/** A profile photo specifically: square-ish, small, 512px at most.
+ *  WebP only — kept for the callers and tests that predate the phone. */
 export function validatePhoto(bytes: Uint8Array): { width: number; height: number } {
   try {
     return validateWebp(bytes, PROFILE_LIMITS);
@@ -57,10 +65,21 @@ export function validatePhoto(bytes: Uint8Array): { width: number; height: numbe
   }
 }
 
+/** The same limits, across the three formats a profile photo may
+ *  arrive in. The gallery is unchanged and stays WebP-only. */
+export function validateImageFile(bytes: Uint8Array): ImageInfo {
+  try {
+    return validateImage(bytes, PROFILE_LIMITS);
+  } catch (error) {
+    if (error instanceof ImageError) throw new PhotoError("VALIDATION_FAILED", error.message);
+    throw error;
+  }
+}
+
 /** `wms/profile-photo/u12-3f9a1c7d.webp` — never the uploaded filename,
  *  and never guessable from the user id alone. */
-function newKey(userId: number): string {
-  return `${photoFolder()}/u${userId}-${randomBytes(4).toString("hex")}.webp`;
+function newKey(userId: number, ext: string): string {
+  return `${photoFolder()}/u${userId}-${randomBytes(4).toString("hex")}.${ext}`;
 }
 
 type Meta = { requestId: string; ip: string | null; userAgent: string | null };
@@ -93,7 +112,11 @@ export async function setUserPhoto(
   actor: Actor,
   meta: Meta,
 ): Promise<{ photoUrl: string; width: number; height: number }> {
-  const size = validatePhoto(bytes);
+  // The phone sends JPEG (it has no dependable WebP encoder); the web
+  // cropper still sends WebP. Both are read from their actual bytes and
+  // stored as what they are, rather than mislabelled as WebP.
+  const image = validateImageFile(bytes);
+  const size = { width: image.width, height: image.height };
   if (!configured()) {
     throw new PhotoError("CONFLICT", "Photo storage is not configured on this environment");
   }
@@ -101,8 +124,8 @@ export async function setUserPhoto(
   const before = await currentPhoto(targetUserId);
   if (!before) throw new PhotoError("NOT_FOUND", "No such user");
 
-  const key = newKey(targetUserId);
-  const put = await putObject(key, bytes, "image/webp");
+  const key = newKey(targetUserId, image.ext);
+  const put = await putObject(key, bytes, image.contentType);
   if (!put.ok) {
     console.error("[photo] upload failed", { requestId: meta.requestId, key, ...put });
     throw new PhotoError("INTERNAL", "The image could not be stored. Try again.");

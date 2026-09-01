@@ -50,6 +50,45 @@ describe("GET /admin/master/[resource]", () => {
   it("dates leave as text", () => {
     expect(master).toMatch(/to_char\(m\.\$\{identifier\(f\.column\)\}, 'YYYY-MM-DD'\)/);
   });
+
+  /**
+   * The phone's search box. It matters that this runs in SQL: the
+   * listing is capped at 300 rows, so a filter applied after the cap
+   * would search the first 300 and report "nothing" for everything past
+   * it — cities alone is already past 226.
+   */
+  describe("free-text search", () => {
+    const search = master.slice(
+      master.indexOf('searchParams.get("q")'),
+      master.indexOf("const selected"),
+    );
+
+    it("searches every text column the registry declares, plus the parent label", () => {
+      expect(search).toMatch(/f\.type === "text"/);
+      expect(search).toMatch(/m\.\$\{identifier\(f\.column\)\}::text ilike/);
+      expect(search).toMatch(
+        /p\.\$\{identifier\(resource\.parent\.labelColumn\)\}::text ilike/,
+      );
+      // Column names still come from the registry through identifier():
+      // nothing from the request reaches an identifier position.
+      expect(search).not.toMatch(/sql\.raw/);
+    });
+
+    it("binds the term instead of pasting it into the statement", () => {
+      expect(search).toMatch(/ilike \$\{like\}/);
+      expect(search).not.toMatch(/ilike '/);
+    });
+
+    it("treats the person's own % and _ as letters, not wildcards", () => {
+      expect(search).toContain("q.replace(");
+      expect(search).toContain("\\\\%_");
+    });
+
+    it("an empty box is not a filter at all", () => {
+      expect(search).toMatch(/\.trim\(\)/);
+      expect(search).toMatch(/if \(q !== ""\)/);
+    });
+  });
 });
 
 describe("GET /admin/warehouses", () => {

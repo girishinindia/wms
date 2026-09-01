@@ -3,7 +3,7 @@ import { type NextRequest } from "next/server";
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
 import { requireVerifiedImporter } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
-import { deleteSalesAgent, loadSalesAgent, updateSalesAgent } from "@/lib/sales-agents/ops";
+import { AgentLoginConflict, deleteSalesAgent, loadSalesAgent, updateSalesAgent } from "@/lib/sales-agents/ops";
 import { agentInScope, resolveImporterScope } from "@/lib/sales-agents/scope";
 import { salesAgentUpdateSchema } from "@/lib/validation/api-importer";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -69,6 +69,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       const after = await updateSalesAgent(found.agent, parsed.data as Record<string, unknown>, actor, meta);
       return ok(after, requestId);
     } catch (error) {
+      // The agent's LOGIN collided with somebody else's — reported
+      // rather than skipped, or the profile and the credential drift.
+      if (error instanceof AgentLoginConflict) {
+        return fail("CONFLICT", error.message, requestId, {
+          fields: { [error.field]: error.message },
+        });
+      }
       if (isUniqueViolation(error)) {
         return fail("CONFLICT", "This importer already has an agent with that mobile, email or PAN", requestId);
       }
