@@ -47,6 +47,15 @@ describe("GET /admin/master/[resource]", () => {
     expect(master).toMatch(/qualifiedOrder\(resource\)/);
   });
 
+  it("a refusal counts and conjugates", () => {
+    // "1 vehicle still uses this transporter", not "1 vehicles still
+    // use". The count decides the noun (in inUseSummary) and the verb
+    // (here), because a refusal nobody can read gets escalated.
+    expect(master).toMatch(/function verb\(/);
+    expect(master).toMatch(/still uses/);
+    expect(master).toMatch(/\$\{verb\(outcome\.detail\)\}/);
+  });
+
   it("dates leave as text", () => {
     expect(master).toMatch(/to_char\(m\.\$\{identifier\(f\.column\)\}, 'YYYY-MM-DD'\)/);
   });

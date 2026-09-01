@@ -44,6 +44,30 @@ describe("GET /admin/users (+/[id])", () => {
     }
   });
 
+  /**
+   * The phone cannot draw "Add user" from anything it knows: which
+   * roles a caller may hand out lives in `role_creation_rule`, and the
+   * portal computed it inside its own page. So the list carries it —
+   * worked out from the CALLER, never from the request.
+   */
+  it("carries what Add user may offer, computed from the caller", () => {
+    expect(users).toMatch(/creatableRoles\(actor\)/);
+    expect(users).toMatch(/creatableRoles:/);
+    // Gated on the caller's own create grant: no grant, no lists.
+    expect(users).toMatch(/grantFor\(actor, "user\.create"\)/);
+    expect(users).toMatch(/createGrant \? await creatableRoles\(actor\) : \[\]/);
+  });
+
+  it("narrows the site list the way the portal's page does", () => {
+    // ALL sees every active site; anyone narrower sees only the sites
+    // they are actually assigned to — never a site named by the client.
+    expect(users).toMatch(/wide = createGrant\?\.scope === "ALL"/);
+    expect(users).toMatch(/\$\{wide\} or id in \(\$\{siteList\}\)/);
+    expect(users).toMatch(/is_active and deleted_at is null/);
+    // And only when a role that needs one is on offer.
+    expect(users).toMatch(/r\.domain === "WAREHOUSE"/);
+  });
+
   it("the detail answers NOT_FOUND, never FORBIDDEN, for an out-of-scope id", () => {
     const getBody = userOne.slice(
       userOne.indexOf("export async function GET"),

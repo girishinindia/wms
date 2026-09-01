@@ -58,6 +58,18 @@ export async function GET() {
             code: String(r.code ?? ""),
             name: String(r.name ?? ""),
             isActive: Boolean(r.is_active),
+            /**
+             * The ids, not only the labels.
+             *
+             * Both columns were already selected and then dropped here,
+             * which was invisible on the portal — its edit drawer reads
+             * the row it already holds — and fatal on the phone, whose
+             * edit form has nothing else to read. The Type dropdown
+             * opened blank and the City could not be saved back.
+             */
+            warehouseTypeId:
+              r.warehouse_type_id === null ? null : Number(r.warehouse_type_id),
+            cityId: r.city_id === null ? null : Number(r.city_id),
             typeName: (r.type_name as string | null) ?? null,
             address: (r.address as string | null) ?? null,
             landmark: (r.landmark as string | null) ?? null,

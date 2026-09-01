@@ -271,3 +271,39 @@ describe("the warehouse form", () => {
     expect(updateWarehouseSchema.safeParse({}).success).toBe(true);
   });
 });
+
+/**
+ * What the list hands back.
+ *
+ * The portal's edit drawer reads the row it already holds in the
+ * browser, so a field selected in SQL and dropped in the mapper cost it
+ * nothing. The phone has only this response, and its edit form opened
+ * with an empty Type dropdown and no city id to save back.
+ */
+describe("the warehouses list payload", () => {
+  const route = readFileSync(
+    new URL("../src/app/api/v1/admin/warehouses/route.ts", import.meta.url),
+    "utf8",
+  );
+  const mapper = route.slice(route.indexOf("warehouses: rows.map"), route.indexOf("requestId,\n      );"));
+
+  it("carries the ids a form needs, not only the labels", () => {
+    for (const pair of [
+      ["warehouseTypeId", "warehouse_type_id"],
+      ["cityId", "city_id"],
+    ]) {
+      const [key, column] = pair;
+      expect(mapper).toContain(`${key}:`);
+      expect(mapper).toContain(column!);
+    }
+    // The labels stay — the list still reads as prose.
+    expect(mapper).toContain("typeName:");
+    expect(mapper).toContain("cityName:");
+  });
+
+  it("selects what it maps", () => {
+    const select = route.slice(route.indexOf("select w.id"), route.indexOf("from wms.warehouse w"));
+    expect(select).toContain("w.warehouse_type_id");
+    expect(select).toContain("w.city_id");
+  });
+});

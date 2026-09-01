@@ -3,10 +3,10 @@ import { type NextRequest } from "next/server";
 
 import { getDb } from "@/db";
 import { fail, fieldsFrom, handler, ok, toResponse } from "@/lib/api/respond";
-import { requirePermission } from "@/lib/auth/guard";
+import { grantFor, requirePermission } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { createUser, UserCreateError } from "@/lib/users/create";
-import { actorWarehouseIds } from "@/lib/users/authority";
+import { actorWarehouseIds, creatableRoles } from "@/lib/users/authority";
 import { createUserRequestSchema } from "@/lib/validation/api-admin";
 
 export const runtime = "nodejs";
@@ -87,8 +87,46 @@ export async function GET() {
          limit 300
       `);
 
+      /**
+       * What "Add user" is allowed to offer, computed here rather than
+       * asked for by the client.
+       *
+       * The portal's own page does exactly this and keeps it to itself
+       * (`creatableRoles(actor)` plus a warehouse query narrowed to the
+       * viewer's sites), which left a native client with no way to draw
+       * the form: the rules live in `role_creation_rule`, not in
+       * anything the app could read. Both lists are the caller's own —
+       * never anything the request claims — and POST re-checks both, so
+       * this is about not offering a choice that would be refused.
+       */
+      const createGrant = grantFor(actor, "user.create");
+      const roles = createGrant ? await creatableRoles(actor) : [];
+      const wide = createGrant?.scope === "ALL";
+      const warehouses =
+        roles.some((r) => r.domain === "WAREHOUSE") && (wide || sites.length > 0)
+          ? await getDb().execute<{ id: number; name: string; code: string }>(sql`
+              select id, name, code
+                from wms.warehouse
+               where is_active and deleted_at is null
+                 and (${wide} or id in (${siteList}))
+               order by name
+               limit 200
+            `)
+          : [];
+
       return ok(
         {
+          creatableRoles: roles.map((r) => ({
+            role: r.role,
+            domain: r.domain,
+            label: r.label,
+            scope: r.scope,
+          })),
+          warehouses: warehouses.map((w) => ({
+            id: Number(w.id),
+            name: w.name,
+            code: w.code,
+          })),
           users: rows.map((r) => ({
             id: Number(r.id),
             email: r.email,

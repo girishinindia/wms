@@ -18,6 +18,14 @@ import { announceSubmitted } from "@/lib/expenses/ops";
 import { actorWarehouseIds } from "@/lib/users/authority";
 import { constraintNameOf, isCheckViolation, isUniqueViolation } from "@/lib/db-errors";
 
+/** "1 vehicle still uses", "2 vehicles still use" — the count decides
+ *  the verb, the same way `inUseSummary` decides the noun. */
+function verb(detail: string | undefined): string {
+  return (detail ?? "").startsWith("1 ") && !(detail ?? "").includes(",")
+    ? "still uses"
+    : "still use";
+}
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -681,7 +689,7 @@ export async function PATCH(
             .join(", ");
           return fail(
             "CONFLICT",
-            `${detail} still use this ${resource.singular}. Deactivating it hides it from every picker; the existing records keep working.`,
+            `${detail} ${verb(detail)} this ${resource.singular}. Deactivating it hides it from every picker; the existing records keep working.`,
             requestId,
           );
         }
@@ -883,7 +891,7 @@ export async function DELETE(
       if (!outcome.ok) {
         return fail(
           "CONFLICT",
-          `${outcome.detail} still use this ${resource.singular}. Switch it off instead, or move those records first.`,
+          `${outcome.detail} ${verb(outcome.detail)} this ${resource.singular}. Switch it off instead, or move those records first.`,
           requestId,
         );
       }

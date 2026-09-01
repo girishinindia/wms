@@ -49,7 +49,8 @@ describe.skipIf(!canRun)("master ops", () => {
 
   it("refuses to delete a row something points at, naming what", async () => {
     const r = await ops.deleteOne(registry.MASTER_RESOURCES.states, stateId, actor, meta);
-    expect(r).toMatchObject({ ok: false, reason: "in_use", detail: "1 cities" });
+    // "1 city", not "1 cities": the count decides the noun.
+    expect(r).toMatchObject({ ok: false, reason: "in_use", detail: "1 city" });
     // Still there.
     const rows = await db.execute(sql`select 1 from wms.state where id = ${stateId}`);
     expect(rows.length).toBe(1);
@@ -73,9 +74,43 @@ describe.skipIf(!canRun)("master ops", () => {
 
   it("switches a row off and reports it is still in use", async () => {
     const r = await ops.setActive(registry.MASTER_RESOURCES.states, stateId, false, actor, meta);
-    expect(r).toMatchObject({ ok: true, wasInUse: "1 cities" });
+    expect(r).toMatchObject({ ok: true, wasInUse: "1 city" });
     const back = await ops.setActive(registry.MASTER_RESOURCES.states, stateId, true, actor, meta);
     expect(back).toEqual({ id: stateId, ok: true });
+  });
+
+  /**
+   * A transporter whose only vehicle was deleted months ago could never
+   * be deleted: vehicles are soft-delete-only, the row keeps its
+   * `transporter_id`, and the dependent count saw it. On screen the
+   * vehicle was gone and the refusal was inexplicable.
+   */
+  it("a soft-deleted dependent does not hold its parent hostage", async () => {
+    // A unique code per run: `transporter_code_key` ignores
+    // `deleted_at`, so a run that dies before its cleanup would
+    // otherwise poison every run after it.
+    const code = `TR-T${Date.now() % 1_000_000}`;
+    const [t] = await db.execute<{ id: number }>(sql`
+      insert into wms.transporter (code, name, contact_person, contact_mobile, created_by)
+      values (${code}, 'Testport', 'Test Person', '9820011199', 1) returning id`);
+    const [vt] = await db.execute<{ id: number }>(sql`
+      select id from wms.vehicle_type where deleted_at is null limit 1`);
+    const [v] = await db.execute<{ id: number }>(sql`
+      insert into wms.vehicle (transporter_id, vehicle_type_id, registration_number, created_by)
+      values (${t!.id}, ${vt!.id}, 'MH04ZZ0001', 1) returning id`);
+
+    // While the vehicle is live, the refusal is correct — and singular.
+    const held = await ops.deleteOne(registry.MASTER_RESOURCES.transporters, t!.id, actor, meta);
+    expect(held).toMatchObject({ ok: false, reason: "in_use", detail: "1 vehicle" });
+
+    // Soft-delete it, the way the app's own delete does.
+    await db.execute(sql`update wms.vehicle set deleted_at = now() where id = ${v!.id}`);
+
+    const freed = await ops.deleteOne(registry.MASTER_RESOURCES.transporters, t!.id, actor, meta);
+    expect(freed).toEqual({ id: t!.id, ok: true });
+
+    await db.execute(sql`delete from wms.vehicle where transporter_id = ${t!.id}`);
+    await db.execute(sql`delete from wms.transporter where id = ${t!.id}`);
   });
 
   it("reports not_found for a missing id", async () => {

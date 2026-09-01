@@ -54,12 +54,34 @@ export function identifier(value: string): SQL {
   return sql.raw(value);
 }
 
-/** `select count(*) …` per dependent, as one scalar subquery each. */
+/**
+ * `select count(*) …` per dependent, as one scalar subquery each.
+ *
+ * `deleted_at is null` is the whole of the fix for a transporter that
+ * could never be deleted: its vehicles are soft-delete-only, so a lorry
+ * removed months ago still carried `transporter_id` and still counted.
+ * The list showed no vehicles and the delete kept refusing — the row
+ * was gone from every screen and present in this count.
+ *
+ * Every table named as a dependent in the registry has the column
+ * (city, state, warehouse, vehicle, transporter, faq, expense,
+ * importer, importer_client), so this needs no per-table exception.
+ */
 export function dependentCounts(resource: MasterResource, idColumn: SQL): SQL[] {
   return resource.dependents.map(
     (d) => sql`(select count(*) from wms.${identifier(d.table)} dep
-                 where dep.${identifier(d.column)} = ${idColumn})`,
+                 where dep.${identifier(d.column)} = ${idColumn}
+                   and dep.deleted_at is null)`,
   );
+}
+
+/** "1 vehicle", "2 vehicles" — the count decides. */
+function countedNoun(n: number, noun: string): string {
+  if (n === 1 && noun.endsWith("ies")) return `1 ${noun.slice(0, -3)}y`;
+  if (n === 1 && noun.endsWith("s") && !noun.endsWith("ss")) {
+    return `1 ${noun.slice(0, -1)}`;
+  }
+  return `${n} ${noun}`;
 }
 
 type ActorLite = {
@@ -76,8 +98,9 @@ export async function inUseSummary(resource: MasterResource, id: number): Promis
     )}
   `);
   return resource.dependents
-    .map((d, i) => `${counts[0]?.[`c${i}`] ?? 0} ${d.noun}`)
-    .filter((s) => !s.startsWith("0 "))
+    .map((d, i) => ({ n: Number(counts[0]?.[`c${i}`] ?? 0), noun: d.noun }))
+    .filter((c) => c.n > 0)
+    .map((c) => countedNoun(c.n, c.noun))
     .join(", ");
 }
 
