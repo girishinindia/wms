@@ -685,8 +685,8 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
       for (const l of withPicture) {
         n += 1;
         setImporting(`Saving pictures… ${n} of ${withPicture.length}`);
-        const url = await uploadPicture(l.itemId!, pictures.get(l.row)!.blob, q);
-        if (url) setD((s) => ({ ...s, items: s.items.map((x) => (x.itemId === l.itemId ? { ...x, imageUrl: url } : x)) }));
+        const up = await uploadPicture(l.itemId!, pictures.get(l.row)!.blob, q);
+        if ("url" in up) setD((s) => ({ ...s, items: s.items.map((x) => (x.itemId === l.itemId ? { ...x, imageUrl: up.url } : x)) }));
       }
       await refreshLookups();
       toast.success(
@@ -698,6 +698,38 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
     } finally {
       setImporting(null);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  // ── A picture for a catalogue item, from the line ──
+  const photoRef = useRef<HTMLInputElement>(null);
+  const photoFor = useRef<number | null>(null);
+  const [photoBusy, setPhotoBusy] = useState<number | null>(null);
+
+  /** Add or replace the item's picture straight from the goods line. It
+   *  lands on the catalogue row, so every line using that item shows it. */
+  const photoPicked = async (file: File) => {
+    const itemId = photoFor.current;
+    photoFor.current = null;
+    if (itemId === null) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Choose a picture (JPG, PNG or WebP).");
+      return;
+    }
+    setPhotoBusy(itemId);
+    try {
+      const up = await uploadPicture(itemId, file, onBehalfOf !== null ? `?importerId=${onBehalfOf}` : "");
+      if ("error" in up) {
+        toast.error(up.error);
+        return;
+      }
+      const url = up.url;
+      setD((s) => ({ ...s, items: s.items.map((x) => (x.itemId === itemId ? { ...x, imageUrl: url } : x)) }));
+      setLookups((lk) => ({ ...lk, items: lk.items.map((it) => (it.id === itemId ? { ...it, imageUrl: url } : it)) }));
+      toast.success("Picture saved to the catalogue.");
+    } finally {
+      setPhotoBusy(null);
+      if (photoRef.current) photoRef.current.value = "";
     }
   };
 
@@ -960,6 +992,17 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
             <div className="flex items-center gap-3">
               <p className="hidden text-xs text-verdigris-200/50 md:block">Tab moves across · Enter on the last cell adds a row</p>
               <input
+                ref={photoRef}
+                id="line-photo-file"
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void photoPicked(f);
+                }}
+              />
+              <input
                 ref={fileRef}
                 id="import-file"
                 type="file"
@@ -1017,14 +1060,27 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                       <td className="py-1 pr-2 pt-3 text-verdigris-200/50">{i + 1}</td>
                       <td className="py-1 pr-2">
                         <div className="flex items-center gap-2">
-                          {l.imageUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={l.imageUrl}
-                              alt=""
-                              className="h-9 w-9 shrink-0 rounded-md border border-verdigris-300/15 object-cover"
-                              loading="lazy"
-                            />
+                          {l.itemId !== null ? (
+                            <button
+                              type="button"
+                              id={`line-${i}-photo`}
+                              title={l.imageUrl ? "Replace the item's picture" : "Add a picture of this item"}
+                              disabled={photoBusy === l.itemId}
+                              onClick={() => {
+                                photoFor.current = l.itemId;
+                                photoRef.current?.click();
+                              }}
+                              className="h-9 w-9 shrink-0 overflow-hidden rounded-md border border-verdigris-300/15 text-verdigris-300 hover:border-patina/50 hover:text-patina disabled:opacity-50"
+                            >
+                              {photoBusy === l.itemId ? (
+                                <span className="block text-[10px]">…</span>
+                              ) : l.imageUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={l.imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+                              ) : (
+                                <span aria-hidden className="block text-base leading-none">📷</span>
+                              )}
+                            </button>
                           ) : null}
                           <div className="min-w-0 flex-1">
                             <Combo
@@ -1263,18 +1319,19 @@ async function shrinkPicture(blob: Blob): Promise<Blob> {
   }
 }
 
-async function uploadPicture(itemId: number, blob: Blob, q: string): Promise<string | null> {
+/** The stored picture's URL, or why it was not stored. */
+async function uploadPicture(itemId: number, blob: Blob, q: string): Promise<{ url: string } | { error: string }> {
   const picture = await shrinkPicture(blob);
-  if (picture.size > 2 * 1024 * 1024) return null;
+  if (picture.size > 2 * 1024 * 1024) return { error: "That picture is over 2 MB even after shrinking" };
   const response = await fetch(`/api/v1/items/${itemId}/image${q}`, {
     method: "POST",
     headers: { "content-type": picture.type || "image/png" },
     credentials: "same-origin",
     body: picture,
   });
-  if (!response.ok) return null;
-  const json = (await response.json().catch(() => null)) as { imageUrl?: string | null } | null;
-  return json?.imageUrl ?? null;
+  const json = (await response.json().catch(() => null)) as { imageUrl?: string | null; error?: { message?: string } } | null;
+  if (!response.ok || !json?.imageUrl) return { error: json?.error?.message ?? "The picture could not be stored" };
+  return { url: json.imageUrl };
 }
 
 function Row({ k, v, mono }: { k: string; v?: string; mono?: boolean }) {
