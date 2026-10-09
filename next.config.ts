@@ -28,6 +28,10 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
 
+  // pdfjs reads packing lists sent as PDFs; it ships as ESM with worker
+  // files the bundler must not try to inline.
+  serverExternalPackages: ["pdfjs-dist"],
+
   // Warehouse photos come off Bunny once uploads are wired up.
   images: {
     remotePatterns: [

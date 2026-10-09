@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { api } from "@/lib/api/client";
+import type { ImportResult } from "@/lib/inward/ops";
+import { acceptsPackingFile, readPackingFile, type SheetPictures } from "@/lib/inward/sheet-reader";
 import { useToast } from "@/components/Toast";
 import { Card } from "@/components/admin/ui";
 import type { lookupsFor, getRequest } from "@/lib/inward/ops";
@@ -326,7 +328,9 @@ function AddDialog({
   const [f, setF] = useState<Record<string, string>>({
     name: typed,
     registrationNumber: typed.toUpperCase(),
-    description: typed,
+    // The item picker searches by code, so what was typed is the code.
+    code: typed.toUpperCase(),
+    description: "",
   });
   const set = (k: string, v: string) => setF((s) => ({ ...s, [k]: v }));
 
@@ -339,11 +343,11 @@ function AddDialog({
       const path = onBehalfOf !== null ? `/items?importerId=${onBehalfOf}` : "/items";
       result = await api<Lookups["items"][number] & { usedOn: number; isActive: boolean }>(path, {
         body: {
+          code: f.code ?? "",
           description: f.description ?? "",
           unitId: f.unitId ? Number(f.unitId) : null,
           piecesPerCarton: f.piecesPerCarton ? Number(f.piecesPerCarton) : null,
           kgPerCarton: f.kgPerCarton ? Number(f.kgPerCarton) : null,
-          hsnCode: f.hsnCode ?? "",
         },
       });
       if (result.ok) {
@@ -477,9 +481,8 @@ function AddDialog({
             </>
           ) : (
             <>
-              <div className="sm:col-span-2">
-                <Text k="description" l="Item description" />
-              </div>
+              <Text k="code" l="Item code" ph="As on your packing list — blank to auto-number" />
+              <Text k="description" l="Item description" />
               <div>
                 <label className={label} htmlFor="add-unitId">
                   Unit
@@ -493,7 +496,6 @@ function AddDialog({
                   ))}
                 </select>
               </div>
-              <Text k="hsnCode" l="HSN (optional)" />
               <Text k="piecesPerCarton" l="Pieces per carton" type="number" />
               <Text k="kgPerCarton" l="Kg per carton" type="number" />
             </>
@@ -633,6 +635,72 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
     requestAnimationFrame(() => document.getElementById(`line-${i}-cartons`)?.focus());
   };
 
+  // ── Importing a packing list ──
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState<string | null>(null);
+  const [importReport, setImportReport] = useState<ImportResult | null>(null);
+
+  const importFile = async (file: File) => {
+    if (!acceptsPackingFile(file.name)) {
+      toast.error("Drop an Excel sheet (.xlsx), a CSV or a PDF packing list.");
+      return;
+    }
+    setImporting("Reading the file…");
+    setImportReport(null);
+    const q = onBehalfOf !== null ? `?importerId=${onBehalfOf}` : "";
+    try {
+      const read = await readPackingFile(file);
+      setImporting("Matching items with your catalogue…");
+      const result =
+        read.kind === "pdf"
+          ? await importPdf(read.bytes, q)
+          : await api<ImportResult>(`/items/import${q}`, { body: { fileName: file.name, rows: read.rows } });
+      if (!result.ok) {
+        setImporting(null);
+        toast.error(result.error.message);
+        return;
+      }
+      const r = result.data;
+      const imported: Line[] = r.lines.map((l) => ({
+        key: keySeq++,
+        itemId: l.itemId,
+        description: l.description,
+        cartonQty: String(l.cartonQty),
+        piecesPerCarton: String(l.piecesPerCarton),
+        unitId: l.unitId,
+        kgPerCarton: String(l.kgPerCarton),
+        imageUrl: l.imageUrl,
+      }));
+      // Typed lines stay; blank ones make way.
+      setD((s) => ({
+        ...s,
+        items: [...s.items.filter((l) => l.description.trim() !== "" || l.itemId !== null || l.cartonQty !== ""), ...imported],
+      }));
+      setImportReport(r);
+
+      // The sheet's pictures, one per new catalogue row.
+      const pictures: SheetPictures = read.kind === "rows" ? read.pictures : new Map();
+      const withPicture = r.lines.filter((l) => l.created && l.itemId !== null && pictures.has(l.row));
+      let n = 0;
+      for (const l of withPicture) {
+        n += 1;
+        setImporting(`Saving pictures… ${n} of ${withPicture.length}`);
+        const url = await uploadPicture(l.itemId!, pictures.get(l.row)!.blob, q);
+        if (url) setD((s) => ({ ...s, items: s.items.map((x) => (x.itemId === l.itemId ? { ...x, imageUrl: url } : x)) }));
+      }
+      await refreshLookups();
+      toast.success(
+        `${r.lines.length} line${r.lines.length === 1 ? "" : "s"} imported · ${r.created} new in the catalogue, ${r.matched} matched` +
+          (r.skipped.length ? ` · ${r.skipped.length} row${r.skipped.length === 1 ? "" : "s"} skipped` : ""),
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not read that file");
+    } finally {
+      setImporting(null);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
   const addRow = () => setD((s) => ({ ...s, items: [...s.items, blankLine()] }));
   const removeRow = (i: number) =>
     setD((s) => ({ ...s, items: s.items.length === 1 ? [blankLine()] : s.items.filter((_, j) => j !== i) }));
@@ -671,7 +739,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
     })[k] ?? k;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_16rem]">
       <div className="space-y-6">
         {existing?.status === "NEEDS_CHANGES" && existing.needsChangesNote ? (
           <Card className="border-rose-400/30 p-4">
@@ -887,23 +955,57 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
 
         {/* ── 3. Goods ── */}
         <Card className="p-5">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-verdigris-50">3 · Goods</h2>
-            <p className="text-xs text-verdigris-200/50">Tab moves across · Enter on the last cell adds a row</p>
+            <div className="flex items-center gap-3">
+              <p className="hidden text-xs text-verdigris-200/50 md:block">Tab moves across · Enter on the last cell adds a row</p>
+              <input
+                ref={fileRef}
+                id="import-file"
+                type="file"
+                accept=".xlsx,.xlsm,.xls,.csv,.pdf"
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void importFile(f);
+                }}
+              />
+              <button
+                type="button"
+                id="import-packing-list"
+                disabled={busy || importing !== null}
+                onClick={() => fileRef.current?.click()}
+                className="rounded-lg border border-verdigris-400/30 px-3 py-1.5 text-xs font-semibold text-verdigris-100 hover:bg-verdigris-400/10 disabled:opacity-50"
+              >
+                {importing ?? "↥ Import packing list"}
+              </button>
+            </div>
           </div>
+          {importReport && (importReport.skipped.length || importReport.warnings.length) ? (
+            <div className="mb-3 rounded-lg border border-amber-400/30 bg-amber-400/5 p-3 text-xs text-verdigris-100">
+              {importReport.warnings.map((w) => (
+                <p key={w}>⚠ {w}</p>
+              ))}
+              {importReport.skipped.map((sk) => (
+                <p key={sk.row}>
+                  Row {sk.row} skipped — {sk.reason}
+                </p>
+              ))}
+            </div>
+          ) : null}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[42rem] text-sm">
+            <table className="w-full min-w-[54rem] text-sm">
               <thead className="text-left text-[11px] uppercase tracking-[0.1em] text-verdigris-300">
                 <tr>
                   <th className="pb-2 pr-2 w-6">#</th>
-                  <th className="pb-2 pr-2 w-44">Item</th>
-                  <th className="pb-2 pr-2 min-w-[11rem]">Description</th>
-                  <th className="pb-2 pr-2 w-20">Cartons</th>
-                  <th className="pb-2 pr-2 w-20">Pcs/ctn</th>
-                  <th className="pb-2 pr-2 w-20">Unit</th>
-                  <th className="pb-2 pr-2 w-20">Kg/ctn</th>
-                  <th className="pb-2 pr-2 w-20 text-right">Pieces</th>
-                  <th className="pb-2 pr-2 w-20 text-right">Kg</th>
+                  <th className="pb-2 pr-2 w-40 min-w-[9rem]">Item</th>
+                  <th className="pb-2 pr-2 min-w-[12rem]">Description</th>
+                  <th className="pb-2 pr-2 w-20 min-w-[5rem]">Cartons</th>
+                  <th className="pb-2 pr-2 w-20 min-w-[5rem]">Pcs/ctn</th>
+                  <th className="pb-2 pr-2 w-[5.5rem] min-w-[5.5rem]">Unit</th>
+                  <th className="pb-2 pr-2 w-20 min-w-[5rem]">Kg/ctn</th>
+                  <th className="pb-2 pr-2 w-[4.5rem] text-right">Pieces</th>
+                  <th className="pb-2 pr-2 w-[4.5rem] text-right">Kg</th>
                   <th className="pb-2 w-6" />
                 </tr>
               </thead>
@@ -921,8 +1023,8 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                           onChange={(id) => applyItem(i, id)}
                           options={lookups.items.map((it) => ({
                             id: it.id,
-                            label: it.description,
-                            sub: [it.code, it.piecesPerCarton ? `${it.piecesPerCarton} ${it.unitCode ?? "pcs"}/ctn` : null]
+                            label: it.code,
+                            sub: [it.description, it.piecesPerCarton ? `${it.piecesPerCarton} ${it.unitCode ?? "pcs"}/ctn` : null]
                               .filter(Boolean)
                               .join(" · "),
                           }))}
@@ -1113,6 +1215,53 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
       ) : null}
     </div>
   );
+}
+
+/** The PDF goes up whole; it has no cells to read here. */
+async function importPdf(bytes: ArrayBuffer, q: string) {
+  const response = await fetch(`/api/v1/items/import/pdf${q}`, {
+    method: "POST",
+    headers: { "content-type": "application/pdf" },
+    credentials: "same-origin",
+    body: bytes,
+  });
+  const json = (await response.json().catch(() => null)) as { error?: { message?: string } } | ImportResult | null;
+  if (!response.ok || !json || "error" in json) {
+    return { ok: false as const, error: { message: (json as { error?: { message?: string } } | null)?.error?.message ?? "Could not read that PDF" } };
+  }
+  return { ok: true as const, data: json as ImportResult };
+}
+
+/** Shrink to a thumbnail-sized WebP before it goes up; the register shows it at 40 px. */
+async function shrinkPicture(blob: Blob): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const max = 1024;
+    const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const out = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
+    return out && out.size < blob.size ? out : blob;
+  } catch {
+    return blob;
+  }
+}
+
+async function uploadPicture(itemId: number, blob: Blob, q: string): Promise<string | null> {
+  const picture = await shrinkPicture(blob);
+  if (picture.size > 2 * 1024 * 1024) return null;
+  const response = await fetch(`/api/v1/items/${itemId}/image${q}`, {
+    method: "POST",
+    headers: { "content-type": picture.type || "image/png" },
+    credentials: "same-origin",
+    body: picture,
+  });
+  if (!response.ok) return null;
+  const json = (await response.json().catch(() => null)) as { imageUrl?: string | null } | null;
+  return json?.imageUrl ?? null;
 }
 
 function Row({ k, v, mono }: { k: string; v?: string; mono?: boolean }) {

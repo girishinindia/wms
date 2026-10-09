@@ -27,12 +27,15 @@
     "@upstash/redis": "^1.38.2",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
+    "jszip": "^3.10.1",
     "next": "15.5.23",
+    "pdfjs-dist": "^4.10.38",
     "postgres": "^3.4.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-hook-form": "^7.85.0",
     "server-only": "^0.0.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^3.25.76"
   },
   "devDependencies": {

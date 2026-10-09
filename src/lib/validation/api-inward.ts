@@ -71,15 +71,34 @@ export const inwardListQuerySchema = z.object({
 });
 
 // ── The importer's catalogue ──────────────────────────────────────
+/** The importer's own item number — "5049 WIRE CLIP" — as it is on their packing list. */
+export const itemCode = z
+  .string()
+  .trim()
+  .max(60, "Keep the item code under 60 characters")
+  .regex(/^[\p{L}\p{N}][\p{L}\p{N} ._\-\/#&+()]*$/u, "Letters, numbers, spaces and . _ - / # & + ( ) only");
+
 export const itemSaveSchema = z.object({
+  /** Blank means "mint one for me" (ITM-0001). */
+  code: blank(itemCode),
   description: z.string().trim().min(2, "Describe the item").max(200),
   unitId: optionalId,
   piecesPerCarton: z.number().int().positive().max(1_000_000).nullable().optional(),
   kgPerCarton: z.number().positive().max(100_000).nullable().optional(),
-  hsnCode: blank(z.string().trim().regex(/^[0-9]{4,8}$/, "An HSN code is 4 to 8 digits")),
   isActive: z.boolean().optional(),
 });
 export type ItemSaveInput = z.infer<typeof itemSaveSchema>;
+
+/**
+ * A packing list, handed over as the sheet's cells — one array per row,
+ * header row included — so the client needs no idea which column is
+ * which. The server works that out (see `parsePackingList`).
+ */
+export const packingRowsSchema = z.object({
+  fileName: z.string().trim().max(200).optional(),
+  rows: z.array(z.array(z.union([z.string(), z.number(), z.null()]).optional())).min(1).max(2000),
+});
+export type PackingRowsInput = z.infer<typeof packingRowsSchema>;
 
 // ── Proposing a carrier from the form ─────────────────────────────
 const mobile = z.string().trim().regex(/^[6-9][0-9]{9}$/, "Enter a 10-digit Indian mobile number");

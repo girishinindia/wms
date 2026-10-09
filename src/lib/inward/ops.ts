@@ -10,6 +10,7 @@ import { importerIdOf, type Actor, type Grant } from "@/lib/auth/guard";
 import { announce } from "@/lib/notify/announce";
 import { configured, deleteObject, publicUrl, putObject } from "@/lib/storage/bunny";
 import { actorWarehouseIds } from "@/lib/users/authority";
+import { parsePackingList, unitAlias, type Cell, type ParsedPackingList } from "@/lib/inward/packing-list";
 import type { InwardSaveInput, ItemSaveInput, ProposeInput } from "@/lib/validation/api-inward";
 
 /**
@@ -549,10 +550,10 @@ export async function lookupsFor(importerId: number | null, options: { chooser?:
       `),
       db.execute<Record<string, string | null>>(sql`
         select it.id, it.code, it.description, it.image_url, it.measurement_unit_id, mu.code as unit_code,
-               it.pieces_per_carton, it.kg_per_carton::text as kg_per_carton, it.hsn_code, it.is_active
+               it.pieces_per_carton, it.kg_per_carton::text as kg_per_carton, it.is_active
           from wms.item it left join wms.measurement_unit mu on mu.id = it.measurement_unit_id
          where it.importer_id = ${importerId} and it.deleted_at is null and it.is_active
-         order by it.description
+         order by it.code, it.description
       `),
       db.execute<Record<string, string | null>>(sql`
         select warehouse_id, container_type_id, port_id, transporter_id, vehicle_id, driver_id
@@ -655,7 +656,6 @@ export async function lookupsFor(importerId: number | null, options: { chooser?:
       unitCode: it.unit_code,
       piecesPerCarton: it.pieces_per_carton === null ? null : Number(it.pieces_per_carton),
       kgPerCarton: it.kg_per_carton === null ? null : Number(it.kg_per_carton),
-      hsnCode: it.hsn_code,
     })),
     last:
       last[0] === undefined
@@ -1222,7 +1222,6 @@ export type ItemRow = {
   unitCode: string | null;
   piecesPerCarton: number | null;
   kgPerCarton: number | null;
-  hsnCode: string | null;
   isActive: boolean;
   usedOn: number;
 };
@@ -1231,12 +1230,12 @@ export async function listItems(importerId: number, q = ""): Promise<ItemRow[]> 
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const rows = await getDb().execute<Record<string, string | null>>(sql`
     select it.id, it.code, it.description, it.image_url, it.measurement_unit_id, mu.code as unit_code,
-           it.pieces_per_carton, it.kg_per_carton::text as kg_per_carton, it.hsn_code, it.is_active,
+           it.pieces_per_carton, it.kg_per_carton::text as kg_per_carton, it.is_active,
            (select count(*) from wms.inward_request_item li where li.item_id = it.id) as used_on
       from wms.item it left join wms.measurement_unit mu on mu.id = it.measurement_unit_id
      where it.importer_id = ${importerId} and it.deleted_at is null
        ${q ? sql`and (it.description ilike ${like} or it.code ilike ${like})` : sql``}
-     order by it.is_active desc, it.description
+     order by it.is_active desc, it.code, it.description
      limit 500
   `);
   return rows.map((r) => ({
@@ -1248,28 +1247,44 @@ export async function listItems(importerId: number, q = ""): Promise<ItemRow[]> 
     unitCode: r.unit_code,
     piecesPerCarton: r.pieces_per_carton === null ? null : Number(r.pieces_per_carton),
     kgPerCarton: r.kg_per_carton === null ? null : Number(r.kg_per_carton),
-    hsnCode: r.hsn_code,
     isActive: r.is_active === "true" || (r.is_active as unknown) === true,
     usedOn: num(r.used_on),
   }));
 }
 
+/** The importer's code as the register keeps it: trimmed, single-spaced, upper-case. */
+export function normaliseItemCode(raw: string | null | undefined): string | null {
+  const code = (raw ?? "").replace(/\s+/g, " ").trim().toUpperCase();
+  return code === "" ? null : code;
+}
+
+const isUnique = (error: unknown): boolean => {
+  const code =
+    (error as { code?: string; cause?: { code?: string } }).code ?? (error as { cause?: { code?: string } }).cause?.code;
+  return code === "23505";
+};
+
 export async function createItem(actor: Actor, importerId: number, input: ItemSaveInput, meta: Meta): Promise<ItemRow> {
-  // ITM-0001 per importer. Two people adding at once collide on the
-  // unique index and the second one simply tries the next number.
+  const given = normaliseItemCode(input.code);
+  // Their own code is theirs; a blank one is minted ITM-0001 per
+  // importer. Two people minting at once collide on the unique index
+  // and the second one simply tries the next number.
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const next = await getDb().execute<{ n: number }>(sql`
-      select coalesce(max(substring(code from '[0-9]+$')::int), 0) + 1 as n
-        from wms.item where importer_id = ${importerId}
-    `);
-    const code = `ITM-${String(Number(next[0]?.n ?? 1)).padStart(4, "0")}`;
+    let code = given;
+    if (code === null) {
+      const next = await getDb().execute<{ n: number }>(sql`
+        select coalesce(max(substring(code from '^ITM-([0-9]+)$')::int), 0) + 1 as n
+          from wms.item where importer_id = ${importerId}
+      `);
+      code = `ITM-${String(Number(next[0]?.n ?? 1)).padStart(4, "0")}`;
+    }
     try {
       const rows = await getDb().execute<{ id: number }>(sql`
         insert into wms.item
-          (importer_id, code, description, measurement_unit_id, pieces_per_carton, kg_per_carton, hsn_code,
+          (importer_id, code, description, measurement_unit_id, pieces_per_carton, kg_per_carton,
            is_active, created_by, updated_by)
         values (${importerId}, ${code}, ${input.description}, ${input.unitId ?? null},
-                ${input.piecesPerCarton ?? null}, ${input.kgPerCarton ?? null}, ${input.hsnCode ?? null},
+                ${input.piecesPerCarton ?? null}, ${input.kgPerCarton ?? null},
                 ${input.isActive ?? true}, ${actor.session.userId}, ${actor.session.userId})
         returning id
       `);
@@ -1283,18 +1298,145 @@ export async function createItem(actor: Actor, importerId: number, input: ItemSa
         actorUserId: actor.session.userId,
         actorEmail: actor.session.email,
         actorName: `${actor.session.firstName} ${actor.session.lastName}`.trim(),
-        after: input,
+        after: { ...input, code },
         ip: meta.ip,
         userAgent: meta.userAgent,
         requestId: meta.requestId,
       });
       return (await listItems(importerId)).find((r) => r.id === id)!;
     } catch (error) {
-      const code = (error as { code?: string; cause?: { code?: string } }).code ?? (error as { cause?: { code?: string } }).cause?.code;
-      if (code !== "23505") throw error;
+      if (!isUnique(error)) throw error;
+      if (given !== null) {
+        throw new InwardError("VALIDATION_FAILED", "That item code is already in the catalogue", {
+          code: "Already in your catalogue — pick it instead, or use another code",
+        });
+      }
     }
   }
   throw new InwardError("CONFLICT", "Could not allocate an item code. Try again.");
+}
+
+// ── Importing a packing list into the catalogue and a request ─────
+
+export type ImportedLine = {
+  row: number;
+  itemId: number | null;
+  itemCode: string | null;
+  description: string;
+  cartonQty: number;
+  piecesPerCarton: number;
+  unitId: number | null;
+  unitCode: string | null;
+  kgPerCarton: number;
+  imageUrl: string | null;
+  /** True when this import created the catalogue row — the client may attach the sheet's picture. */
+  created: boolean;
+};
+
+export type ImportResult = {
+  lines: ImportedLine[];
+  skipped: ParsedPackingList["skipped"];
+  warnings: string[];
+  sheetTotals: ParsedPackingList["sheetTotals"];
+  created: number;
+  matched: number;
+};
+
+/**
+ * Cells in, request lines out — and every item number on the sheet is
+ * in the importer's catalogue afterwards, so the next request is a pick.
+ *
+ * A code already in the catalogue is matched, not duplicated; blanks on
+ * the existing row (unit, pieces, kg) are filled from the sheet, but
+ * nothing already set is overwritten — the register is the importer's,
+ * the sheet is the supplier's. A row with no item number still becomes
+ * a line, just not a catalogue entry.
+ */
+export async function importPackingList(
+  actor: Actor,
+  importerId: number,
+  rows: Cell[][],
+  meta: Meta,
+): Promise<ImportResult> {
+  const parsed = parsePackingList(rows);
+  const warnings: string[] = [];
+  const db = getDb();
+
+  const unitRows = await db.execute<{ id: number; code: string }>(sql`
+    select id, code from wms.measurement_unit where deleted_at is null and is_active
+  `);
+  const units = new Map(unitRows.map((u) => [u.code.toUpperCase(), Number(u.id)]));
+  const unknownUnits = new Set<string>();
+
+  const existing = new Map((await listItems(importerId)).map((it) => [it.code.toUpperCase(), it]));
+  let created = 0;
+  let matched = 0;
+  const lines: ImportedLine[] = [];
+
+  for (const line of parsed.lines) {
+    const alias = unitAlias(line.unitCode);
+    const unitId = alias ? (units.get(alias) ?? null) : null;
+    if (alias && unitId === null) unknownUnits.add(alias);
+
+    const code = normaliseItemCode(line.code);
+    let itemId: number | null = null;
+    let imageUrl: string | null = null;
+    let wasCreated = false;
+
+    if (code !== null) {
+      const have = existing.get(code);
+      if (have) {
+        matched += 1;
+        itemId = have.id;
+        imageUrl = have.imageUrl;
+        const fill: Partial<ItemSaveInput> = {};
+        if (have.unitId === null && unitId !== null) fill.unitId = unitId;
+        if (have.piecesPerCarton === null) fill.piecesPerCarton = line.piecesPerCarton;
+        if (have.kgPerCarton === null) fill.kgPerCarton = line.kgPerCarton;
+        if (Object.keys(fill).length) await updateItem(actor, importerId, have.id, fill, meta);
+      } else {
+        const row = await createItem(
+          actor,
+          importerId,
+          {
+            code,
+            description: line.description,
+            unitId,
+            piecesPerCarton: line.piecesPerCarton,
+            kgPerCarton: line.kgPerCarton,
+          },
+          meta,
+        );
+        created += 1;
+        wasCreated = true;
+        itemId = row.id;
+        existing.set(code, row);
+      }
+    }
+
+    lines.push({
+      row: line.row,
+      itemId,
+      itemCode: code,
+      description: line.description,
+      cartonQty: line.cartonQty,
+      piecesPerCarton: line.piecesPerCarton,
+      unitId,
+      unitCode: unitId === null ? null : alias,
+      kgPerCarton: line.kgPerCarton,
+      imageUrl,
+      created: wasCreated,
+    });
+  }
+
+  if (unknownUnits.size) {
+    warnings.push(
+      `Unit${unknownUnits.size > 1 ? "s" : ""} not in the register, left blank on those lines: ${[...unknownUnits].join(", ")}`,
+    );
+  }
+  if (parsed.lines.length === 0 && parsed.skipped.length === 0) warnings.push("The sheet has no item rows under its header");
+
+  return { lines, skipped: parsed.skipped, warnings, sheetTotals: parsed.sheetTotals, created, matched };
 }
 
 export async function updateItem(
@@ -1309,13 +1451,27 @@ export async function updateItem(
   if (input.unitId !== undefined) sets.push(sql`measurement_unit_id = ${input.unitId}`);
   if (input.piecesPerCarton !== undefined) sets.push(sql`pieces_per_carton = ${input.piecesPerCarton}`);
   if (input.kgPerCarton !== undefined) sets.push(sql`kg_per_carton = ${input.kgPerCarton}`);
-  if (input.hsnCode !== undefined) sets.push(sql`hsn_code = ${input.hsnCode}`);
   if (input.isActive !== undefined) sets.push(sql`is_active = ${input.isActive}`);
-  const rows = await getDb().execute<{ id: number }>(sql`
-    update wms.item set ${sql.join(sets, sql`, `)}
-     where id = ${id} and importer_id = ${importerId} and deleted_at is null
-    returning id
-  `);
+  if (input.code !== undefined) {
+    const code = normaliseItemCode(input.code);
+    if (code === null) {
+      throw new InwardError("VALIDATION_FAILED", "An item keeps its code", { code: "Required" });
+    }
+    sets.push(sql`code = ${code}`);
+  }
+  let rows: { id: number }[];
+  try {
+    rows = await getDb().execute<{ id: number }>(sql`
+      update wms.item set ${sql.join(sets, sql`, `)}
+       where id = ${id} and importer_id = ${importerId} and deleted_at is null
+      returning id
+    `);
+  } catch (error) {
+    if (!isUnique(error)) throw error;
+    throw new InwardError("VALIDATION_FAILED", "That item code is already in the catalogue", {
+      code: "Another item already has this code",
+    });
+  }
   if (!rows[0]) throw new InwardError("NOT_FOUND", "No such item");
   await auditQuietly({
     action: "item.updated",
