@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Actor, Grant } from "@/lib/auth/guard";
+import { actingImporterId } from "@/lib/inward/http";
 import { canDo, scopeFor, sniffDocument, submitRequirements, InwardError } from "@/lib/inward/ops";
 import {
   containerNumber,
@@ -138,6 +139,31 @@ describe("scope", () => {
   });
 });
 
+describe("writing on behalf of an importer", () => {
+  const own: Grant = { permission: "inward.request.create", scope: "OWN", warehouseIds: [], importerIds: [] } as Grant;
+  const all: Grant = { permission: "inward.request.create", scope: "ALL", warehouseIds: [], importerIds: [] } as Grant;
+
+  it("an importer writes for their own company — the body cannot redirect them", () => {
+    expect(actingImporterId(importer, own, 99)).toBe(12);
+    expect(actingImporterId(importer, all, 99)).toBe(12);
+  });
+
+  it("a platform user with no company of their own names the importer", () => {
+    expect(actingImporterId(admin, all, 7)).toBe(7);
+    expect(actingImporterId(admin, all, "7")).toBe(7);
+    expect(actingImporterId(admin, all, undefined)).toBeNull();
+    expect(actingImporterId(admin, all, "zero")).toBeNull();
+    expect(actingImporterId(admin, all, -1)).toBeNull();
+  });
+
+  it("naming an importer needs ALL — a narrower grant without a binding gets nothing", () => {
+    const stray = actorWith([{ role: "STORAGE_MANAGER", warehouseId: 5 }], []);
+    const wh: Grant = { permission: "inward.request.create", scope: "WAREHOUSE", warehouseIds: [5], importerIds: [] } as Grant;
+    expect(actingImporterId(stray, wh, 7)).toBeNull();
+    expect(actingImporterId(stray, own, 7)).toBeNull();
+  });
+});
+
 describe("submit", () => {
   it("names every missing field, so the form can jump to it", () => {
     const missing = submitRequirements({
@@ -267,6 +293,17 @@ describe("the routes", () => {
     const decision = code("src/app/api/v1/inward-requests/[id]/decision/route.ts");
     expect(decision).toMatch(/requirePermission\("inward\.request\.approve"/);
     expect(decision).not.toMatch(/inward\.request\.update/);
+  });
+
+  it("a platform user may create, propose and read lookups for a named importer", () => {
+    for (const path of [
+      "src/app/api/v1/inward-requests/route.ts",
+      "src/app/api/v1/inward-requests/propose/route.ts",
+      "src/app/api/v1/inward-requests/lookups/route.ts",
+    ]) {
+      expect(code(path), path).toMatch(/actingImporterId\(actor, grant,/);
+    }
+    expect(code("src/app/admin/inward/new/page.tsx")).toMatch(/guard\.grant\.scope === "ALL"/);
   });
 
   it("the dock never lists a draft", () => {

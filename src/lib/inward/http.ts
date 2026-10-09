@@ -3,8 +3,26 @@ import "server-only";
 import type { NextRequest } from "next/server";
 
 import { fail, toResponse } from "@/lib/api/respond";
+import { importerIdOf, type Actor, type Grant } from "@/lib/auth/guard";
 import { clientIp } from "@/lib/auth/ratelimit";
 import { InwardError, type Meta } from "@/lib/inward/ops";
+
+/**
+ * Whose importer a write is for.
+ *
+ * An importer-side actor is bound to one company and that is the only
+ * answer — nothing in the request can redirect them. A platform actor
+ * (grant at ALL, no company of their own) names the importer, in the
+ * body or as `?importerId=`. Anyone else gets null, which every caller
+ * turns into "not linked to an importer".
+ */
+export function actingImporterId(actor: Actor, grant: Grant, wanted: unknown): number | null {
+  const own = importerIdOf(actor);
+  if (own !== null || grant.scope !== "ALL") return own;
+  if (typeof wanted === "number") return Number.isInteger(wanted) && wanted > 0 ? wanted : null;
+  if (typeof wanted === "string" && wanted !== "") return idFrom(wanted);
+  return null;
+}
 
 /** The three things every inward route stamps on its audit rows. */
 export function metaOf(request: NextRequest, requestId: string): Meta {

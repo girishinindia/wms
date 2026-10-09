@@ -488,9 +488,16 @@ export async function getRequest(actor: Actor, scope: InwardScope, id: number) {
 
 // ── Lookups: everything the form needs, in one call ───────────────
 
-export async function lookupsFor(importerId: number) {
+/**
+ * `importerId` is whose request is being written. An importer-side
+ * actor always has one; a platform actor (SUPER_ADMIN at ALL) has none
+ * of their own and names one — so for them `chooser` adds the list of
+ * active importers to pick from, and until one is picked the catalogue
+ * and the "last time" defaults are simply empty.
+ */
+export async function lookupsFor(importerId: number | null, options: { chooser?: boolean } = {}) {
   const db = getDb();
-  const [warehouses, containerTypes, ports, units, transporters, vehicles, drivers, items, last] =
+  const [warehouses, containerTypes, ports, units, transporters, vehicles, drivers, items, last, importer, importers] =
     await Promise.all([
       db.execute<Record<string, string>>(sql`
         select w.id, w.code, w.name, c.name as city
@@ -554,7 +561,25 @@ export async function lookupsFor(importerId: number) {
          order by coalesce(submitted_at, created_at) desc
          limit 1
       `),
+      importerId === null
+        ? Promise.resolve([] as Record<string, string>[])
+        : db.execute<Record<string, string>>(sql`
+            select id, code, company_name as name, status::text as status from wms.importer
+             where id = ${importerId} and deleted_at is null
+          `),
+      options.chooser
+        ? db.execute<Record<string, string>>(sql`
+            select i.id, i.code, i.company_name as name
+              from wms.importer i
+             where i.deleted_at is null and i.status = 'ACTIVE'
+             order by i.company_name
+             limit 500
+          `)
+        : Promise.resolve(null),
     ]);
+  if (importerId !== null && importer[0] === undefined) {
+    throw new InwardError("NOT_FOUND", "No such importer");
+  }
 
   const vehicleTypes = await db.execute<Record<string, string>>(sql`
     select id, code, name from wms.vehicle_type where deleted_at is null and is_active order by name
@@ -574,6 +599,16 @@ export async function lookupsFor(importerId: number) {
   const dByT = byTransporter([...drivers]);
 
   return {
+    /** Whose request — null until a platform user picks one. */
+    importer:
+      importer[0] === undefined
+        ? null
+        : { id: Number(importer[0].id), code: importer[0].code, name: importer[0].name, status: importer[0].status },
+    /** Only for a platform user: the importers they may write for. */
+    importers:
+      importers === null
+        ? null
+        : importers.map((i) => ({ id: Number(i.id), code: i.code, name: i.name })),
     warehouses: warehouses.map((w) => ({ id: Number(w.id), code: w.code, name: w.name, city: w.city ?? null })),
     containerTypes: containerTypes.map((c) => ({
       id: Number(c.id),

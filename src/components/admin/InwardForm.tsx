@@ -103,7 +103,7 @@ function fromDetail(d: Detail | null, lookups: Lookups): Draft {
   };
 }
 
-function body(d: Draft) {
+function body(d: Draft, importerId: number | null) {
   const items = d.items
     .filter((l) => l.description.trim() !== "" || l.cartonQty !== "" || l.itemId !== null)
     .map((l) => ({
@@ -116,6 +116,9 @@ function body(d: Draft) {
       imageUrl: l.imageUrl,
     }));
   return {
+    // Only a platform user names the importer; for everyone else the
+    // server takes it from their role binding and ignores this.
+    ...(importerId !== null ? { importerId } : {}),
     warehouseId: d.warehouseId,
     containerNumber: d.containerNumber.trim().toUpperCase() || null,
     containerTypeId: d.containerTypeId,
@@ -303,6 +306,7 @@ function AddDialog({
   lookups,
   transporterId,
   warehouseId,
+  onBehalfOf,
   onClose,
   onAdded,
 }: {
@@ -311,6 +315,8 @@ function AddDialog({
   lookups: Lookups;
   transporterId: number | null;
   warehouseId: number | null;
+  /** The importer a platform user is writing for; null for an importer-side user. */
+  onBehalfOf: number | null;
   onClose: () => void;
   onAdded: (kind: AddKind, id: number, row?: Lookups["items"][number]) => void;
 }) {
@@ -330,7 +336,8 @@ function AddDialog({
     setFields({});
     let result;
     if (kind === "item") {
-      result = await api<Lookups["items"][number] & { usedOn: number; isActive: boolean }>("/items", {
+      const path = onBehalfOf !== null ? `/items?importerId=${onBehalfOf}` : "/items";
+      result = await api<Lookups["items"][number] & { usedOn: number; isActive: boolean }>(path, {
         body: {
           description: f.description ?? "",
           unitId: f.unitId ? Number(f.unitId) : null,
@@ -372,7 +379,9 @@ function AddDialog({
                 licenceNumber: f.licenceNumber ?? "",
                 aadhaarNumber: f.aadhaarNumber ?? "",
               };
-      result = await api<{ id: number }>("/inward-requests/propose", { body: payload });
+      result = await api<{ id: number }>("/inward-requests/propose", {
+        body: onBehalfOf !== null ? { ...payload, importerId: onBehalfOf } : payload,
+      });
       if (result.ok) {
         onAdded(kind, result.data.id);
         return;
@@ -521,6 +530,13 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
 
   const transporter = lookups.transporters.find((t) => t.id === d.transporterId) ?? null;
 
+  // A platform user (SUPER_ADMIN) has no company of their own and writes
+  // on behalf of one: `importers` is the list to choose from, `importer`
+  // the choice. For an importer-side user both are settled server-side.
+  const chooser = lookups.importers !== null;
+  const onBehalfOf = chooser ? (lookups.importer?.id ?? null) : null;
+  const importerPicked = !chooser || onBehalfOf !== null;
+
   const totals = useMemo(() => {
     let cartons = 0;
     let pieces = 0;
@@ -535,18 +551,19 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
   }, [d.items]);
 
   const refreshLookups = useCallback(async () => {
-    const r = await api<Lookups>("/inward-requests/lookups", { method: "GET" });
+    const path = onBehalfOf !== null ? `/inward-requests/lookups?importerId=${onBehalfOf}` : "/inward-requests/lookups";
+    const r = await api<Lookups>(path, { method: "GET" });
     if (r.ok) setLookups(r.data);
     return r.ok ? r.data : null;
-  }, []);
+  }, [onBehalfOf]);
 
   const save = useCallback(async (): Promise<number | null> => {
     setBusy(true);
     setError(null);
     setFields({});
     const r = d.id
-      ? await api<Detail>(`/inward-requests/${d.id}`, { method: "PUT", body: body(d) })
-      : await api<Detail>("/inward-requests", { body: body(d) });
+      ? await api<Detail>(`/inward-requests/${d.id}`, { method: "PUT", body: body(d, onBehalfOf) })
+      : await api<Detail>("/inward-requests", { body: body(d, onBehalfOf) });
     setBusy(false);
     if (!r.ok) {
       setError(r.error.message);
@@ -555,7 +572,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
     }
     patch({ id: r.data.id });
     return r.data.id;
-  }, [d]);
+  }, [d, onBehalfOf]);
 
   const saveDraft = async () => {
     const id = await save();
@@ -587,7 +604,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
     const onKey = (e: globalThis.KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        void saveDraft();
+        if (importerPicked) void saveDraft();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -665,6 +682,39 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
           </Card>
         ) : null}
 
+        {/* ── 0. On behalf of — platform users only ── */}
+        {chooser ? (
+          <Card className="p-5">
+            <h2 className="mb-4 text-base font-semibold text-verdigris-50">Importer</h2>
+            {existing ? (
+              <p className="text-sm text-verdigris-100">
+                {existing.importer.name} <span className="font-mono text-verdigris-200/55">{existing.importer.code}</span>
+              </p>
+            ) : (
+              <>
+                <label className={label} htmlFor="importer">
+                  Whose goods are these?
+                </label>
+                <Combo
+                  id="importer"
+                  placeholder="Choose the importer this request is for"
+                  value={onBehalfOf}
+                  onChange={(id) => {
+                    if (id !== null) router.replace(`/admin/inward/new?importerId=${id}`);
+                  }}
+                  options={(lookups.importers ?? []).map((i) => ({ id: i.id, label: i.name, sub: i.code }))}
+                />
+                {!importerPicked ? (
+                  <p className="mt-2 text-xs text-verdigris-200/55">
+                    Pick the importer first — the catalogue and the carrier register fill in for them.
+                  </p>
+                ) : null}
+              </>
+            )}
+          </Card>
+        ) : null}
+
+        <fieldset disabled={!importerPicked} className="min-w-0 space-y-6 disabled:opacity-60">
         {/* ── 1. Where & what ── */}
         <Card className="p-5">
           <div className="mb-4 flex items-center justify-between">
@@ -981,6 +1031,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
           <h2 className="mb-1 text-base font-semibold text-verdigris-50">4 · Documents (optional)</h2>
           <Documents draftId={d.id} existing={existing} onNeedSave={save} />
         </Card>
+        </fieldset>
 
         {error ? (
           <Card className="border-rose-400/30 p-4">
@@ -1003,6 +1054,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
         <Card className="p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-verdigris-300">Summary</p>
           <dl className="mt-3 space-y-2 text-sm">
+            {chooser ? <Row k="Importer" v={existing?.importer.name ?? lookups.importer?.name} /> : null}
             <Row k="Warehouse" v={lookups.warehouses.find((w) => w.id === d.warehouseId)?.name} />
             <Row k="Container" v={d.containerNumber || undefined} mono />
             <Row k="Expected" v={d.expectedArrival || undefined} />
@@ -1013,10 +1065,10 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
             <Row k="Weight" v={totals.kg ? `${fmt(totals.kg)} kg` : undefined} />
           </dl>
           <div className="mt-5 flex flex-col gap-2">
-            <button type="button" disabled={busy} onClick={submit} className={primary}>
+            <button type="button" disabled={busy || !importerPicked} onClick={submit} className={primary}>
               {busy ? "Saving…" : "Submit to warehouse"}
             </button>
-            <button type="button" disabled={busy} onClick={saveDraft} className={secondary}>
+            <button type="button" disabled={busy || !importerPicked} onClick={saveDraft} className={secondary}>
               Save as draft
             </button>
             <p className="text-center text-[11px] text-verdigris-200/40">⌘S saves the draft</p>
@@ -1031,6 +1083,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
           lookups={lookups}
           transporterId={d.transporterId}
           warehouseId={d.warehouseId}
+          onBehalfOf={onBehalfOf}
           onClose={() => setAdding(null)}
           onAdded={async (kind, id, row) => {
             const line = adding.line;

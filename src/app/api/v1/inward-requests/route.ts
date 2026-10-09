@@ -1,8 +1,8 @@
 import { type NextRequest } from "next/server";
 
 import { fail, fieldsFrom, handler, ok } from "@/lib/api/respond";
-import { importerIdOf, requirePermission, requireVerifiedImporter } from "@/lib/auth/guard";
-import { idFrom, jsonBody, metaOf, respondError } from "@/lib/inward/http";
+import { requirePermission, requireVerifiedImporter } from "@/lib/auth/guard";
+import { actingImporterId, jsonBody, metaOf, respondError } from "@/lib/inward/http";
 import { createRequest, getRequest, listRequests, scopeFor } from "@/lib/inward/ops";
 import { inwardListQuerySchema, inwardSaveSchema } from "@/lib/validation/api-inward";
 
@@ -45,13 +45,11 @@ export async function POST(request: NextRequest) {
       }
       // Whose request: the actor's own company, or — for a platform
       // user — the importer named in the body.
-      let importerId = importerIdOf(actor);
-      if (grant.scope === "ALL") {
-        const wanted = (body as { importerId?: unknown }).importerId;
-        importerId = typeof wanted === "number" ? idFrom(String(wanted)) : importerId;
-      }
+      const importerId = actingImporterId(actor, grant, (body as { importerId?: unknown }).importerId);
       if (importerId === null) {
-        return fail("VALIDATION_FAILED", "Which importer?", requestId, { fields: { importerId: "Required" } });
+        return grant.scope === "ALL"
+          ? fail("VALIDATION_FAILED", "Which importer?", requestId, { fields: { importerId: "Required" } })
+          : fail("FORBIDDEN", "You are not linked to an importer", requestId);
       }
       const id = await createRequest(actor, importerId, parsed.data, metaOf(request, requestId));
       const scope = scopeFor(actor, grant, { importerId });

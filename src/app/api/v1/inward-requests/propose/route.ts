@@ -1,8 +1,8 @@
 import { type NextRequest } from "next/server";
 
 import { fail, fieldsFrom, handler, ok } from "@/lib/api/respond";
-import { importerIdOf, requireVerifiedImporter } from "@/lib/auth/guard";
-import { jsonBody, metaOf, respondError } from "@/lib/inward/http";
+import { requireVerifiedImporter } from "@/lib/auth/guard";
+import { actingImporterId, jsonBody, metaOf, respondError } from "@/lib/inward/http";
 import { propose } from "@/lib/inward/ops";
 import { proposeSchema } from "@/lib/validation/api-inward";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -24,11 +24,16 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   return handler(async ({ requestId }) => {
     try {
-      const { actor } = await requireVerifiedImporter("inward.request.create", { entityType: "inward_request" });
-      const importerId = importerIdOf(actor);
-      if (importerId === null) return fail("FORBIDDEN", "You are not linked to an importer", requestId);
+      const { actor, grant } = await requireVerifiedImporter("inward.request.create", { entityType: "inward_request" });
       const body = await jsonBody(request);
       if (body === undefined) return fail("VALIDATION_FAILED", "Expected a JSON body", requestId);
+      // A platform user proposes on behalf of the importer named in the body.
+      const importerId = actingImporterId(actor, grant, (body as { importerId?: unknown }).importerId);
+      if (importerId === null) {
+        return grant.scope === "ALL"
+          ? fail("VALIDATION_FAILED", "Which importer?", requestId, { fields: { importerId: "Required" } })
+          : fail("FORBIDDEN", "You are not linked to an importer", requestId);
+      }
       const parsed = proposeSchema.safeParse(body);
       if (!parsed.success) {
         return fail("VALIDATION_FAILED", "Please check the highlighted fields", requestId, {

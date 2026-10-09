@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 
 import InwardForm from "@/components/admin/InwardForm";
 import { Denied, PageHeader } from "@/components/admin/ui";
-import { importerGateFor, pageGuard } from "@/lib/auth/guard";
+import { importerGateFor, importerIdOf, pageGuard } from "@/lib/auth/guard";
 import { getRequest, InwardError, lookupsFor, scopeFor } from "@/lib/inward/ops";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,10 @@ export default async function EditInwardPage({ params }: { params: Promise<{ id:
   // A request that is no longer the importer's to edit is read, not edited.
   if (!detail.can.edit) redirect(`/admin/inward/${id}`);
 
-  const lookups = await lookupsFor(detail.importer.id);
+  // A platform user edits on the importer's behalf: same picker set the
+  // importer would see, with the importer already fixed by the row.
+  const chooser = importerIdOf(guard.actor) === null && guard.grant.scope === "ALL";
+  const lookups = await lookupsFor(detail.importer.id, { chooser });
   return (
     <>
       <PageHeader title={`Edit ${detail.code}`} subtitle={`${detail.statusLabel} · ${detail.warehouse.name}`} />

@@ -45,6 +45,8 @@ export default function InwardTable({
   const params = useSearchParams();
   const [search, setSearch] = useState(q);
   const dock = side === "warehouse";
+  // A platform user sees every importer and every site, so both columns.
+  const both = side === "all";
 
   const go = (next: { status?: string | null; q?: string }) => {
     const p = new URLSearchParams(params.toString());
@@ -72,7 +74,7 @@ export default function InwardTable({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={dock ? "Number, container or importer…" : "Number or container…"}
+            placeholder={dock || both ? "Number, container or importer…" : "Number or container…"}
             className="w-full rounded-xl border border-verdigris-300/15 bg-ink-900/60 px-4 py-2.5 text-sm text-verdigris-50 placeholder:text-verdigris-200/35 focus:outline-none focus:ring-2 focus:ring-patina/25"
             aria-label="Search inward requests"
           />
@@ -126,6 +128,7 @@ export default function InwardTable({
                 <tr>
                   <th className="px-4 py-3">Number</th>
                   <th className="px-4 py-3">Container</th>
+                  {both ? <th className="px-4 py-3">Importer</th> : null}
                   <th className="px-4 py-3">{dock ? "Importer" : "Warehouse"}</th>
                   <th className="px-4 py-3">Expected</th>
                   <th className="px-4 py-3 text-right">Cartons</th>
@@ -142,6 +145,7 @@ export default function InwardTable({
                       </Link>
                     </td>
                     <td className="px-4 py-3 font-mono text-verdigris-50">{r.containerNumber ?? "—"}</td>
+                    {both ? <td className="px-4 py-3 text-verdigris-100">{r.importer.name}</td> : null}
                     <td className="px-4 py-3 text-verdigris-100">{dock ? r.importer.name : r.warehouse.name}</td>
                     <td className="px-4 py-3 text-verdigris-200/70">{r.expectedArrival ?? "—"}</td>
                     <td className="px-4 py-3 text-right text-verdigris-100">{fmt(r.totals.cartons)}</td>
