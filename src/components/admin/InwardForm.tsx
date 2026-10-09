@@ -1,9 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { createPortal } from "react-dom";
 
 import { api } from "@/lib/api/client";
+import { addDays, arrivalProblem, earliestArrival, prettyDate } from "@/lib/inward/arrival";
 import type { ImportResult } from "@/lib/inward/ops";
 import { acceptsPackingFile, readPackingFile, type SheetPictures } from "@/lib/inward/sheet-reader";
 import { useToast } from "@/components/Toast";
@@ -138,11 +140,18 @@ const input =
   "w-full rounded-xl border border-verdigris-300/15 bg-ink-900/60 px-3.5 py-2.5 text-[15px] text-verdigris-50 placeholder:text-verdigris-200/35 focus:outline-none focus:ring-2 focus:ring-patina/25 disabled:opacity-50";
 const cell =
   "w-full rounded-lg border border-verdigris-300/10 bg-ink-900/50 px-2.5 py-1.5 text-sm text-verdigris-50 focus:outline-none focus:ring-2 focus:ring-patina/25";
+/** Number cells: no spinner arrows eating the width of a narrow column. */
+const num = "px-2 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
 const label = "mb-1.5 block text-xs font-semibold uppercase tracking-[0.1em] text-verdigris-300";
 const primary =
   "rounded-xl bg-verdigris-400 px-5 py-2.5 text-sm font-semibold text-ink-900 transition-colors hover:bg-patina disabled:opacity-50";
 const secondary =
   "rounded-xl border border-verdigris-300/20 px-4 py-2.5 text-sm text-verdigris-100 hover:border-verdigris-300/45 disabled:opacity-50";
+
+/** Focus a field once the render that enables it has landed. */
+function focusSoon(id: string) {
+  setTimeout(() => document.getElementById(id)?.focus(), 60);
+}
 
 function Err({ text }: { text?: string }) {
   return text ? <p className="mt-1 text-xs text-rose-300">{text}</p> : null;
@@ -178,7 +187,9 @@ function Combo({
   const [typed, setTyped] = useState("");
   const [cursor, setCursor] = useState(0);
   const box = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
   const chosen = options.find((o) => o.id === value) ?? null;
+  const at = useFloatingList(box, open);
 
   const q = typed.trim().toLowerCase();
   const matches = q
@@ -187,11 +198,19 @@ function Combo({
 
   useEffect(() => {
     const away = (e: MouseEvent) => {
-      if (!box.current?.contains(e.target as Node)) setOpen(false);
+      // The list lives outside the box (it floats over the page), so a
+      // press inside either one is not "away".
+      const t = e.target as Node;
+      if (!box.current?.contains(t) && !list.current?.contains(t)) setOpen(false);
     };
     document.addEventListener("mousedown", away);
     return () => document.removeEventListener("mousedown", away);
   }, []);
+
+  // Keep the keyboard cursor in view as it walks a long list.
+  useEffect(() => {
+    if (open) list.current?.querySelector(`[data-index="${cursor}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [cursor, open]);
 
   const pick = (o: ComboOption) => {
     onChange(o.id);
@@ -226,6 +245,8 @@ function Combo({
         id={id}
         disabled={disabled}
         value={open ? typed : (chosen?.label ?? "")}
+        // A narrow column cuts a long code short; hovering shows it whole.
+        title={chosen && !open ? [chosen.label, chosen.sub].filter(Boolean).join(" — ") : undefined}
         placeholder={placeholder}
         autoComplete="off"
         onFocus={() => {
@@ -253,15 +274,19 @@ function Combo({
           ✕
         </button>
       ) : null}
-      {open && !disabled ? (
+      {open && !disabled && at
+        ? createPortal(
         <div
+          ref={list}
           id={`${id}-listbox`}
           role="listbox"
-          className="absolute z-30 mt-1 max-h-72 w-full overflow-auto rounded-xl border border-verdigris-300/15 bg-ink-850 p-1 shadow-2xl"
+          style={{ position: "fixed", left: at.left, top: at.top, bottom: at.bottom, width: at.width, maxHeight: at.maxHeight }}
+          className="z-[55] overflow-auto rounded-xl border border-verdigris-300/15 bg-ink-850 p-1 shadow-2xl"
         >
           {matches.map((o, i) => (
             <button
               key={o.id}
+              data-index={i}
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => pick(o)}
@@ -295,15 +320,157 @@ function Combo({
               + {q ? `Add "${typed.trim()}"` : addLabel}
             </button>
           ) : null}
-        </div>
-      ) : null}
+        </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
+}
+
+/**
+ * Where a combobox's list goes. It floats over the page (fixed, in a
+ * portal) rather than inside the field's box, so a scrolling table or a
+ * card edge can never clip it to one row. Opens downward, or upward when
+ * the field sits near the bottom of the window; follows the field when
+ * the page scrolls.
+ */
+function useFloatingList(anchor: RefObject<HTMLDivElement | null>, open: boolean) {
+  const [at, setAt] = useState<{
+    left: number;
+    width: number;
+    top?: number;
+    bottom?: number;
+    maxHeight: number;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setAt(null);
+      return;
+    }
+    const place = () => {
+      const r = anchor.current?.getBoundingClientRect();
+      if (!r) return;
+      const gap = 4;
+      const margin = 8;
+      const below = window.innerHeight - r.bottom - gap - margin;
+      const above = r.top - gap - margin;
+      // Wide enough to read a code and its description, never off-screen.
+      const width = Math.min(Math.max(r.width, 288), window.innerWidth - 2 * margin);
+      const left = Math.max(margin, Math.min(r.left, window.innerWidth - width - margin));
+      const up = below < 240 && above > below;
+      setAt(
+        up
+          ? { left, width, bottom: window.innerHeight - r.top + gap, maxHeight: Math.min(320, above) }
+          : { left, width, top: r.bottom + gap, maxHeight: Math.min(320, below) },
+      );
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [open, anchor]);
+
+  return at;
 }
 
 // ── Inline "add new" dialogs ──────────────────────────────────────
 
 type AddKind = "transporter" | "vehicle" | "driver" | "item";
+
+/** How a field cleans what is typed into it, as it is typed. */
+type Shape = "text" | "upper" | { digits: number } | "number";
+
+function shaped(raw: string, shape: Shape): string {
+  if (shape === "upper") return raw.toUpperCase();
+  if (typeof shape === "object") return raw.replace(/\D/g, "").slice(0, shape.digits);
+  return raw;
+}
+
+/**
+ * One labelled field of an add-new dialog.
+ *
+ * Deliberately a top-level component. Declared inside the dialog, it was
+ * a NEW component type on every render, so React threw the input away
+ * and built a fresh one on each keystroke — the cursor fell out after
+ * every letter.
+ */
+function AddField({
+  k,
+  l,
+  ph,
+  value,
+  onChange,
+  error,
+  shape = "text",
+  autoFocus,
+}: {
+  k: string;
+  l: string;
+  ph?: string;
+  value: string;
+  onChange: (k: string, v: string) => void;
+  error?: string;
+  shape?: Shape;
+  autoFocus?: boolean;
+}) {
+  const digits = typeof shape === "object";
+  return (
+    <div>
+      <label className={label} htmlFor={`add-${k}`}>
+        {l}
+      </label>
+      <input
+        id={`add-${k}`}
+        type={shape === "number" ? "number" : digits ? "tel" : "text"}
+        inputMode={digits ? "numeric" : shape === "number" ? "decimal" : undefined}
+        maxLength={digits ? shape.digits : undefined}
+        autoFocus={autoFocus}
+        autoComplete="off"
+        value={value}
+        placeholder={ph}
+        onChange={(e) => onChange(k, shaped(e.target.value, shape))}
+        className={input}
+      />
+      <Err text={error} />
+    </div>
+  );
+}
+
+/** Caught before anything is sent, so a typo costs no round trip. */
+function precheck(kind: AddKind, f: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  const need = (k: string, msg: string) => {
+    if (!(f[k] ?? "").trim()) out[k] = msg;
+  };
+  const mobile = (k: string) => {
+    const v = f[k] ?? "";
+    if (v && !/^[6-9][0-9]{9}$/.test(v)) out[k] = "Enter a 10-digit mobile number";
+  };
+  if (kind === "transporter") {
+    need("name", "Name the transporter");
+    need("contactPerson", "Who should the dock call?");
+    need("contactMobile", "Enter a 10-digit mobile number");
+    mobile("contactMobile");
+  } else if (kind === "vehicle") {
+    need("registrationNumber", "Enter the vehicle number");
+    need("vehicleTypeId", "Choose the vehicle type");
+  } else if (kind === "driver") {
+    need("name", "Name the driver");
+    need("mobile", "Enter a 10-digit mobile number");
+    mobile("mobile");
+    need("licenceNumber", "Enter the licence number");
+    const a = f.aadhaarNumber ?? "";
+    if (a && a.length !== 12) out.aadhaarNumber = "Aadhaar is 12 digits";
+  } else {
+    need("description", "Describe the item");
+  }
+  return out;
+}
 
 function AddDialog({
   kind,
@@ -337,7 +504,22 @@ function AddDialog({
   });
   const set = (k: string, v: string) => setF((s) => ({ ...s, [k]: v }));
 
+  // Esc closes, wherever the cursor is.
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   const submit = async () => {
+    const early = precheck(kind, f);
+    if (Object.keys(early).length) {
+      setFields(early);
+      setError(null);
+      return;
+    }
     setBusy(true);
     setError(null);
     setFields({});
@@ -399,21 +581,18 @@ function AddDialog({
     setFields(result.error.fields ?? {});
   };
 
-  const Text = ({ k, l, ph, type = "text" }: { k: string; l: string; ph?: string; type?: string }) => (
-    <div>
-      <label className={label} htmlFor={`add-${k}`}>
-        {l}
-      </label>
-      <input
-        id={`add-${k}`}
-        type={type}
-        value={f[k] ?? ""}
-        placeholder={ph}
-        onChange={(e) => set(k, e.target.value)}
-        className={input}
-      />
-      <Err text={fields[k]} />
-    </div>
+  // Every field shares these; `first` is where the cursor starts.
+  const field = (k: string, l: string, opts: { ph?: string; shape?: Shape; first?: boolean } = {}) => (
+    <AddField
+      k={k}
+      l={l}
+      ph={opts.ph}
+      shape={opts.shape}
+      autoFocus={opts.first}
+      value={f[k] ?? ""}
+      onChange={set}
+      error={fields[k]}
+    />
   );
 
   const title = { transporter: "New transporter", vehicle: "New vehicle", driver: "New driver", item: "New item" }[kind];
@@ -443,16 +622,16 @@ function AddDialog({
           {kind === "transporter" ? (
             <>
               <div className="sm:col-span-2">
-                <Text k="name" l="Transporter name" />
+                {field("name", "Transporter name", { first: true })}
               </div>
-              <Text k="contactPerson" l="Contact person" />
-              <Text k="contactMobile" l="Mobile" ph="10 digits" />
-              <Text k="gstin" l="GSTIN (optional)" />
-              <Text k="address" l="Address (optional)" />
+              {field("contactPerson", "Contact person")}
+              {field("contactMobile", "Mobile", { ph: "10 digits", shape: { digits: 10 } })}
+              {field("gstin", "GSTIN (optional)", { shape: "upper" })}
+              {field("address", "Address (optional)")}
             </>
           ) : kind === "vehicle" ? (
             <>
-              <Text k="registrationNumber" l="Vehicle number" ph="MH12AB1234" />
+              {field("registrationNumber", "Vehicle number", { ph: "MH12AB1234", shape: "upper", first: true })}
               <div>
                 <label className={label} htmlFor="add-vehicleTypeId">
                   Vehicle type
@@ -472,20 +651,20 @@ function AddDialog({
                 </select>
                 <Err text={fields.vehicleTypeId} />
               </div>
-              <Text k="capacityKg" l="Capacity kg (optional)" type="number" />
-              <Text k="rcNumber" l="RC number (optional)" />
+              {field("capacityKg", "Capacity kg (optional)", { shape: "number" })}
+              {field("rcNumber", "RC number (optional)", { shape: "upper" })}
             </>
           ) : kind === "driver" ? (
             <>
-              <Text k="name" l="Driver name" />
-              <Text k="mobile" l="Mobile" ph="10 digits" />
-              <Text k="licenceNumber" l="Licence number" />
-              <Text k="aadhaarNumber" l="Aadhaar (optional)" ph="12 digits" />
+              {field("name", "Driver name", { first: true })}
+              {field("mobile", "Mobile", { ph: "10 digits", shape: { digits: 10 } })}
+              {field("licenceNumber", "Licence number", { ph: "GJ0520190012345", shape: "upper" })}
+              {field("aadhaarNumber", "Aadhaar (optional)", { ph: "12 digits", shape: { digits: 12 } })}
             </>
           ) : (
             <>
-              <Text k="code" l="Item code" ph="As on your packing list — blank to auto-number" />
-              <Text k="description" l="Item description" />
+              {field("code", "Item code", { ph: "As on your packing list — blank to auto-number", shape: "upper", first: true })}
+              {field("description", "Item description")}
               <div>
                 <label className={label} htmlFor="add-unitId">
                   Unit
@@ -499,8 +678,8 @@ function AddDialog({
                   ))}
                 </select>
               </div>
-              <Text k="piecesPerCarton" l="Pieces per carton" type="number" />
-              <Text k="kgPerCarton" l="Kg per carton" type="number" />
+              {field("piecesPerCarton", "Pieces per carton", { shape: "number" })}
+              {field("kgPerCarton", "Kg per carton", { shape: "number" })}
             </>
           )}
           {error ? (
@@ -617,6 +796,18 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [d]);
 
+  // The earliest arrival anyone may enter: tomorrow, India time.
+  const firstArrival = earliestArrival();
+  const setArrival = (v: string) => {
+    patch({ expectedArrival: v });
+    const late = arrivalProblem(v);
+    setFields((f) => {
+      const rest = { ...f };
+      delete rest.expectedArrival;
+      return late ? { ...rest, expectedArrival: late } : rest;
+    });
+  };
+
   const setLine = (i: number, p: Partial<Line>) =>
     setD((s) => ({ ...s, items: s.items.map((l, j) => (j === i ? { ...l, ...p } : l)) }));
 
@@ -704,23 +895,72 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
     }
   };
 
-  // ── A picture for a catalogue item, from the line ──
+  // ── A picture for a goods line ──
   const photoRef = useRef<HTMLInputElement>(null);
+  /** The line (by key) the file chooser was opened for. */
   const photoFor = useRef<number | null>(null);
   const [photoBusy, setPhotoBusy] = useState<number | null>(null);
+
+  /** The photo box was pressed. The chooser opens at once — a browser
+   *  only lets a click open it — and the rest happens once a file is in. */
+  const askPhoto = (l: Line) => {
+    if (l.itemId === null && l.description.trim().length < 2) {
+      toast.error("Pick the item or type what it is first.");
+      document.getElementById(`line-${d.items.indexOf(l)}-item`)?.focus();
+      return;
+    }
+    photoFor.current = l.key;
+    photoRef.current?.click();
+  };
+
+  /** A free-typed line has no catalogue row to hang a picture on, so it
+   *  gets one: saved quietly with an auto-numbered code and the line's
+   *  own figures. Every other free line with the same description is the
+   *  same product, so it is linked too and shows the same picture. */
+  const catalogueFor = async (l: Line): Promise<number | null> => {
+    const r = await api<Lookups["items"][number] & { usedOn: number; isActive: boolean }>(
+      onBehalfOf !== null ? `/items?importerId=${onBehalfOf}` : "/items",
+      {
+        body: {
+          code: "",
+          description: l.description.trim(),
+          unitId: l.unitId,
+          piecesPerCarton: Number(l.piecesPerCarton) > 0 ? Math.round(Number(l.piecesPerCarton)) : null,
+          kgPerCarton: Number(l.kgPerCarton) > 0 ? Number(l.kgPerCarton) : null,
+        },
+      },
+    );
+    if (!r.ok) {
+      toast.error(r.error.message);
+      return null;
+    }
+    const row = r.data;
+    const same = l.description.trim().toLowerCase();
+    setLookups((lk) => ({ ...lk, items: [...lk.items, row] }));
+    setD((s) => ({
+      ...s,
+      items: s.items.map((x) =>
+        x.key === l.key || (x.itemId === null && x.description.trim().toLowerCase() === same) ? { ...x, itemId: row.id } : x,
+      ),
+    }));
+    return row.id;
+  };
 
   /** Add or replace the item's picture straight from the goods line. It
    *  lands on the catalogue row, so every line using that item shows it. */
   const photoPicked = async (file: File) => {
-    const itemId = photoFor.current;
+    const key = photoFor.current;
     photoFor.current = null;
-    if (itemId === null) return;
+    const line = d.items.find((x) => x.key === key);
+    if (!line) return;
     if (!file.type.startsWith("image/")) {
       toast.error("Choose a picture (JPG, PNG or WebP).");
       return;
     }
-    setPhotoBusy(itemId);
+    setPhotoBusy(line.key);
     try {
+      const itemId = line.itemId ?? (await catalogueFor(line));
+      if (itemId === null) return;
       const up = await uploadPicture(itemId, file, onBehalfOf !== null ? `?importerId=${onBehalfOf}` : "");
       if ("error" in up) {
         toast.error(up.error);
@@ -729,7 +969,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
       const url = up.url;
       setD((s) => ({ ...s, items: s.items.map((x) => (x.itemId === itemId ? { ...x, imageUrl: url } : x)) }));
       setLookups((lk) => ({ ...lk, items: lk.items.map((it) => (it.id === itemId ? { ...it, imageUrl: url } : it)) }));
-      toast.success("Picture saved to the catalogue.");
+      toast.success(line.itemId === null ? "Saved to the catalogue with its picture." : "Picture saved to the catalogue.");
     } finally {
       setPhotoBusy(null);
       if (photoRef.current) photoRef.current.value = "";
@@ -893,10 +1133,34 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
               <input
                 id="eta"
                 type="date"
+                min={firstArrival}
                 value={d.expectedArrival}
-                onChange={(e) => patch({ expectedArrival: e.target.value })}
+                onChange={(e) => setArrival(e.target.value)}
                 className={input}
               />
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {[
+                  { n: 1, l: "Tomorrow" },
+                  { n: 3, l: "+3 days" },
+                  { n: 7, l: "+1 week" },
+                ].map((c) => {
+                  const v = addDays(firstArrival, c.n - 1);
+                  return (
+                    <button
+                      key={c.n}
+                      type="button"
+                      onClick={() => setArrival(v)}
+                      className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${
+                        d.expectedArrival === v
+                          ? "border-patina bg-patina/15 text-patina"
+                          : "border-verdigris-300/20 text-verdigris-200/70 hover:border-patina/50 hover:text-patina"
+                      }`}
+                    >
+                      {c.l}
+                    </button>
+                  );
+                })}
+              </div>
               <Err text={fields.expectedArrival} />
             </div>
             <div className="sm:col-span-2">
@@ -1039,20 +1303,23 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
               ))}
             </div>
           ) : null}
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[54rem] text-sm">
-              <thead className="text-left text-[11px] uppercase tracking-[0.1em] text-verdigris-300">
+          {/* Fits the card — no sideways scroll on a laptop. Only a phone-
+              width window scrolls, and the pickers float over the page so
+              nothing here can clip them. */}
+          <div className="max-md:overflow-x-auto">
+            <table className="w-full table-fixed text-sm max-md:min-w-[44rem]">
+              <thead className="text-left text-[11px] uppercase tracking-[0.06em] text-verdigris-300">
                 <tr>
-                  <th className="pb-2 pr-2 w-6">#</th>
-                  <th className="pb-2 pr-2 w-48 min-w-[11rem]">Item</th>
-                  <th className="pb-2 pr-2 min-w-[12rem]">Description</th>
-                  <th className="pb-2 pr-2 w-20 min-w-[5rem]">Cartons</th>
-                  <th className="pb-2 pr-2 w-20 min-w-[5rem]">Pcs/ctn</th>
-                  <th className="pb-2 pr-2 w-[5.5rem] min-w-[5.5rem]">Unit</th>
-                  <th className="pb-2 pr-2 w-20 min-w-[5rem]">Kg/ctn</th>
-                  <th className="pb-2 pr-2 w-[4.5rem] text-right">Pieces</th>
-                  <th className="pb-2 pr-2 w-[4.5rem] text-right">Kg</th>
-                  <th className="pb-2 w-6" />
+                  {/* Item and description share what the number columns leave. */}
+                  <th className="pb-2 pr-2 w-5">#</th>
+                  <th className="pb-2 pr-2">Item</th>
+                  <th className="pb-2 pr-2">Description</th>
+                  <th className="pb-2 pr-1.5 w-[3.75rem]">Ctns</th>
+                  <th className="pb-2 pr-1.5 w-[3.75rem] whitespace-nowrap">Pcs/ctn</th>
+                  <th className="pb-2 pr-1.5 w-[4.25rem]">Unit</th>
+                  <th className="pb-2 pr-1.5 w-[3.75rem] whitespace-nowrap">Kg/ctn</th>
+                  <th className="pb-2 pr-1.5 w-[4.5rem] text-right">Total</th>
+                  <th className="pb-2 w-5" />
                 </tr>
               </thead>
               <tbody>
@@ -1063,28 +1330,34 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                       <td className="py-1 pr-2 pt-[11px] text-verdigris-200/50">{i + 1}</td>
                       <td className="py-1 pr-2">
                         <div className="flex items-center gap-2">
-                          {l.itemId !== null ? (
-                            <button
-                              type="button"
-                              id={`line-${i}-photo`}
-                              title={l.imageUrl ? "Replace the item's picture" : "Add a picture of this item"}
-                              disabled={photoBusy === l.itemId}
-                              onClick={() => {
-                                photoFor.current = l.itemId;
-                                photoRef.current?.click();
-                              }}
-                              className="h-[34px] w-[34px] shrink-0 overflow-hidden rounded-lg border border-verdigris-300/15 text-verdigris-300 hover:border-patina/50 hover:text-patina disabled:opacity-50"
-                            >
-                              {photoBusy === l.itemId ? (
-                                <span className="block text-[10px]">…</span>
-                              ) : l.imageUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={l.imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
-                              ) : (
-                                <span aria-hidden className="block text-base leading-none">📷</span>
-                              )}
-                            </button>
-                          ) : null}
+                          <button
+                            type="button"
+                            id={`line-${i}-photo`}
+                            title={
+                              l.imageUrl
+                                ? "Replace the item's picture"
+                                : l.itemId === null
+                                  ? "Add a picture — saves this item to the catalogue"
+                                  : "Add a picture of this item"
+                            }
+                            disabled={photoBusy === l.key}
+                            onClick={() => askPhoto(l)}
+                            className={`h-[34px] w-[34px] shrink-0 overflow-hidden rounded-lg border text-verdigris-300 hover:border-patina/50 hover:text-patina disabled:opacity-50 ${
+                              l.imageUrl ? "border-verdigris-300/15" : "border-dashed border-verdigris-300/30"
+                            }`}
+                          >
+                            {photoBusy === l.key ? (
+                              <span className="block text-[10px]">…</span>
+                            ) : l.imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={l.imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+                            ) : (
+                              <svg aria-hidden viewBox="0 0 24 24" className="mx-auto h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M4 8h3l2-2.5h6L17 8h3v11H4z" />
+                                <circle cx="12" cy="13" r="3.5" />
+                              </svg>
+                            )}
+                          </button>
                           <div className="min-w-0 flex-1">
                             <Combo
                               id={`line-${i}-item`}
@@ -1115,32 +1388,32 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                         />
                         <Err text={fields[`items.${i}.description`]} />
                       </td>
-                      <td className="py-1 pr-2">
+                      <td className="py-1 pr-1.5">
                         <input
                           id={`line-${i}-cartons`}
                           type="number"
                           min={1}
                           value={l.cartonQty}
                           onChange={(e) => setLine(i, { cartonQty: e.target.value })}
-                          className={`${cell} text-right`}
+                          className={`${cell} ${num}`}
                         />
                         <Err text={fields[`items.${i}.cartonQty`]} />
                       </td>
-                      <td className="py-1 pr-2">
+                      <td className="py-1 pr-1.5">
                         <input
                           type="number"
                           min={1}
                           value={l.piecesPerCarton}
                           onChange={(e) => setLine(i, { piecesPerCarton: e.target.value })}
-                          className={`${cell} text-right`}
+                          className={`${cell} ${num}`}
                         />
                         <Err text={fields[`items.${i}.piecesPerCarton`]} />
                       </td>
-                      <td className="py-1 pr-2">
+                      <td className="py-1 pr-1.5">
                         <select
                           value={l.unitId ?? ""}
                           onChange={(e) => setLine(i, { unitId: e.target.value ? Number(e.target.value) : null })}
-                          className={cell}
+                          className={`${cell} px-1.5`}
                         >
                           <option value="">—</option>
                           {lookups.units.map((u) => (
@@ -1150,7 +1423,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                           ))}
                         </select>
                       </td>
-                      <td className="py-1 pr-2">
+                      <td className="py-1 pr-1.5">
                         <input
                           type="number"
                           min={0}
@@ -1158,15 +1431,13 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                           value={l.kgPerCarton}
                           onChange={(e) => setLine(i, { kgPerCarton: e.target.value })}
                           onKeyDown={(e) => onLastCellKey(e, i)}
-                          className={`${cell} text-right`}
+                          className={`${cell} ${num}`}
                         />
                         <Err text={fields[`items.${i}.kgPerCarton`]} />
                       </td>
-                      <td className="py-1 pr-2 pt-[11px] text-right font-mono text-verdigris-100">
-                        {fmt(c * (Number(l.piecesPerCarton) || 0))}
-                      </td>
-                      <td className="py-1 pr-2 pt-[11px] text-right font-mono text-verdigris-100">
-                        {fmt(c * (Number(l.kgPerCarton) || 0))}
+                      <td className="py-1 pr-1.5 pt-[5px] text-right font-mono text-[12px] leading-tight text-verdigris-100">
+                        <span className="block whitespace-nowrap">{fmt(c * (Number(l.piecesPerCarton) || 0))} pcs</span>
+                        <span className="block whitespace-nowrap text-verdigris-200/60">{fmt(c * (Number(l.kgPerCarton) || 0))} kg</span>
                       </td>
                       <td className="py-1 pt-[7px]">
                         <button
@@ -1189,10 +1460,12 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                       + Add line
                     </button>
                   </td>
-                  <td className="pt-3 text-right font-mono">{fmt(totals.cartons)}</td>
+                  <td className="pt-3 pr-2 text-right font-mono">{fmt(totals.cartons)}</td>
                   <td colSpan={3} />
-                  <td className="pt-3 pr-2 text-right font-mono">{fmt(totals.pieces)}</td>
-                  <td className="pt-3 pr-2 text-right font-mono">{fmt(totals.kg)}</td>
+                  <td className="pt-3 pr-2 text-right font-mono text-[12px] leading-tight">
+                    <span className="block whitespace-nowrap">{fmt(totals.pieces)} pcs</span>
+                    <span className="block whitespace-nowrap">{fmt(totals.kg)} kg</span>
+                  </td>
                   <td />
                 </tr>
               </tfoot>
@@ -1232,7 +1505,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
             {chooser ? <Row k="Importer" v={existing?.importer.name ?? lookups.importer?.name} /> : null}
             <Row k="Warehouse" v={lookups.warehouses.find((w) => w.id === d.warehouseId)?.name} />
             <Row k="Container" v={d.containerNumber || undefined} mono />
-            <Row k="Expected" v={d.expectedArrival || undefined} />
+            <Row k="Expected" v={d.expectedArrival ? prettyDate(d.expectedArrival) : undefined} />
             <Row k="Transporter" v={transporter?.name ?? undefined} />
             <Row k="Lines" v={totals.lines ? String(totals.lines) : undefined} />
             <Row k="Cartons" v={totals.cartons ? fmt(totals.cartons) : undefined} />
@@ -1275,6 +1548,8 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                   kgPerCarton: row.kgPerCarton != null ? String(row.kgPerCarton) : "",
                   imageUrl: row.imageUrl,
                 });
+                // Picked and filled — the cartons are what's left to type.
+                focusSoon(`line-${line}-cartons`);
               }
               return;
             }
@@ -1283,6 +1558,9 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
             if (kind === "vehicle") patch({ vehicleId: id });
             if (kind === "driver") patch({ driverId: id });
             toast.success("Added — awaiting approval.");
+            // On to the next blank in "Who brings it".
+            const next = kind === "transporter" ? "vehicle" : kind === "vehicle" && d.driverId === null ? "driver" : null;
+            if (next) focusSoon(next);
           }}
         />
       ) : null}

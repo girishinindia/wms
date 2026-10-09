@@ -10,6 +10,7 @@ import { importerIdOf, type Actor, type Grant } from "@/lib/auth/guard";
 import { announce } from "@/lib/notify/announce";
 import { configured, deleteObject, publicUrl, putObject } from "@/lib/storage/bunny";
 import { actorWarehouseIds } from "@/lib/users/authority";
+import { arrivalProblem } from "@/lib/inward/arrival";
 import { parsePackingList, unitAlias, type Cell, type ParsedPackingList } from "@/lib/inward/packing-list";
 import type { InwardSaveInput, ItemSaveInput, ProposeInput } from "@/lib/validation/api-inward";
 
@@ -768,12 +769,17 @@ export function submitRequirements(input: {
   vehicleId: number | null;
   driverId: number | null;
   lines: number;
-}): Record<string, string> {
+}, now: Date = new Date()): Record<string, string> {
   const fields: Record<string, string> = {};
   if (!input.containerNumber) fields.containerNumber = "Container number is required";
   if (!input.containerTypeId) fields.containerTypeId = "Choose the container size";
   if (!input.portId) fields.portId = "Choose the port";
   if (!input.expectedArrival) fields.expectedArrival = "When is it expected?";
+  else {
+    // A draft saved last week can carry a date that has since passed.
+    const late = arrivalProblem(input.expectedArrival, now);
+    if (late) fields.expectedArrival = late;
+  }
   if (!input.transporterId) fields.transporterId = "Choose a transporter";
   if (!input.vehicleId) fields.vehicleId = "Choose a vehicle";
   if (!input.driverId) fields.driverId = "Choose a driver";
@@ -840,6 +846,8 @@ export async function createRequest(
   meta: Meta,
 ): Promise<number> {
   const fields = await checkReferences(input, importerId);
+  const late = arrivalProblem(input.expectedArrival);
+  if (late) fields.expectedArrival = late;
   if (Object.keys(fields).length) {
     throw new InwardError("VALIDATION_FAILED", "Please check the highlighted fields", fields);
   }
@@ -886,6 +894,8 @@ export async function updateRequest(
     throw new InwardError("CONFLICT", `A ${STATUS_LABEL[row.status].toLowerCase()} request cannot be edited`);
   }
   const fields = await checkReferences(input, Number(row.importer_id));
+  const late = arrivalProblem(input.expectedArrival);
+  if (late) fields.expectedArrival = late;
   if (Object.keys(fields).length) {
     throw new InwardError("VALIDATION_FAILED", "Please check the highlighted fields", fields);
   }

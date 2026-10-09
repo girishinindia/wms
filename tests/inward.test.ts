@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Actor, Grant } from "@/lib/auth/guard";
 import { actingImporterId } from "@/lib/inward/http";
+import { addDays, arrivalProblem, earliestArrival, indiaToday } from "@/lib/inward/arrival";
 import { canDo, scopeFor, sniffDocument, submitRequirements, InwardError } from "@/lib/inward/ops";
 import {
   containerNumber,
@@ -192,8 +193,49 @@ describe("submit", () => {
         vehicleId: 1,
         driverId: 1,
         lines: 2,
-      }),
+      }, new Date("2026-10-09T06:00:00Z")),
     ).toEqual({});
+  });
+
+  it("refuses a draft whose arrival date has since passed", () => {
+    const missing = submitRequirements(
+      {
+        containerNumber: "TCLU1234567",
+        containerTypeId: 3,
+        portId: 1,
+        expectedArrival: "2026-10-09",
+        transporterId: 1,
+        vehicleId: 1,
+        driverId: 1,
+        lines: 2,
+      },
+      new Date("2026-10-09T06:00:00Z"),
+    );
+    expect(missing.expectedArrival).toMatch(/from tomorrow \(10 Oct 2026\)/);
+  });
+});
+
+describe("expected arrival", () => {
+  it("counts tomorrow in India time, not UTC", () => {
+    // 20:00 UTC on the 9th is already 01:30 on the 10th in India.
+    expect(indiaToday(new Date("2026-10-09T20:00:00Z"))).toBe("2026-10-10");
+    expect(earliestArrival(new Date("2026-10-09T20:00:00Z"))).toBe("2026-10-11");
+    expect(earliestArrival(new Date("2026-10-09T06:00:00Z"))).toBe("2026-10-10");
+  });
+
+  it("allows tomorrow and later, refuses today and the past, ignores blank", () => {
+    const now = new Date("2026-10-09T06:00:00Z");
+    expect(arrivalProblem("2026-10-10", now)).toBeNull();
+    expect(arrivalProblem("2027-01-01", now)).toBeNull();
+    expect(arrivalProblem("2026-10-09", now)).toMatch(/tomorrow/);
+    expect(arrivalProblem("2026-10-01", now)).toMatch(/tomorrow/);
+    expect(arrivalProblem(null, now)).toBeNull();
+    expect(arrivalProblem("", now)).toBeNull();
+  });
+
+  it("rolls over month and year ends", () => {
+    expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
+    expect(addDays("2028-02-28", 1)).toBe("2028-02-29");
   });
 });
 
