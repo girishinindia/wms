@@ -998,7 +998,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
               <thead className="text-left text-[11px] uppercase tracking-[0.1em] text-verdigris-300">
                 <tr>
                   <th className="pb-2 pr-2 w-6">#</th>
-                  <th className="pb-2 pr-2 w-40 min-w-[9rem]">Item</th>
+                  <th className="pb-2 pr-2 w-48 min-w-[11rem]">Item</th>
                   <th className="pb-2 pr-2 min-w-[12rem]">Description</th>
                   <th className="pb-2 pr-2 w-20 min-w-[5rem]">Cartons</th>
                   <th className="pb-2 pr-2 w-20 min-w-[5rem]">Pcs/ctn</th>
@@ -1016,21 +1016,34 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                     <tr key={l.key} className="align-top">
                       <td className="py-1 pr-2 pt-3 text-verdigris-200/50">{i + 1}</td>
                       <td className="py-1 pr-2">
-                        <Combo
-                          id={`line-${i}-item`}
-                          placeholder="Pick from catalogue"
-                          value={l.itemId}
-                          onChange={(id) => applyItem(i, id)}
-                          options={lookups.items.map((it) => ({
-                            id: it.id,
-                            label: it.code,
-                            sub: [it.description, it.piecesPerCarton ? `${it.piecesPerCarton} ${it.unitCode ?? "pcs"}/ctn` : null]
-                              .filter(Boolean)
-                              .join(" · "),
-                          }))}
-                          onAddNew={(typed) => setAdding({ kind: "item", typed, line: i })}
-                          addLabel="New item"
-                        />
+                        <div className="flex items-center gap-2">
+                          {l.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={l.imageUrl}
+                              alt=""
+                              className="h-9 w-9 shrink-0 rounded-md border border-verdigris-300/15 object-cover"
+                              loading="lazy"
+                            />
+                          ) : null}
+                          <div className="min-w-0 flex-1">
+                            <Combo
+                              id={`line-${i}-item`}
+                              placeholder="Pick from catalogue"
+                              value={l.itemId}
+                              onChange={(id) => applyItem(i, id)}
+                              options={lookups.items.map((it) => ({
+                                id: it.id,
+                                label: it.code,
+                                sub: [it.description, it.piecesPerCarton ? `${it.piecesPerCarton} ${it.unitCode ?? "pcs"}/ctn` : null]
+                                  .filter(Boolean)
+                                  .join(" · "),
+                              }))}
+                              onAddNew={(typed) => setAdding({ kind: "item", typed, line: i })}
+                              addLabel="New item"
+                            />
+                          </div>
+                        </div>
                         <Err text={fields[`items.${i}.itemId`]} />
                       </td>
                       <td className="py-1 pr-2">

@@ -17,9 +17,9 @@ type Word = { text: string; x: number; y: number; w: number };
 
 const HEADER_HINT = /^(item|describe|description|ctn|ctns|qty|q'ty|kg|kgs|tt\.?qty|tt\.?kg|total|unit|carton|pcs)/i;
 
-async function words(bytes: Uint8Array): Promise<{ page: number; words: Word[] }[]> {
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const doc = await pdfjs.getDocument({ data: bytes, useSystemFonts: true, isEvalSupported: false }).promise;
+type Doc = Awaited<ReturnType<typeof loadPdf>>;
+
+async function words(doc: Doc): Promise<{ page: number; words: Word[] }[]> {
   const pages: { page: number; words: Word[] }[] = [];
   for (let p = 1; p <= Math.min(doc.numPages, 20); p += 1) {
     const page = await doc.getPage(p);
@@ -32,7 +32,6 @@ async function words(bytes: Uint8Array): Promise<{ page: number; words: Word[] }
     }
     pages.push({ page: p, words: out });
   }
-  await doc.destroy();
   return pages;
 }
 
@@ -63,10 +62,104 @@ function mergeAdjacent(line: Word[], gap = 6): Word[] {
 
 type Placed = { y: number; cells: Cell[]; numeric: boolean };
 
+/** A picture on the page, with the same y axis the text lines use. */
+export type PdfPicture = { y: number; bytes: Uint8Array; type: "image/webp" };
+
+type PageDoc = Awaited<ReturnType<Doc["getPage"]>>;
+
+/** pdfjs takes ownership of the buffer it is given, so it gets a copy. */
+async function loadPdf(bytes: Uint8Array) {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  return pdfjs.getDocument({ data: bytes.slice(), useSystemFonts: true, isEvalSupported: false }).promise;
+}
+
+/**
+ * The pictures drawn on a page, where they sit. A PDF draws an image
+ * into the unit square under the current transform, so the transform
+ * stack is replayed and the image's centre taken from it. Raw pixels
+ * come back as RGB/RGBA and are re-encoded as a small WebP — the
+ * register shows them at 40 px.
+ */
+async function pictures(page: PageDoc, pageOffset: number): Promise<PdfPicture[]> {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const { default: sharp } = await import("sharp");
+  const ops = await page.getOperatorList();
+  const out: PdfPicture[] = [];
+  type M = [number, number, number, number, number, number];
+  const mul = (a: M, b: M): M => [
+    a[0] * b[0] + a[1] * b[2],
+    a[0] * b[1] + a[1] * b[3],
+    a[2] * b[0] + a[3] * b[2],
+    a[2] * b[1] + a[3] * b[3],
+    a[4] * b[0] + a[5] * b[2] + b[4],
+    a[4] * b[1] + a[5] * b[3] + b[5],
+  ];
+  let ctm: M = [1, 0, 0, 1, 0, 0];
+  const stack: M[] = [];
+  for (let i = 0; i < ops.fnArray.length; i += 1) {
+    const fn = ops.fnArray[i];
+    const args = ops.argsArray[i] as unknown[];
+    if (fn === pdfjs.OPS.save) stack.push(ctm);
+    else if (fn === pdfjs.OPS.restore) ctm = stack.pop() ?? ctm;
+    else if (fn === pdfjs.OPS.transform) ctm = mul(args as M, ctm);
+    else if (fn === pdfjs.OPS.paintImageXObject || fn === pdfjs.OPS.paintImageXObjectRepeat) {
+      const name = String(args[0]);
+      const img = await new Promise<{ width: number; height: number; data?: Uint8ClampedArray; kind?: number } | null>((resolve) => {
+        try {
+          page.objs.get(name, (o: unknown) => resolve(o as never));
+        } catch {
+          resolve(null);
+        }
+      });
+      if (!img?.data || !img.width || !img.height) continue;
+      const channels = img.kind === 3 ? 4 : img.kind === 2 ? 3 : 0;
+      if (!channels) continue; // 1-bit masks are not pictures of goods
+      if (img.width < 24 || img.height < 24) continue; // bullets, logos, rules
+      const centreY = ctm[2] * 0.5 + ctm[3] * 0.5 + ctm[5];
+      try {
+        const webp = await sharp(Buffer.from(img.data.buffer, img.data.byteOffset, img.data.byteLength), {
+          raw: { width: img.width, height: img.height, channels },
+        })
+          .resize({ width: 1024, height: 1024, fit: "inside", withoutEnlargement: true })
+          .webp({ quality: 85 })
+          .toBuffer();
+        out.push({ y: centreY - pageOffset, bytes: new Uint8Array(webp), type: "image/webp" });
+      } catch {
+        // An image sharp cannot read is simply not attached.
+      }
+    }
+  }
+  return out;
+}
+
 export async function pdfToRows(bytes: Uint8Array): Promise<Cell[][]> {
-  const pages = await words(bytes);
+  return (await pdfToRowsWithPictures(bytes, { pictures: false })).rows;
+}
+
+/**
+ * The table as cells, plus the picture on each row (keyed like the
+ * cells: 1-based row in the returned array), when asked for.
+ */
+export async function pdfToRowsWithPictures(
+  bytes: Uint8Array,
+  options: { pictures: boolean } = { pictures: true },
+): Promise<{ rows: Cell[][]; pictures: Map<number, PdfPicture> }> {
+  const doc = await loadPdf(bytes);
+  try {
+    return await readDocument(doc, options);
+  } finally {
+    await doc.destroy();
+  }
+}
+
+async function readDocument(
+  doc: Doc,
+  options: { pictures: boolean },
+): Promise<{ rows: Cell[][]; pictures: Map<number, PdfPicture> }> {
+  const none = { rows: [] as Cell[][], pictures: new Map<number, PdfPicture>() };
+  const pages = await words(doc);
   const total = pages.reduce((n, p) => n + p.words.length, 0);
-  if (total === 0) return [];
+  if (total === 0) return none;
 
   let columns: { x: number; text: string }[] | null = null;
   const header: Cell[][] = [];
@@ -100,7 +193,7 @@ export async function pdfToRows(bytes: Uint8Array): Promise<Cell[][]> {
       placed.push({ y: -(pageOffset - line[0]!.y), cells, numeric });
     }
   }
-  if (columns === null) return [];
+  if (columns === null) return none;
 
   // A wrapped description prints as a line of its own with no numbers
   // on it. It belongs to the nearest line that has numbers — above or
@@ -118,5 +211,23 @@ export async function pdfToRows(bytes: Uint8Array): Promise<Cell[][]> {
       target.cells[i] = have === null || have === undefined ? c : above ? `${c} ${have}` : `${have} ${c}`;
     });
   }
-  return [...header, ...rows.map((r) => r.cells)];
+
+  // Pictures: each goes to the row whose text is nearest its centre.
+  const byRow = new Map<number, PdfPicture>();
+  if (options.pictures && rows.length) {
+    const found: PdfPicture[] = [];
+    for (let p = 1; p <= Math.min(doc.numPages, 20); p += 1) {
+      found.push(...(await pictures(await doc.getPage(p), p * 100000)));
+    }
+    for (const pic of found) {
+      let best = 0;
+      for (let i = 1; i < rows.length; i += 1) {
+        if (Math.abs(rows[i]!.y - pic.y) < Math.abs(rows[best]!.y - pic.y)) best = i;
+      }
+      if (Math.abs(rows[best]!.y - pic.y) > 60) continue;
+      const rowNo = header.length + best + 1;
+      if (!byRow.has(rowNo)) byRow.set(rowNo, pic);
+    }
+  }
+  return { rows: [...header, ...rows.map((r) => r.cells)], pictures: byRow };
 }

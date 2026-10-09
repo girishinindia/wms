@@ -3,8 +3,8 @@ import { type NextRequest } from "next/server";
 import { fail, handler, ok } from "@/lib/api/respond";
 import { requireVerifiedImporter } from "@/lib/auth/guard";
 import { actingImporterId, metaOf, respondError } from "@/lib/inward/http";
-import { importPackingList, sniffDocument } from "@/lib/inward/ops";
-import { pdfToRows } from "@/lib/inward/pdf-rows";
+import { importPackingList, setItemImage, sniffDocument } from "@/lib/inward/ops";
+import { pdfToRowsWithPictures } from "@/lib/inward/pdf-rows";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,11 +25,31 @@ export async function POST(request: NextRequest) {
       const bytes = new Uint8Array(await request.arrayBuffer());
       if (bytes.length === 0) return fail("VALIDATION_FAILED", "Nothing was sent", requestId);
       if (sniffDocument(bytes).type !== "application/pdf") return fail("VALIDATION_FAILED", "That is not a PDF", requestId);
-      const rows = await pdfToRows(bytes);
+      const { rows, pictures } = await pdfToRowsWithPictures(bytes);
       if (rows.length === 0) {
         return fail("VALIDATION_FAILED", "No text in that PDF — it looks like a scan. Send the spreadsheet instead.", requestId);
       }
-      return ok(await importPackingList(actor, importerId, rows, metaOf(request, requestId)), requestId);
+      const meta = metaOf(request, requestId);
+      const result = await importPackingList(actor, importerId, rows, meta);
+      // The PDF's pictures go onto the catalogue rows this import created —
+      // the bytes are already here, so no second trip from the client.
+      for (const line of result.lines) {
+        const pic = line.created && line.itemId !== null ? pictures.get(line.row) : undefined;
+        if (!pic) continue;
+        try {
+          const item = await setItemImage(actor, importerId, line.itemId!, pic.bytes, meta);
+          line.imageUrl = item.imageUrl;
+        } catch (error) {
+          // A picture that would not store is not worth failing the import for.
+          console.warn("[inward] packing-list picture not stored", {
+            requestId,
+            itemId: line.itemId,
+            bytes: pic.bytes.length,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      return ok(result, requestId);
     } catch (error) {
       return respondError(error, requestId);
     }
