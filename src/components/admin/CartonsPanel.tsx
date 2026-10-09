@@ -30,10 +30,21 @@ const chip = (on: boolean) =>
 
 type Hold = { id: number; cartonNo: string; itemCode: string | null; description: string; reason: string | null; note: string | null; photoUrl: string | null; at: string | null; by: string | null };
 
-export default function CartonsPanel({ requestId, onChanged }: { requestId: number; onChanged?: () => void }) {
+/** The panel's first state, read on the server with the page. */
+export type CartonsInitial = { overview: CartonOverview; holds: Hold[] };
+
+export default function CartonsPanel({
+  requestId,
+  onChanged,
+  initial,
+}: {
+  requestId: number;
+  onChanged?: () => void;
+  initial?: CartonsInitial | null;
+}) {
   const toast = useToast();
-  const [o, setO] = useState<CartonOverview | null>(null);
-  const [holds, setHolds] = useState<Hold[]>([]);
+  const [o, setO] = useState<CartonOverview | null>(initial?.overview ?? null);
+  const [holds, setHolds] = useState<Hold[]>(initial?.holds ?? []);
   const [busy, setBusy] = useState(false);
   const [printing, setPrinting] = useState<null | { lineId?: number }>(null);
   const [finishAsk, setFinishAsk] = useState<string | null>(null);
@@ -49,9 +60,11 @@ export default function CartonsPanel({ requestId, onChanged }: { requestId: numb
     }
   }, [requestId]);
 
+  // Already read with the page: no second request on arrival.
+  const [fresh] = useState(Boolean(initial));
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!fresh) void load();
+  }, [load, fresh]);
 
   if (!o) {
     return (
@@ -231,7 +244,7 @@ export default function CartonsPanel({ requestId, onChanged }: { requestId: numb
               <li key={h.id} className="flex items-center gap-3 p-3 text-sm">
                 {h.photoUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <a href={h.photoUrl} target="_blank" rel="noreferrer"><img src={h.photoUrl} alt="" className="h-10 w-10 rounded-md object-cover" /></a>
+                  <a href={h.photoUrl} target="_blank" rel="noreferrer"><img src={h.photoUrl} alt="" className="h-10 w-10 rounded-md object-cover" loading="lazy" decoding="async" /></a>
                 ) : null}
                 <div className="min-w-0 flex-1">
                   <p className="font-mono text-verdigris-50">{h.cartonNo}</p>

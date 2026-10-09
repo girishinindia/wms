@@ -9,6 +9,7 @@ import { auditQuietly } from "@/lib/audit";
 import type { Actor } from "@/lib/auth/guard";
 import { InwardError, sniffDocument, type Meta } from "@/lib/inward/ops";
 import { configured, deleteObject, keyFromUrl, publicUrl, putObject } from "@/lib/storage/bunny";
+import { toWebp } from "@/lib/storage/picture";
 
 /**
  * The importer's logo — printed on every carton sticker. Uploaded by the
@@ -25,12 +26,15 @@ export async function setImporterLogo(actor: Actor, importerId: number, bytes: U
   const row = rows[0];
   if (!row) throw new InwardError("NOT_FOUND", "No such importer");
   if (bytes.length > LOGO_MAX_BYTES) throw new InwardError("VALIDATION_FAILED", "That logo is over 1 MB");
-  const { type, ext } = sniffDocument(bytes);
+  const { type } = sniffDocument(bytes);
   if (type === "application/pdf") throw new InwardError("VALIDATION_FAILED", "A logo has to be a picture (JPG, PNG or WebP)");
   if (!configured()) throw new InwardError("CONFLICT", "Image storage is not configured on this environment");
+  // Always WebP, transparency kept, at most 512 px — it prints at ~10 mm.
+  const webp = await toWebp(bytes, 512, 90, { keepAlpha: true });
+  if (!webp) throw new InwardError("VALIDATION_FAILED", "That logo could not be read. Try a JPG or PNG.");
 
-  const key = `importers/${importerId}/logo-${randomBytes(4).toString("hex")}.${ext}`;
-  const put = await putObject(key, bytes, type);
+  const key = `importers/${importerId}/logo-${randomBytes(4).toString("hex")}.webp`;
+  const put = await putObject(key, webp, "image/webp");
   if (!put.ok) throw new InwardError("INTERNAL", "The logo could not be stored. Try again.");
   const url = publicUrl(key);
   await getDb().execute(sql`

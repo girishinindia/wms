@@ -8,7 +8,8 @@ import { getDb } from "@/db";
 import { auditQuietly } from "@/lib/audit";
 import { importerIdOf, type Actor, type Grant } from "@/lib/auth/guard";
 import { announce } from "@/lib/notify/announce";
-import { configured, deleteObject, publicUrl, putObject } from "@/lib/storage/bunny";
+import { configured, deleteObject, keyFromUrl, publicUrl, putObject } from "@/lib/storage/bunny";
+import { toWebpPair } from "@/lib/storage/picture";
 import { actorWarehouseIds } from "@/lib/users/authority";
 import { arrivalProblem } from "@/lib/inward/arrival";
 import { cartonCan, cartonsLocked, dropUnprintedCartons } from "@/lib/inward/cartons";
@@ -357,6 +358,8 @@ export type InwardLine = {
   itemCode: string | null;
   description: string;
   imageUrl: string | null;
+  /** Small WebP for lists; null for an old photo not yet backfilled. */
+  thumbUrl: string | null;
   cartonQty: number;
   piecesPerCarton: number;
   unitId: number | null;
@@ -377,7 +380,7 @@ export type InwardDocument = {
 
 async function linesOf(requestId: number): Promise<InwardLine[]> {
   const rows = await getDb().execute<Record<string, string | null>>(sql`
-    select id, item_id, item_code, description, image_url, carton_qty, pieces_per_carton,
+    select id, item_id, item_code, description, image_url, image_thumb_url, carton_qty, pieces_per_carton,
            measurement_unit_id, unit_code, kg_per_carton::text as kg_per_carton,
            total_pieces, total_kg::text as total_kg
       from wms.inward_request_item
@@ -390,6 +393,7 @@ async function linesOf(requestId: number): Promise<InwardLine[]> {
     itemCode: r.item_code,
     description: r.description ?? "",
     imageUrl: r.image_url,
+    thumbUrl: r.image_thumb_url,
     cartonQty: num(r.carton_qty),
     piecesPerCarton: num(r.pieces_per_carton),
     unitId: r.measurement_unit_id === null ? null : Number(r.measurement_unit_id),
@@ -533,6 +537,7 @@ type LookupRow = {
     code: string;
     description: string;
     image_url: string | null;
+    image_thumb_url: string | null;
     unit_id: number | null;
     unit_code: string | null;
     pieces_per_carton: number | null;
@@ -620,6 +625,7 @@ export async function lookupsFor(importerId: number | null, options: { chooser?:
           and (t.status = 'ACTIVE' or (t.status = 'PENDING' and t.proposed_by_importer_id = ${importerId}::bigint))) as transporters,
       (select coalesce(json_agg(json_build_object(
                  'id', it.id, 'code', it.code, 'description', it.description, 'image_url', it.image_url,
+                 'image_thumb_url', it.image_thumb_url,
                  'unit_id', it.measurement_unit_id, 'unit_code', mu.code,
                  'pieces_per_carton', it.pieces_per_carton, 'kg_per_carton', it.kg_per_carton)
                order by it.code, it.description), '[]'::json)
@@ -685,6 +691,7 @@ export async function lookupsFor(importerId: number | null, options: { chooser?:
       code: it.code ?? "",
       description: it.description ?? "",
       imageUrl: it.image_url,
+      thumbUrl: it.image_thumb_url ?? null,
       unitId: num(it.unit_id),
       unitCode: it.unit_code,
       piecesPerCarton: num(it.pieces_per_carton),
@@ -811,12 +818,13 @@ async function writeLines(requestId: number, lines: InwardSaveInput["items"]): P
   const db = getDb();
   // Snapshot the catalogue rows the lines point at, in one read.
   const itemIds = [...new Set(lines.map((l) => l.itemId).filter((v): v is number => !!v))];
-  const snap = new Map<number, { code: string; image: string | null }>();
+  const snap = new Map<number, { code: string; image: string | null; thumb: string | null }>();
   if (itemIds.length) {
-    const rows = await db.execute<{ id: number; code: string; image_url: string | null }>(sql`
-      select id, code, image_url from wms.item where id in (${sql.join(itemIds.map((i) => sql`${i}`), sql`, `)})
+    const rows = await db.execute<{ id: number; code: string; image_url: string | null; image_thumb_url: string | null }>(sql`
+      select id, code, image_url, image_thumb_url
+        from wms.item where id in (${sql.join(itemIds.map((i) => sql`${i}`), sql`, `)})
     `);
-    for (const r of rows) snap.set(Number(r.id), { code: r.code, image: r.image_url });
+    for (const r of rows) snap.set(Number(r.id), { code: r.code, image: r.image_url, thumb: r.image_thumb_url });
   }
   const unitIds = [...new Set(lines.map((l) => l.unitId).filter((v): v is number => !!v))];
   const units = new Map<number, string>();
@@ -826,18 +834,24 @@ async function writeLines(requestId: number, lines: InwardSaveInput["items"]): P
     `);
     for (const r of rows) units.set(Number(r.id), r.code);
   }
-  const payload = lines.map((l, idx) => ({
-    item_id: l.itemId ?? null,
-    item_code: l.itemId ? (snap.get(l.itemId)?.code ?? null) : null,
-    description: l.description,
-    image_url: l.imageUrl ?? (l.itemId ? (snap.get(l.itemId)?.image ?? null) : null),
-    carton_qty: l.cartonQty,
-    pieces_per_carton: l.piecesPerCarton,
-    measurement_unit_id: l.unitId ?? null,
-    unit_code: l.unitId ? (units.get(l.unitId) ?? null) : null,
-    kg_per_carton: l.kgPerCarton,
-    sort_order: idx,
-  }));
+  const payload = lines.map((l, idx) => {
+    const item = l.itemId ? snap.get(l.itemId) : undefined;
+    const image = l.imageUrl ?? item?.image ?? null;
+    return {
+      item_id: l.itemId ?? null,
+      item_code: item?.code ?? null,
+      description: l.description,
+      image_url: image,
+      // The thumbnail only when the line shows the catalogue's own photo.
+      image_thumb_url: image !== null && image === item?.image ? item.thumb : null,
+      carton_qty: l.cartonQty,
+      pieces_per_carton: l.piecesPerCarton,
+      measurement_unit_id: l.unitId ?? null,
+      unit_code: l.unitId ? (units.get(l.unitId) ?? null) : null,
+      kg_per_carton: l.kgPerCarton,
+      sort_order: idx,
+    };
+  });
   // One statement, so a failure half-way leaves the old lines, not none.
   await db.execute(sql`
     with gone as (
@@ -845,12 +859,12 @@ async function writeLines(requestId: number, lines: InwardSaveInput["items"]): P
     ),
     put as (
       insert into wms.inward_request_item
-        (inward_request_id, item_id, item_code, description, image_url, carton_qty,
+        (inward_request_id, item_id, item_code, description, image_url, image_thumb_url, carton_qty,
          pieces_per_carton, measurement_unit_id, unit_code, kg_per_carton, sort_order)
-      select ${requestId}, x.item_id, x.item_code, x.description, x.image_url, x.carton_qty,
+      select ${requestId}, x.item_id, x.item_code, x.description, x.image_url, x.image_thumb_url, x.carton_qty,
              x.pieces_per_carton, x.measurement_unit_id, x.unit_code, x.kg_per_carton, x.sort_order
         from jsonb_to_recordset(${JSON.stringify(payload)}::jsonb)
-          as x(item_id bigint, item_code text, description text, image_url text, carton_qty integer,
+          as x(item_id bigint, item_code text, description text, image_url text, image_thumb_url text, carton_qty integer,
                pieces_per_carton integer, measurement_unit_id bigint, unit_code text,
                kg_per_carton numeric, sort_order smallint)
       returning id
@@ -1361,6 +1375,7 @@ export type ItemRow = {
   code: string;
   description: string;
   imageUrl: string | null;
+  thumbUrl: string | null;
   unitId: number | null;
   unitCode: string | null;
   piecesPerCarton: number | null;
@@ -1372,7 +1387,7 @@ export type ItemRow = {
 export async function listItems(importerId: number, q = ""): Promise<ItemRow[]> {
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const rows = await getDb().execute<Record<string, string | null>>(sql`
-    select it.id, it.code, it.description, it.image_url, it.measurement_unit_id, mu.code as unit_code,
+    select it.id, it.code, it.description, it.image_url, it.image_thumb_url, it.measurement_unit_id, mu.code as unit_code,
            it.pieces_per_carton, it.kg_per_carton::text as kg_per_carton, it.is_active,
            (select count(*) from wms.inward_request_item li where li.item_id = it.id) as used_on
       from wms.item it left join wms.measurement_unit mu on mu.id = it.measurement_unit_id
@@ -1386,6 +1401,7 @@ export async function listItems(importerId: number, q = ""): Promise<ItemRow[]> 
     code: r.code ?? "",
     description: r.description ?? "",
     imageUrl: r.image_url,
+    thumbUrl: r.image_thumb_url,
     unitId: r.measurement_unit_id === null ? null : Number(r.measurement_unit_id),
     unitCode: r.unit_code,
     piecesPerCarton: r.pieces_per_carton === null ? null : Number(r.pieces_per_carton),
@@ -1472,6 +1488,7 @@ export type ImportedLine = {
   unitCode: string | null;
   kgPerCarton: number;
   imageUrl: string | null;
+  thumbUrl: string | null;
   /** True when this import created the catalogue row — the client may attach the sheet's picture. */
   created: boolean;
 };
@@ -1524,6 +1541,7 @@ export async function importPackingList(
     const code = normaliseItemCode(line.code);
     let itemId: number | null = null;
     let imageUrl: string | null = null;
+    let thumbUrl: string | null = null;
     let wasCreated = false;
 
     if (code !== null) {
@@ -1532,6 +1550,7 @@ export async function importPackingList(
         matched += 1;
         itemId = have.id;
         imageUrl = have.imageUrl;
+        thumbUrl = have.thumbUrl;
         const fill: Partial<ItemSaveInput> = {};
         if (have.unitId === null && unitId !== null) fill.unitId = unitId;
         if (have.piecesPerCarton === null) fill.piecesPerCarton = line.piecesPerCarton;
@@ -1568,6 +1587,7 @@ export async function importPackingList(
       unitCode: unitId === null ? null : alias,
       kgPerCarton: line.kgPerCarton,
       imageUrl,
+      thumbUrl,
       created: wasCreated,
     });
   }
@@ -1662,27 +1682,52 @@ export async function setItemImage(
   bytes: Uint8Array,
   meta: Meta,
 ): Promise<ItemRow> {
-  const owned = await getDb().execute<{ image_storage_key: string | null }>(sql`
-    select image_storage_key from wms.item where id = ${id} and importer_id = ${importerId} and deleted_at is null
+  const owned = await getDb().execute<{
+    image_url: string | null;
+    image_storage_key: string | null;
+    image_thumb_url: string | null;
+  }>(sql`
+    select image_url, image_storage_key, image_thumb_url
+      from wms.item where id = ${id} and importer_id = ${importerId} and deleted_at is null
   `);
   if (!owned[0]) throw new InwardError("NOT_FOUND", "No such item");
   if (bytes.length > 2 * 1024 * 1024) throw new InwardError("VALIDATION_FAILED", "That image is over 2 MB");
-  const { type, ext } = sniffDocument(bytes);
+  const { type } = sniffDocument(bytes);
   if (type === "application/pdf") throw new InwardError("VALIDATION_FAILED", "An item image has to be a picture");
   if (!configured()) throw new InwardError("CONFLICT", "Image storage is not configured on this environment");
 
-  const key = `items/${importerId}/${randomBytes(8).toString("hex")}.${ext}`;
-  const put = await putObject(key, bytes, type);
-  if (!put.ok) {
-    console.error("[inward] item image upload failed", { requestId: meta.requestId, key, ...put });
+  // Always WebP: the photo (≤1280 px) and a thumbnail (≤160 px) for lists.
+  const pic = await toWebpPair(bytes);
+  if (!pic) throw new InwardError("VALIDATION_FAILED", "That picture could not be read. Try another one.");
+  const base = `items/${importerId}/${randomBytes(8).toString("hex")}`;
+  const key = `${base}.webp`;
+  const thumbKey = `${base}-t.webp`;
+  const [put, putThumb] = await Promise.all([
+    putObject(key, pic.photo, "image/webp"),
+    putObject(thumbKey, pic.thumb, "image/webp"),
+  ]);
+  if (!put.ok || !putThumb.ok) {
+    console.error("[inward] item image upload failed", { requestId: meta.requestId, key, put, putThumb });
     throw new InwardError("INTERNAL", "The image could not be stored. Try again.");
   }
   const url = publicUrl(key);
+  const thumbUrl = publicUrl(thumbKey);
   await getDb().execute(sql`
-    update wms.item set image_url = ${url}, image_storage_key = ${key}, updated_by = ${actor.session.userId}
+    update wms.item set image_url = ${url}, image_thumb_url = ${thumbUrl}, image_storage_key = ${key},
+                        updated_by = ${actor.session.userId}
      where id = ${id}
   `);
+  // Goods lines that showed the old picture show the new one: the old
+  // file is deleted below, and a line must not be left with a dead link.
+  if (owned[0].image_url) {
+    await getDb().execute(sql`
+      update wms.inward_request_item set image_url = ${url}, image_thumb_url = ${thumbUrl}
+       where item_id = ${id} and image_url = ${owned[0].image_url}
+    `);
+  }
   if (owned[0].image_storage_key) await deleteObject(owned[0].image_storage_key);
+  const oldThumb = keyFromUrl(owned[0].image_thumb_url);
+  if (oldThumb) await deleteObject(oldThumb);
   return (await listItems(importerId)).find((r) => r.id === id)!;
 }
 

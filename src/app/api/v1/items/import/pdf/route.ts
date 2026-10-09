@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
         try {
           const item = await setItemImage(actor, importerId, line.itemId!, pic.bytes, meta);
           line.imageUrl = item.imageUrl;
+          line.thumbUrl = item.thumbUrl;
         } catch (error) {
           // A picture that would not store is not worth failing the import for.
           console.warn("[inward] packing-list picture not stored", {

@@ -8,7 +8,7 @@ import type { CartonQueueRow } from "@/lib/inward/cartons";
 import { fmtDay } from "@/lib/format/datetime";
 import { Card, StatusBadge } from "@/components/admin/ui";
 
-import CartonsPanel from "./CartonsPanel";
+import CartonsPanel, { type CartonsInitial } from "./CartonsPanel";
 import { fmt } from "./InwardTable";
 
 /**
@@ -34,10 +34,13 @@ export default function QrCodesScreen({
   initial,
   initialId,
   initialCompleted,
+  initialCartons,
 }: {
   initial: CartonQueueRow[];
   initialId: number | null;
   initialCompleted: boolean;
+  /** The named inward's cartons, read with the page. */
+  initialCartons?: CartonsInitial | null;
 }) {
   const [rows, setRows] = useState(initial);
   const [completed, setCompleted] = useState(initialCompleted);
@@ -202,7 +205,14 @@ export default function QrCodesScreen({
         )}
       </Card>
 
-      {current ? <CartonsPanel key={current.id} requestId={current.id} onChanged={() => void reload()} /> : null}
+      {current ? (
+        <CartonsPanel
+          key={current.id}
+          requestId={current.id}
+          initial={current.id === initialId ? initialCartons : null}
+          onChanged={() => void reload()}
+        />
+      ) : null}
     </div>
   );
 }

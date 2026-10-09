@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import InwardDetail from "@/components/admin/InwardDetail";
 import { Denied, PageHeader } from "@/components/admin/ui";
 import { importerGateFor, pageGuard } from "@/lib/auth/guard";
+import { cartonsFirstPaint } from "@/lib/inward/cartons";
 import { getRequest, InwardError, scopeFor } from "@/lib/inward/ops";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +18,15 @@ export default async function InwardDetailPage({ params }: { params: Promise<{ i
   const id = Number((await params).id);
   if (!Number.isInteger(id) || id <= 0) notFound();
 
+  const scope = scopeFor(guard.actor, guard.grant);
   let detail;
+  let cartons;
   try {
-    detail = await getRequest(guard.actor, scopeFor(guard.actor, guard.grant), id);
+    // Side by side: the request and, for the warehouse side, its cartons.
+    [detail, cartons] = await Promise.all([
+      getRequest(guard.actor, scope, id),
+      cartonsFirstPaint(guard.actor, scope, id),
+    ]);
   } catch (error) {
     if (error instanceof InwardError && error.kind === "NOT_FOUND") notFound();
     throw error;
@@ -36,7 +43,7 @@ export default async function InwardDetailPage({ params }: { params: Promise<{ i
           </Link>
         }
       />
-      <InwardDetail detail={detail} />
+      <InwardDetail detail={detail} cartons={cartons} />
     </>
   );
 }

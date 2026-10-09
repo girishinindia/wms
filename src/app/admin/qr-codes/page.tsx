@@ -1,7 +1,7 @@
 import QrCodesScreen from "@/components/admin/QrCodesScreen";
 import { Denied, PageHeader } from "@/components/admin/ui";
 import { pageGuard } from "@/lib/auth/guard";
-import { cartonQueue } from "@/lib/inward/cartons";
+import { cartonQueue, cartonsFirstPaint } from "@/lib/inward/cartons";
 import { scopeFor } from "@/lib/inward/ops";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,13 @@ export default async function QrCodesPage({
   const raw = await searchParams;
   const completed = raw.completed === "1";
   const id = Number(raw.id);
-  const { requests } = await cartonQueue(guard.actor, scopeFor(guard.actor, guard.grant), { completed });
+  const picked = Number.isInteger(id) && id > 0 ? id : null;
+  const scope = scopeFor(guard.actor, guard.grant);
+  // The list and, when the address names one, that inward's cartons — together.
+  const [{ requests }, cartons] = await Promise.all([
+    cartonQueue(guard.actor, scope, { completed }),
+    picked === null ? Promise.resolve(null) : cartonsFirstPaint(guard.actor, scope, picked),
+  ]);
 
   return (
     <>
@@ -32,7 +38,8 @@ export default async function QrCodesPage({
       />
       <QrCodesScreen
         initial={requests}
-        initialId={Number.isInteger(id) && id > 0 ? id : null}
+        initialId={picked}
+        initialCartons={cartons}
         initialCompleted={completed}
       />
     </>

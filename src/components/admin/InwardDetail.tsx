@@ -8,7 +8,7 @@ import { api } from "@/lib/api/client";
 import { useToast } from "@/components/Toast";
 import { Card, ConfirmDialog, Facts, StatusBadge } from "@/components/admin/ui";
 
-import CartonsPanel from "./CartonsPanel";
+import CartonsPanel, { type CartonsInitial } from "./CartonsPanel";
 import type { Detail } from "./InwardForm";
 import { fmt } from "./InwardTable";
 
@@ -31,7 +31,14 @@ function when(iso: string | null | undefined): string {
   return t.toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-export default function InwardDetail({ detail: initial }: { detail: Detail }) {
+export default function InwardDetail({
+  detail: initial,
+  cartons,
+}: {
+  detail: Detail;
+  /** Carton numbers read with the page; used until the status moves on. */
+  cartons?: CartonsInitial | null;
+}) {
   const router = useRouter();
   const toast = useToast();
   const [d, setD] = useState(initial);
@@ -163,7 +170,15 @@ export default function InwardDetail({ detail: initial }: { detail: Detail }) {
                       <span className="flex items-center gap-2">
                         {l.imageUrl ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={l.imageUrl} alt="" className="h-8 w-8 rounded-md object-cover" />
+                          <a href={l.imageUrl} target="_blank" rel="noreferrer" title="Open the picture">
+                            <img
+                              src={l.thumbUrl ?? l.imageUrl}
+                              alt=""
+                              className="h-8 w-8 rounded-md object-cover"
+                              loading="lazy"
+                              decoding="async"
+                            />
+                          </a>
                         ) : null}
                         <span>
                           {l.itemCode ? <span className="font-mono text-verdigris-200/60">{l.itemCode} · </span> : null}
@@ -195,6 +210,7 @@ export default function InwardDetail({ detail: initial }: { detail: Detail }) {
           <CartonsPanel
             key={d.status}
             requestId={d.id}
+            initial={cartons && cartons.overview.request.status === d.status ? cartons : null}
             onChanged={async () => {
               const r = await api<Detail>(`/inward-requests/${d.id}`, { method: "GET" });
               if (r.ok) setD(r.data);

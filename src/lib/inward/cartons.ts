@@ -9,6 +9,7 @@ import { auditQuietly } from "@/lib/audit";
 import type { Actor } from "@/lib/auth/guard";
 import { announce } from "@/lib/notify/announce";
 import { configured, publicUrl, putObject } from "@/lib/storage/bunny";
+import { PHOTO_EDGE, toWebp } from "@/lib/storage/picture";
 import { cartonNoFromScan, qrText, type LabelData } from "@/lib/inward/carton-format";
 import {
   headerOf,
@@ -159,6 +160,7 @@ export type CartonLine = {
   itemCode: string | null;
   description: string;
   imageUrl: string | null;
+  thumbUrl: string | null;
   cartonQty: number;
   unitCode: string | null;
   piecesPerCarton: number;
@@ -208,6 +210,7 @@ async function totalsOf(id: number): Promise<{ totals: CartonTotals; lines: Cart
     item_code: string | null;
     description: string;
     image_url: string | null;
+    image_thumb_url: string | null;
     carton_qty: number;
     unit_code: string | null;
     pieces_per_carton: number;
@@ -221,7 +224,7 @@ async function totalsOf(id: number): Promise<{ totals: CartonTotals; lines: Cart
     label_pending: string;
     print_pending: string;
   }>(sql`
-    select li.id as line_id, li.item_code, li.description, li.image_url, li.carton_qty, li.unit_code,
+    select li.id as line_id, li.item_code, li.description, li.image_url, li.image_thumb_url, li.carton_qty, li.unit_code,
            li.pieces_per_carton, li.kg_per_carton::text,
            (array_agg(c.carton_no order by c.seq))[1] as from_no,
            (array_agg(c.carton_no order by c.seq desc))[1] as to_no,
@@ -243,6 +246,7 @@ async function totalsOf(id: number): Promise<{ totals: CartonTotals; lines: Cart
     itemCode: r.item_code,
     description: r.description,
     imageUrl: r.image_url,
+    thumbUrl: r.image_thumb_url,
     cartonQty: n(r.carton_qty),
     unitCode: r.unit_code,
     piecesPerCarton: n(r.pieces_per_carton),
@@ -863,11 +867,13 @@ export async function setHoldPhoto(actor: Actor, scope: InwardScope, id: number,
   const c = await cartonIn(id, cartonId);
   if (c.status !== "HOLD") throw new InwardError("CONFLICT", "Put the carton on hold first");
   if (bytes.length > 3 * 1024 * 1024) throw new InwardError("VALIDATION_FAILED", "That photo is over 3 MB");
-  const { type, ext } = sniffDocument(bytes);
+  const { type } = sniffDocument(bytes);
   if (type === "application/pdf") throw new InwardError("VALIDATION_FAILED", "Send a photo");
   if (!configured()) throw new InwardError("CONFLICT", "Image storage is not configured on this environment");
-  const key = `cartons/${id}/${c.carton_no}-${randomBytes(4).toString("hex")}.${ext}`;
-  const put = await putObject(key, bytes, type);
+  const webp = await toWebp(bytes, PHOTO_EDGE);
+  if (!webp) throw new InwardError("VALIDATION_FAILED", "That photo could not be read. Take it again.");
+  const key = `cartons/${id}/${c.carton_no}-${randomBytes(4).toString("hex")}.webp`;
+  const put = await putObject(key, webp, "image/webp");
   if (!put.ok) throw new InwardError("INTERNAL", "The photo could not be stored. Try again.");
   const url = publicUrl(key);
   await getDb().execute(sql`update wms.inward_carton set hold_photo_url = ${url}, updated_at = now() where id = ${cartonId}`);
@@ -907,6 +913,26 @@ export async function holdList(actor: Actor, scope: InwardScope, id: number) {
     at: r.hold_at,
     by: r.by,
   }));
+}
+
+export type CartonHold = Awaited<ReturnType<typeof holdList>>[number];
+
+/** What the cartons panel shows first, read with the page itself so the
+ *  numbers are there on arrival rather than after a second request.
+ *  Null when this person has no carton view of the request. */
+export async function cartonsFirstPaint(
+  actor: Actor,
+  scope: InwardScope,
+  id: number,
+): Promise<{ overview: CartonOverview; holds: CartonHold[] } | null> {
+  try {
+    const overview = await cartonOverview(actor, scope, id);
+    const holds = overview.totals.hold > 0 ? await holdList(actor, scope, id) : [];
+    return { overview, holds };
+  } catch (error) {
+    if (error instanceof InwardError) return null;
+    throw error;
+  }
 }
 
 // ── Guards used by the request flow ──────────────────────────────

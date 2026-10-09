@@ -37,6 +37,8 @@ type Line = {
   unitId: number | null;
   kgPerCarton: string;
   imageUrl: string | null;
+  /** Small WebP for the 34 px square; the photo itself only when opened. */
+  thumbUrl: string | null;
 };
 
 type Draft = {
@@ -63,6 +65,7 @@ const blankLine = (): Line => ({
   unitId: null,
   kgPerCarton: "",
   imageUrl: null,
+  thumbUrl: null,
 });
 
 function fromDetail(d: Detail | null, lookups: Lookups): Draft {
@@ -102,6 +105,7 @@ function fromDetail(d: Detail | null, lookups: Lookups): Draft {
           unitId: l.unitId,
           kgPerCarton: String(l.kgPerCarton),
           imageUrl: l.imageUrl,
+          thumbUrl: l.thumbUrl,
         }))
       : [blankLine()],
   };
@@ -824,6 +828,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
       piecesPerCarton: it.piecesPerCarton != null ? String(it.piecesPerCarton) : d.items[i]!.piecesPerCarton,
       kgPerCarton: it.kgPerCarton != null ? String(it.kgPerCarton) : d.items[i]!.kgPerCarton,
       imageUrl: it.imageUrl,
+      thumbUrl: it.thumbUrl,
     });
     // The one number still to type.
     requestAnimationFrame(() => document.getElementById(`line-${i}-cartons`)?.focus());
@@ -864,6 +869,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
         unitId: l.unitId,
         kgPerCarton: String(l.kgPerCarton),
         imageUrl: l.imageUrl,
+        thumbUrl: l.thumbUrl,
       }));
       // Typed lines stay; blank ones make way.
       setD((s) => ({
@@ -880,7 +886,12 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
         n += 1;
         setImporting(`Saving pictures… ${n} of ${withPicture.length}`);
         const up = await uploadPicture(l.itemId!, pictures.get(l.row)!.blob, q);
-        if ("url" in up) setD((s) => ({ ...s, items: s.items.map((x) => (x.itemId === l.itemId ? { ...x, imageUrl: up.url } : x)) }));
+        if ("url" in up) {
+          setD((s) => ({
+            ...s,
+            items: s.items.map((x) => (x.itemId === l.itemId ? { ...x, imageUrl: up.url, thumbUrl: up.thumb } : x)),
+          }));
+        }
       }
       await refreshLookups();
       toast.success(
@@ -966,9 +977,12 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
         toast.error(up.error);
         return;
       }
-      const url = up.url;
-      setD((s) => ({ ...s, items: s.items.map((x) => (x.itemId === itemId ? { ...x, imageUrl: url } : x)) }));
-      setLookups((lk) => ({ ...lk, items: lk.items.map((it) => (it.id === itemId ? { ...it, imageUrl: url } : it)) }));
+      const { url, thumb } = up;
+      setD((s) => ({ ...s, items: s.items.map((x) => (x.itemId === itemId ? { ...x, imageUrl: url, thumbUrl: thumb } : x)) }));
+      setLookups((lk) => ({
+        ...lk,
+        items: lk.items.map((it) => (it.id === itemId ? { ...it, imageUrl: url, thumbUrl: thumb } : it)),
+      }));
       toast.success(line.itemId === null ? "Saved to the catalogue with its picture." : "Picture saved to the catalogue.");
     } finally {
       setPhotoBusy(null);
@@ -1350,7 +1364,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                               <span className="block text-[10px]">…</span>
                             ) : l.imageUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
-                              <img src={l.imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+                              <img src={l.thumbUrl ?? l.imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
                             ) : (
                               <svg aria-hidden viewBox="0 0 24 24" className="mx-auto h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M4 8h3l2-2.5h6L17 8h3v11H4z" />
@@ -1547,6 +1561,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                   piecesPerCarton: row.piecesPerCarton != null ? String(row.piecesPerCarton) : "",
                   kgPerCarton: row.kgPerCarton != null ? String(row.kgPerCarton) : "",
                   imageUrl: row.imageUrl,
+                  thumbUrl: row.thumbUrl,
                 });
                 // Picked and filled — the cartons are what's left to type.
                 focusSoon(`line-${line}-cartons`);
@@ -1602,7 +1617,11 @@ async function shrinkPicture(blob: Blob): Promise<Blob> {
 }
 
 /** The stored picture's URL, or why it was not stored. */
-async function uploadPicture(itemId: number, blob: Blob, q: string): Promise<{ url: string } | { error: string }> {
+async function uploadPicture(
+  itemId: number,
+  blob: Blob,
+  q: string,
+): Promise<{ url: string; thumb: string | null } | { error: string }> {
   const picture = await shrinkPicture(blob);
   if (picture.size > 2 * 1024 * 1024) return { error: "That picture is over 2 MB even after shrinking" };
   const response = await fetch(`/api/v1/items/${itemId}/image${q}`, {
@@ -1611,9 +1630,11 @@ async function uploadPicture(itemId: number, blob: Blob, q: string): Promise<{ u
     credentials: "same-origin",
     body: picture,
   });
-  const json = (await response.json().catch(() => null)) as { imageUrl?: string | null; error?: { message?: string } } | null;
+  const json = (await response.json().catch(() => null)) as
+    | { imageUrl?: string | null; thumbUrl?: string | null; error?: { message?: string } }
+    | null;
   if (!response.ok || !json?.imageUrl) return { error: json?.error?.message ?? "The picture could not be stored" };
-  return { url: json.imageUrl };
+  return { url: json.imageUrl, thumb: json.thumbUrl ?? null };
 }
 
 function Row({ k, v, mono }: { k: string; v?: string; mono?: boolean }) {
