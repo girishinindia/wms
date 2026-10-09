@@ -11,6 +11,7 @@ import {
   KeyIcon,
   RupeeIcon,
   SitemapIcon,
+  QrIcon,
   WarehouseIcon,
   BoxIcon,
   BuildingIcon,
@@ -87,6 +88,7 @@ const ICONS = {
   clock: ClockIcon,
   mail: MailIcon,
   sitemap: SitemapIcon,
+  qr: QrIcon,
 } as const;
 
 export type AdminUser = {

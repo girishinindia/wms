@@ -44,6 +44,15 @@ export const BoxIcon = (p: P) => (
   </svg>
 );
 
+export const QrIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1" />
+    <rect x="14" y="3.5" width="6.5" height="6.5" rx="1" />
+    <rect x="3.5" y="14" width="6.5" height="6.5" rx="1" />
+    <path d="M14 14h2.5v2.5H14zM18 14h2.5M14 18v2.5M17.5 18h3v2.5h-3z" />
+  </svg>
+);
+
 export const ReceiptIcon = (p: P) => (
   <svg {...base} {...p}>
     <path d="M5 3h14v18l-2.3-1.4-2.4 1.4-2.3-1.4L9.7 21l-2.4-1.4L5 21Z" />

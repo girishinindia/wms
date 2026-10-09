@@ -97,7 +97,8 @@ export type AdminNavIcon =
   | "key"
   | "clock"
   | "mail"
-  | "sitemap";
+  | "sitemap"
+  | "qr";
 
 /** A collapsible section. Its children are ordinary items and are what
  *  `visibleNav` returns — the group itself grants nothing. */
@@ -363,6 +364,18 @@ export const ADMIN_NAV: AdminNavNode[] = [
     own: true,
     agent: true,
     icon: "box",
+  },
+  /**
+   * QR codes — carton numbers, stickers and scanning, reached without
+   * opening the request first. Keyed on `inward.goods.update`, which only
+   * the super admin (ALL), warehouse admin and inward manager (WAREHOUSE)
+   * hold; an importer's OWN goods grant earns nothing here.
+   */
+  {
+    href: "/admin/qr-codes",
+    label: "QR codes",
+    permission: "inward.goods.update",
+    icon: "qr",
   },
   {
     href: "/admin/notifications",

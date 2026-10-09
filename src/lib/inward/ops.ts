@@ -105,7 +105,7 @@ export function scopeFor(
   return { side: "importer", importerId };
 }
 
-function scopeWhere(scope: InwardScope): SQL {
+export function scopeWhere(scope: InwardScope): SQL {
   switch (scope.side) {
     case "importer":
       return sql`r.importer_id = ${scope.importerId}`;

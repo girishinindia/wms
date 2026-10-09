@@ -13,6 +13,7 @@ import { cartonNoFromScan, qrText, type LabelData } from "@/lib/inward/carton-fo
 import {
   headerOf,
   InwardError,
+  scopeWhere,
   sniffDocument,
   STATUS_LABEL,
   tell,
@@ -54,6 +55,100 @@ export function cartonCan(actor: Actor, row: { status: InwardStatus; warehouseId
     view: update && (working || row.status === "COMPLETED"),
     generate: covers("inward.goods.create") && working,
     work: update && working,
+  };
+}
+
+// ── The QR codes queue ────────────────────────────────────────────
+
+/** One inward on the "QR codes" screen: enough to pick the right one. */
+export type CartonQueueRow = {
+  id: number;
+  code: string;
+  status: InwardStatus;
+  statusLabel: string;
+  importer: string;
+  warehouse: string;
+  containerNumber: string | null;
+  expectedArrival: string | null;
+  ready: boolean;
+  declared: number;
+  generated: number;
+  printed: number;
+  received: number;
+  hold: number;
+};
+
+/**
+ * The inwards a person can number, print and scan right now —
+ * acknowledged or in process, in their warehouses (every warehouse for
+ * the super admin). With `completed`, also those completed in the last
+ * 30 days, for a reprint. Searchable by inward no., container, importer.
+ */
+export async function cartonQueue(
+  actor: Actor,
+  scope: InwardScope,
+  opts: { q?: string; completed?: boolean } = {},
+): Promise<{ requests: CartonQueueRow[] }> {
+  const q = (opts.q ?? "").trim();
+  const like = `%${q.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+  const rows = await getDb().execute<{
+    id: number;
+    code: string;
+    status: InwardStatus;
+    importer_name: string;
+    warehouse_id: number;
+    warehouse_name: string;
+    container_number: string | null;
+    expected_arrival: string | null;
+    ready: boolean;
+    declared: string;
+    generated: string;
+    printed: string;
+    received: string;
+    hold: string;
+  }>(sql`
+    select r.id, r.code, r.status, i.company_name as importer_name, r.warehouse_id, w.name as warehouse_name,
+           r.container_number, to_char(r.expected_arrival, 'YYYY-MM-DD') as expected_arrival,
+           (r.vehicle_id is not null and r.driver_id is not null) as ready,
+           coalesce((select sum(li.carton_qty) from wms.inward_request_item li where li.inward_request_id = r.id), 0)::text as declared,
+           count(c.id)::text as generated,
+           count(c.id) filter (where c.print_count > 0)::text as printed,
+           count(c.id) filter (where c.status = 'RECEIVED')::text as received,
+           count(c.id) filter (where c.status = 'HOLD')::text as hold
+      from wms.inward_request r
+      join wms.importer i on i.id = r.importer_id
+      join wms.warehouse w on w.id = r.warehouse_id
+      left join wms.inward_carton c on c.inward_request_id = r.id
+     where r.deleted_at is null
+       and ${scopeWhere(scope)}
+       and (r.status in ('ACKNOWLEDGED', 'IN_PROCESS')
+            ${opts.completed ? sql`or (r.status = 'COMPLETED' and r.completed_at > now() - interval '30 days' and exists (select 1 from wms.inward_carton cc where cc.inward_request_id = r.id))` : sql``})
+       ${q ? sql`and (r.code ilike ${like} or r.container_number ilike ${like} or i.company_name ilike ${like} or w.name ilike ${like})` : sql``}
+     group by r.id, i.company_name, w.name
+     order by case r.status when 'IN_PROCESS' then 0 when 'ACKNOWLEDGED' then 1 else 2 end,
+              r.expected_arrival nulls last, r.id desc
+     limit 200
+  `);
+  const n = (v: string) => Number(v) || 0;
+  return {
+    requests: rows
+      .filter((r) => cartonCan(actor, { status: r.status, warehouseId: Number(r.warehouse_id) }).view)
+      .map((r) => ({
+        id: Number(r.id),
+        code: r.code,
+        status: r.status,
+        statusLabel: STATUS_LABEL[r.status],
+        importer: r.importer_name,
+        warehouse: r.warehouse_name,
+        containerNumber: r.container_number,
+        expectedArrival: r.expected_arrival,
+        ready: Boolean(r.ready),
+        declared: n(r.declared),
+        generated: n(r.generated),
+        printed: n(r.printed),
+        received: n(r.received),
+        hold: n(r.hold),
+      })),
   };
 }
 

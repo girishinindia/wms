@@ -41,6 +41,26 @@ describe("admin navigation", () => {
     expect(visibleNav(IMPORTER)).toEqual([]);
   });
 
+  it("shows QR codes to the dock and super admin, never to an importer", () => {
+    const labels = (set: { permission: string; scope: "OWN" | "WAREHOUSE" | "ALL" }[]) =>
+      visibleNav(set).map((i) => i.label);
+    // Importer and sales agent: goods at OWN, read only.
+    expect(
+      labels([
+        { permission: "inward.request.read", scope: "OWN" },
+        { permission: "inward.goods.read", scope: "OWN" },
+        { permission: "inward.goods.update", scope: "OWN" },
+      ]),
+    ).not.toContain("QR codes");
+    // Inward manager / warehouse admin.
+    expect(
+      labels([
+        { permission: "inward.request.read", scope: "WAREHOUSE" },
+        { permission: "inward.goods.update", scope: "WAREHOUSE" },
+      ]),
+    ).toEqual(["Dashboard", "Inward requests", "QR codes", "Notifications"]);
+  });
+
   it("does not show the dashboard on its own", () => {
     // The dashboard has no permission of its own. It must never be the
     // reason somebody is admitted — nor may Notifications, which is the
@@ -244,6 +264,8 @@ describe("admin navigation: grouping", () => {
       // Both sides of the counter, right under the dashboard: the one
       // screen an importer and a dock manager both open every day.
       "Inward requests",
+      // Stickers and scanning, right under the requests they belong to.
+      "QR codes",
       "Notifications",
       "Enquiry",
       "Users & Roles",
