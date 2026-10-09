@@ -39,6 +39,22 @@ export default function InwardDetail({ detail: initial }: { detail: Detail }) {
   const [note, setNote] = useState<string | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
 
+  // ── Move to another warehouse (super admin) ──
+  const [move, setMove] = useState<{ warehouseId: number | null; reason: string } | null>(null);
+  const [moveError, setMoveError] = useState<Record<string, string>>({});
+  const [sites, setSites] = useState<Array<{ id: number; name: string; code: string; city: string | null }> | null>(null);
+  const openMove = async () => {
+    setMove({ warehouseId: null, reason: "" });
+    setMoveError({});
+    if (sites) return;
+    const r = await api<{ warehouses: Array<{ id: number; name: string; code: string; city: string | null }> }>(
+      `/inward-requests/lookups?importerId=${d.importer.id}`,
+      { method: "GET" },
+    );
+    if (r.ok) setSites(r.data.warehouses);
+    else toast.error(r.error.message);
+  };
+
   const run = async (path: string, init: { method?: string; body?: unknown }) => {
     setBusy(true);
     const r = await api<Detail>(path, init);
@@ -64,6 +80,17 @@ export default function InwardDetail({ detail: initial }: { detail: Detail }) {
     { label: "Completed", at: d.completedAt, by: d.people.completedBy, done: d.completedAt !== null },
     ...(d.status === "CANCELLED" ? [{ label: "Cancelled", at: d.cancelledAt, by: d.people.cancelledBy, done: true }] : []),
   ];
+  // Moves sit in time order among the steps that have happened.
+  for (const m of d.moves) {
+    const at = new Date(m.at).getTime();
+    const i = timeline.findIndex((e) => !e.done || (e.at !== null && new Date(e.at).getTime() > at));
+    timeline.splice(i === -1 ? timeline.length : i, 0, {
+      label: `Moved to ${m.to}`,
+      at: m.at,
+      by: [m.by, `from ${m.from}`, m.reason].filter(Boolean).join(" · "),
+      done: true,
+    });
+  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -216,12 +243,17 @@ export default function InwardDetail({ detail: initial }: { detail: Detail }) {
                 Needs changes
               </button>
             ) : null}
+            {d.can.move ? (
+              <button type="button" id="inward-move" disabled={busy} onClick={() => void openMove()} className={secondary}>
+                Move to another warehouse
+              </button>
+            ) : null}
             {d.can.cancel ? (
               <button type="button" disabled={busy} onClick={() => setConfirm("cancel")} className={danger}>
                 Cancel request
               </button>
             ) : null}
-            {!d.can.edit && !d.can.submit && !d.can.acknowledge && !d.can.in_process && !d.can.complete && !d.can.needs_changes && !d.can.cancel ? (
+            {!d.can.edit && !d.can.submit && !d.can.acknowledge && !d.can.in_process && !d.can.complete && !d.can.needs_changes && !d.can.cancel && !d.can.move ? (
               <p className="text-xs text-verdigris-200/50">Nothing to do from here.</p>
             ) : null}
           </div>
@@ -267,6 +299,99 @@ export default function InwardDetail({ detail: initial }: { detail: Detail }) {
             if (ok) setConfirm(null);
           }}
         />
+      ) : null}
+
+      {move !== null ? (
+        <ConfirmDialog
+          title={`Move ${d.code} to another warehouse`}
+          busy={busy}
+          message={
+            <>
+              Now going to <span className="font-semibold">{d.warehouse.name}</span>. The new warehouse confirms it again; the
+              importer and both warehouses are told.
+            </>
+          }
+          confirmLabel="Move"
+          tone="warn"
+          onCancel={() => setMove(null)}
+          onConfirm={async () => {
+            const errs: Record<string, string> = {};
+            if (!move.warehouseId) errs.warehouseId = "Choose the new warehouse";
+            if (move.reason.trim().length < 3) errs.reason = "Say why it is moving";
+            setMoveError(errs);
+            if (Object.keys(errs).length) return;
+            setBusy(true);
+            const r = await api<Detail>(`/inward-requests/${d.id}/move`, {
+              body: { warehouseId: move.warehouseId, reason: move.reason.trim() },
+            });
+            setBusy(false);
+            if (!r.ok) {
+              setMoveError(r.error.fields ?? {});
+              toast.error(r.error.message);
+              return;
+            }
+            setD(r.data);
+            setMove(null);
+            toast.success(`${r.data.code} now goes to ${r.data.warehouse.name}.`);
+            router.refresh();
+          }}
+        >
+          <label htmlFor="move-warehouse" className="mt-4 mb-1.5 block text-xs font-semibold uppercase tracking-[0.1em] text-verdigris-300">
+            New warehouse
+          </label>
+          <select
+            id="move-warehouse"
+            autoFocus
+            value={move.warehouseId ?? ""}
+            onChange={(e) => {
+              setMove({ ...move, warehouseId: e.target.value ? Number(e.target.value) : null });
+              setMoveError((x) => ({ ...x, warehouseId: "" }));
+            }}
+            className="w-full rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50 focus:outline-none focus:ring-2 focus:ring-patina/40"
+          >
+            <option value="">{sites ? "Choose…" : "Loading…"}</option>
+            {(sites ?? [])
+              .filter((w) => w.id !== d.warehouse.id)
+              .map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                  {w.city ? ` · ${w.city}` : ""}
+                </option>
+              ))}
+          </select>
+          {moveError.warehouseId ? <p className="mt-1 text-xs text-rose-300">{moveError.warehouseId}</p> : null}
+          <p className="mt-4 mb-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-verdigris-300">Reason</p>
+          <div className="flex flex-wrap gap-1.5">
+            {["No storage space", "Closer to the port", "Importer asked"].map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => {
+                  setMove({ ...move, reason: r });
+                  setMoveError((x) => ({ ...x, reason: "" }));
+                }}
+                className={`rounded-full border px-2.5 py-0.5 text-xs ${
+                  move.reason === r
+                    ? "border-patina bg-patina/15 text-patina"
+                    : "border-verdigris-300/20 text-verdigris-200/70 hover:border-patina/50 hover:text-patina"
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          <input
+            id="move-reason"
+            value={move.reason}
+            onChange={(e) => {
+              setMove({ ...move, reason: e.target.value });
+              setMoveError((x) => ({ ...x, reason: "" }));
+            }}
+            placeholder="Or type the reason"
+            className="mt-2 w-full rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50 placeholder:text-verdigris-200/30 focus:outline-none focus:ring-2 focus:ring-patina/40"
+          />
+          {moveError.reason ? <p className="mt-1 text-xs text-rose-300">{moveError.reason}</p> : null}
+        </ConfirmDialog>
       ) : null}
 
       {note !== null ? (

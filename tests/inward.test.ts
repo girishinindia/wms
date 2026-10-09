@@ -115,6 +115,14 @@ describe("the state machine", () => {
   it("nothing is possible on a cancelled request", () => {
     expect(Object.values(canDo(admin, row("CANCELLED"))).some(Boolean)).toBe(false);
   });
+
+  it("only a platform approver moves a request, and only before the goods arrive", () => {
+    for (const st of ["SUBMITTED", "ACKNOWLEDGED", "NEEDS_CHANGES"]) expect(canDo(admin, row(st)).move, st).toBe(true);
+    for (const st of ["DRAFT", "IN_PROCESS", "COMPLETED", "CANCELLED"]) expect(canDo(admin, row(st)).move, st).toBe(false);
+    // A warehouse-scoped approver covers one of the two sites — not enough.
+    expect(canDo(dock, row("SUBMITTED")).move).toBe(false);
+    expect(canDo(importer, row("SUBMITTED")).move).toBe(false);
+  });
 });
 
 describe("scope", () => {
@@ -310,6 +318,17 @@ describe("the SQL pack", () => {
     expect(sql).toMatch(/'inward\.request_needs_changes',\s+'IMPORTER_ROLE',\s+'IMPORTER'/);
   });
 
+  it("sends inward alerts to the importer, both warehouse roles and super admins — not to agents", () => {
+    const alerts = readFileSync(new URL("../../sql/31_inward_alerts_and_move.sql", import.meta.url), "utf8");
+    expect(alerts).toMatch(/set is_active = false[\s\S]*role_filter = 'SALES_AGENT'/);
+    for (const ev of ["submitted", "acknowledged", "needs_changes", "status", "cancelled", "moved"]) {
+      expect(alerts).toMatch(new RegExp(`'inward\\.request_${ev}',\\s+'ALL_SUPER_ADMINS'`));
+    }
+    expect(alerts).toMatch(/'inward\.request_moved_away',\s+'WAREHOUSE_ROLE',\s+'INWARD_MANAGER'/);
+    expect(alerts).toMatch(/'inward\.request_moved',\s+'IMPORTER_ROLE',\s+'IMPORTER',\s+'\{IN_APP,PUSH,EMAIL\}'/);
+    expect(alerts).not.toMatch(/^\s*(create|alter|drop)\s/im);
+  });
+
   it("generates the totals in the database", () => {
     expect(sql).toMatch(/total_pieces\s+integer generated always as \(carton_qty \* pieces_per_carton\) stored/);
     expect(sql).toMatch(/total_kg\s+numeric\(14,3\) generated always as \(carton_qty \* kg_per_carton\) stored/);
@@ -346,6 +365,11 @@ describe("the routes", () => {
       expect(code(path), path).toMatch(/actingImporterId\(actor, grant,/);
     }
     expect(code("src/app/admin/inward/new/page.tsx")).toMatch(/guard\.grant\.scope === "ALL"/);
+  });
+
+  it("a move is keyed on approve, and inward alerts skip whoever acted", () => {
+    expect(code("src/app/api/v1/inward-requests/[id]/move/route.ts")).toMatch(/requirePermission\("inward\.request\.approve"/);
+    expect(code("src/lib/inward/ops.ts")).toMatch(/skipActor: true/);
   });
 
   it("the dock never lists a draft", () => {

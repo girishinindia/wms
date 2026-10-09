@@ -59,6 +59,12 @@ export const inwardDecisionSchema = z.object({
   note: blank(z.string().trim().min(3, "Say what needs to change").max(1000)),
 });
 
+/** A super admin moves a request to another warehouse. */
+export const inwardMoveSchema = z.object({
+  warehouseId: id,
+  reason: z.string().trim().min(3, "Say why it is moving").max(300, "Keep it under 300 characters"),
+});
+
 export const inwardListQuerySchema = z.object({
   status: z
     .enum(["DRAFT", "SUBMITTED", "NEEDS_CHANGES", "ACKNOWLEDGED", "IN_PROCESS", "COMPLETED", "CANCELLED", "OPEN"])

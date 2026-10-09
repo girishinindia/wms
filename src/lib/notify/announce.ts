@@ -33,6 +33,13 @@ export type AnnounceInput = {
   importerId?: number | null;
   warehouseId?: number | null;
   correlationId?: string;
+  /**
+   * Leave out the person who caused the event. Off by default, because
+   * some events are FOR the actor (an OTP, "your password changed"); on
+   * for workflow alerts like inward, where a super admin who
+   * acknowledges a request should not be told they acknowledged it.
+   */
+  skipActor?: boolean;
 };
 
 export type AnnounceResult = {
@@ -58,6 +65,7 @@ export async function announce(input: AnnounceInput): Promise<AnnounceResult> {
   if (rules.length === 0) return result;
 
   const seen = new Set<number>();
+  if (input.skipActor && input.actorUserId) seen.add(input.actorUserId);
 
   for (const rule of rules) {
     const audience = await db.execute<{ user_id: number }>(sql`

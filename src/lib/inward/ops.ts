@@ -132,7 +132,8 @@ export type InwardAction =
   | "ACKNOWLEDGE"
   | "NEEDS_CHANGES"
   | "IN_PROCESS"
-  | "COMPLETE";
+  | "COMPLETE"
+  | "MOVE";
 
 /** From which statuses each action is allowed, and by which side. */
 const TRANSITIONS: Record<InwardAction, { from: InwardStatus[]; side: "importer" | "warehouse" }> = {
@@ -143,6 +144,9 @@ const TRANSITIONS: Record<InwardAction, { from: InwardStatus[]; side: "importer"
   NEEDS_CHANGES: { from: ["SUBMITTED", "ACKNOWLEDGED"], side: "warehouse" },
   IN_PROCESS: { from: ["ACKNOWLEDGED"], side: "warehouse" },
   COMPLETE: { from: ["ACKNOWLEDGED", "IN_PROCESS"], side: "warehouse" },
+  // Before the goods arrive. Only a platform actor (approve at ALL) —
+  // see canDo — because it takes a request from one warehouse to another.
+  MOVE: { from: ["SUBMITTED", "ACKNOWLEDGED", "NEEDS_CHANGES"], side: "warehouse" },
 };
 
 export type Can = Record<Lowercase<InwardAction>, boolean>;
@@ -177,6 +181,12 @@ export function canDo(actor: Actor, row: { status: InwardStatus; importerId: num
     needs_changes: allowed("NEEDS_CHANGES", "inward.request.approve"),
     in_process: allowed("IN_PROCESS", "inward.request.approve"),
     complete: allowed("COMPLETE", "inward.request.approve"),
+    // Moving spans two warehouses, so a warehouse-scoped grant — which
+    // covers only one of them — is not enough. Approve at ALL is the
+    // super admin.
+    move:
+      TRANSITIONS.MOVE.from.includes(row.status) &&
+      actor.permissions.some((p) => p.permission === "inward.request.approve" && p.scope === "ALL"),
   };
 }
 
@@ -467,12 +477,13 @@ async function visibleHeader(scope: InwardScope, id: number): Promise<HeaderRow>
 
 export async function getRequest(actor: Actor, scope: InwardScope, id: number) {
   const row = await visibleHeader(scope, id);
-  const [items, documents] = await Promise.all([linesOf(id), documentsOf(id)]);
+  const [items, documents, moves] = await Promise.all([linesOf(id), documentsOf(id), movesOf(id)]);
   const summary = toSummary(row);
   return {
     ...summary,
     items,
     documents,
+    moves,
     people: {
       createdBy: row.created_by_name,
       submittedBy: row.submitted_by_name,
@@ -950,17 +961,22 @@ async function tell(
   actor: Actor,
   meta: Meta,
   extra: Record<string, string> = {},
+  /** Whose warehouse staff hear it, when not the request's own (a move tells the old one). */
+  warehouseId: number = Number(row.warehouse_id),
 ): Promise<void> {
   try {
     await announce({
       eventKey,
       values: valuesFor(row, extra),
-      dedupeSuffix: `inward_request:${row.id}:${row.status}:${Date.now()}`,
+      dedupeSuffix: `inward_request:${row.id}:${row.status}:${eventKey}:${Date.now()}`,
       actorUserId: actor.session.userId,
+      // Inward alerts go to the other side of the action, never back to
+      // whoever clicked (a super admin is on every inward rule).
+      skipActor: true,
       entityType: "inward_request",
       entityId: String(row.id),
       importerId: Number(row.importer_id),
-      warehouseId: Number(row.warehouse_id),
+      warehouseId,
       correlationId: meta.requestId,
     });
   } catch (error) {
@@ -1113,6 +1129,92 @@ export async function decideRequest(
   if (action === "ACKNOWLEDGE") await tell("inward.request_acknowledged", fresh, actor, meta);
   else if (action === "NEEDS_CHANGES") await tell("inward.request_needs_changes", fresh, actor, meta, { note: note ?? "" });
   else await tell("inward.request_status", fresh, actor, meta, { statusLabel: STATUS_LABEL[next].toLowerCase() });
+
+  return getRequest(actor, scope, id);
+}
+
+// ── Moving a request to another warehouse ─────────────────────────
+
+export type InwardMove = { at: string; by: string | null; from: string; to: string; reason: string };
+
+/** The moves, oldest first — read back from the audit trail, which is
+ *  where each one is written, so there is no second copy to drift. */
+async function movesOf(id: number): Promise<InwardMove[]> {
+  const rows = await getDb().execute<{ at: string; by: string | null; from: string | null; to: string | null; reason: string | null }>(sql`
+    select occurred_at::text as at, actor_name as by,
+           before->>'warehouseName' as from, after->>'warehouseName' as to, reason
+      from wms.audit_log
+     where entity_type = 'inward_request' and entity_id = ${String(id)}
+       and action = 'inward.request.moved' and result = 'SUCCESS'
+     order by occurred_at
+  `);
+  return rows.map((r) => ({ at: r.at, by: r.by, from: r.from ?? "—", to: r.to ?? "—", reason: r.reason ?? "" }));
+}
+
+/**
+ * A super admin sends a request to another warehouse — the first one
+ * has no space. The new warehouse has to confirm it has room, so an
+ * acknowledgement does not carry over: SUBMITTED and ACKNOWLEDGED both
+ * land on SUBMITTED. NEEDS_CHANGES stays as it is, because the importer
+ * still owes the fix whichever warehouse it goes to.
+ */
+export async function moveRequest(
+  actor: Actor,
+  scope: InwardScope,
+  id: number,
+  warehouseId: number,
+  reason: string,
+  meta: Meta,
+) {
+  const row = await visibleHeader(scope, id);
+  const can = canDo(actor, { status: row.status, importerId: Number(row.importer_id), warehouseId: Number(row.warehouse_id) });
+  if (!can.move) {
+    throw new InwardError("CONFLICT", `A ${STATUS_LABEL[row.status].toLowerCase()} request cannot be moved`);
+  }
+  if (warehouseId === Number(row.warehouse_id)) {
+    throw new InwardError("VALIDATION_FAILED", "Choose a different warehouse", { warehouseId: "It is already going there" });
+  }
+  const db = getDb();
+  const target = await db.execute<{ name: string }>(sql`
+    select name from wms.warehouse where id = ${warehouseId} and deleted_at is null and is_active
+  `);
+  if (!target[0]) {
+    throw new InwardError("VALIDATION_FAILED", "Choose a warehouse", { warehouseId: "That warehouse is not available" });
+  }
+
+  const next: InwardStatus = row.status === "NEEDS_CHANGES" ? "NEEDS_CHANGES" : "SUBMITTED";
+  const by = actor.session.userId;
+  await db.execute(sql`
+    update wms.inward_request
+       set warehouse_id = ${warehouseId},
+           status = ${next},
+           acknowledged_by = null, acknowledged_at = null,
+           last_status_by = ${by}, last_status_at = now(), updated_by = ${by}
+     where id = ${id}
+  `);
+  await auditQuietly({
+    action: "inward.request.moved",
+    operation: "UPDATE",
+    entityType: "inward_request",
+    entityId: String(id),
+    entityLabel: row.code,
+    actorUserId: by,
+    actorEmail: actor.session.email,
+    actorName: `${actor.session.firstName} ${actor.session.lastName}`.trim(),
+    before: { warehouseId: Number(row.warehouse_id), warehouseName: row.warehouse_name, status: row.status },
+    after: { warehouseId, warehouseName: target[0].name, status: next },
+    reason,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+    requestId: meta.requestId,
+  });
+
+  const fresh = (await headerOf(id))!;
+  const extra = { fromWarehouse: row.warehouse_name, reason };
+  // The importer, the new warehouse and the super admins…
+  await tell("inward.request_moved", fresh, actor, meta, extra);
+  // …and, separately, the warehouse that is no longer expecting it.
+  await tell("inward.request_moved_away", fresh, actor, meta, extra, Number(row.warehouse_id));
 
   return getRequest(actor, scope, id);
 }
