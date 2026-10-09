@@ -489,157 +489,169 @@ export async function getRequest(actor: Actor, scope: InwardScope, id: number) {
 
 // ── Lookups: everything the form needs, in one call ───────────────
 
+type LookupRow = {
+  importer: { id: number; code: string; name: string; status: string } | null;
+  importers: { id: number; code: string; name: string }[] | null;
+  warehouses: { id: number; code: string; name: string; city: string | null }[];
+  container_types: { id: number; code: string; name: string; is_high_cube: boolean }[];
+  ports: { id: number; code: string; name: string; state: string | null }[];
+  units: { id: number; code: string; name: string }[];
+  vehicle_types: { id: number; code: string; name: string }[];
+  transporters: {
+    id: number;
+    code: string;
+    name: string;
+    mobile: string | null;
+    status: string;
+    warehouse_ids: number[];
+    vehicles: { id: number; registration_number: string; type_name: string | null; capacity_kg: number | null; status: string }[];
+    drivers: { id: number; name: string; mobile: string | null; licence_number: string | null; status: string }[];
+  }[];
+  items: {
+    id: number;
+    code: string;
+    description: string;
+    image_url: string | null;
+    unit_id: number | null;
+    unit_code: string | null;
+    pieces_per_carton: number | null;
+    kg_per_carton: number | null;
+  }[];
+  last: {
+    warehouse_id: number | null;
+    container_type_id: number | null;
+    port_id: number | null;
+    transporter_id: number | null;
+    vehicle_id: number | null;
+    driver_id: number | null;
+  } | null;
+};
+
 /**
  * `importerId` is whose request is being written. An importer-side
  * actor always has one; a platform actor (SUPER_ADMIN at ALL) has none
  * of their own and names one — so for them `chooser` adds the list of
  * active importers to pick from, and until one is picked the catalogue
  * and the "last time" defaults are simply empty.
+ *
+ * ONE statement, not eleven. The form opens on a cold serverless
+ * instance over a pooled connection, where each round trip costs more
+ * than the query itself — and the pool runs three connections with no
+ * pipelining, so eleven queries were four waves. Postgres assembles
+ * every list as JSON and hands the whole thing back in a single row.
  */
 export async function lookupsFor(importerId: number | null, options: { chooser?: boolean } = {}) {
   const db = getDb();
-  const [warehouses, containerTypes, ports, units, transporters, vehicles, drivers, items, last, importer, importers] =
-    await Promise.all([
-      db.execute<Record<string, string>>(sql`
-        select w.id, w.code, w.name, c.name as city
-          from wms.warehouse w left join wms.city c on c.id = w.city_id
-         where w.deleted_at is null and w.is_active
-         order by w.name
-      `),
-      db.execute<Record<string, string>>(sql`
-        select id, code, name, is_high_cube from wms.container_type
-         where deleted_at is null and is_active order by sort_order, name
-      `),
-      db.execute<Record<string, string>>(sql`
-        select p.id, p.code, p.name, s.name as state from wms.port p
-          left join wms.state s on s.id = p.state_id
-         where p.deleted_at is null and p.is_active order by p.sort_order, p.name
-      `),
-      db.execute<Record<string, string>>(sql`
-        select id, code, name from wms.measurement_unit
-         where deleted_at is null and is_active order by sort_order, name
-      `),
-      // The register, plus whatever this importer proposed that is
-      // still waiting. Nobody else's pending rows.
-      db.execute<Record<string, string | null>>(sql`
-        select t.id, t.code, t.name, t.contact_mobile::text as mobile, t.status::text as status,
-               t.proposed_by_importer_id,
-               coalesce((select array_agg(wt.warehouse_id) from wms.warehouse_transporter wt
-                          where wt.transporter_id = t.id and wt.deleted_at is null), '{}')::text as warehouse_ids
-          from wms.transporter t
-         where t.deleted_at is null and not t.blacklisted
-           and (t.status = 'ACTIVE' or (t.status = 'PENDING' and t.proposed_by_importer_id = ${importerId}))
-         order by t.name
-      `),
-      db.execute<Record<string, string | null>>(sql`
-        select v.id, v.transporter_id, v.registration_number::text as registration_number,
-               vt.name as type_name, v.capacity_kg::text as capacity_kg, v.status::text as status,
-               v.proposed_by_importer_id
-          from wms.vehicle v join wms.vehicle_type vt on vt.id = v.vehicle_type_id
-         where v.deleted_at is null
-           and (v.status = 'ACTIVE' or (v.status = 'PENDING' and v.proposed_by_importer_id = ${importerId}))
-         order by v.registration_number
-      `),
-      db.execute<Record<string, string | null>>(sql`
-        select d.id, d.transporter_id, d.name, d.mobile::text as mobile, d.licence_number,
-               d.status::text as status, d.proposed_by_importer_id
-          from wms.driver d
-         where d.deleted_at is null
-           and (d.status = 'ACTIVE' or (d.status = 'PENDING' and d.proposed_by_importer_id = ${importerId}))
-         order by d.name
-      `),
-      db.execute<Record<string, string | null>>(sql`
-        select it.id, it.code, it.description, it.image_url, it.measurement_unit_id, mu.code as unit_code,
-               it.pieces_per_carton, it.kg_per_carton::text as kg_per_carton, it.is_active
-          from wms.item it left join wms.measurement_unit mu on mu.id = it.measurement_unit_id
-         where it.importer_id = ${importerId} and it.deleted_at is null and it.is_active
-         order by it.code, it.description
-      `),
-      db.execute<Record<string, string | null>>(sql`
-        select warehouse_id, container_type_id, port_id, transporter_id, vehicle_id, driver_id
-          from wms.inward_request
-         where importer_id = ${importerId} and deleted_at is null and status <> 'CANCELLED'
-         order by coalesce(submitted_at, created_at) desc
-         limit 1
-      `),
-      importerId === null
-        ? Promise.resolve([] as Record<string, string>[])
-        : db.execute<Record<string, string>>(sql`
-            select id, code, company_name as name, status::text as status from wms.importer
-             where id = ${importerId} and deleted_at is null
-          `),
-      options.chooser
-        ? db.execute<Record<string, string>>(sql`
-            select i.id, i.code, i.company_name as name
-              from wms.importer i
-             where i.deleted_at is null and i.status = 'ACTIVE'
-             order by i.company_name
-             limit 500
-          `)
-        : Promise.resolve(null),
-    ]);
-  if (importerId !== null && importer[0] === undefined) {
+  const rows = await db.execute<LookupRow>(sql`
+    select
+      (select json_build_object('id', i.id, 'code', i.code, 'name', i.company_name, 'status', i.status::text)
+         from wms.importer i
+        where ${importerId}::bigint is not null and i.id = ${importerId}::bigint and i.deleted_at is null) as importer,
+      case when ${options.chooser ?? false}::boolean then
+        (select coalesce(json_agg(json_build_object('id', i.id, 'code', i.code, 'name', i.company_name)
+                                  order by i.company_name), '[]'::json)
+           from (select * from wms.importer
+                  where deleted_at is null and status = 'ACTIVE'
+                  order by company_name limit 500) i)
+      end as importers,
+      (select coalesce(json_agg(json_build_object('id', w.id, 'code', w.code, 'name', w.name, 'city', c.name)
+                                order by w.name), '[]'::json)
+         from wms.warehouse w left join wms.city c on c.id = w.city_id
+        where w.deleted_at is null and w.is_active) as warehouses,
+      (select coalesce(json_agg(json_build_object('id', id, 'code', code, 'name', name, 'is_high_cube', is_high_cube)
+                                order by sort_order, name), '[]'::json)
+         from wms.container_type where deleted_at is null and is_active) as container_types,
+      (select coalesce(json_agg(json_build_object('id', p.id, 'code', p.code, 'name', p.name, 'state', s.name)
+                                order by p.sort_order, p.name), '[]'::json)
+         from wms.port p left join wms.state s on s.id = p.state_id
+        where p.deleted_at is null and p.is_active) as ports,
+      (select coalesce(json_agg(json_build_object('id', id, 'code', code, 'name', name) order by sort_order, name), '[]'::json)
+         from wms.measurement_unit where deleted_at is null and is_active) as units,
+      (select coalesce(json_agg(json_build_object('id', id, 'code', code, 'name', name) order by name), '[]'::json)
+         from wms.vehicle_type where deleted_at is null and is_active) as vehicle_types,
+      /* The register, plus whatever this importer proposed that is
+         still waiting. Nobody else's pending rows. Vehicles and
+         drivers nest under their transporter. */
+      (select coalesce(json_agg(json_build_object(
+                 'id', t.id, 'code', t.code, 'name', t.name, 'mobile', t.contact_mobile::text,
+                 'status', t.status::text,
+                 'warehouse_ids', coalesce((select json_agg(wt.warehouse_id) from wms.warehouse_transporter wt
+                                             where wt.transporter_id = t.id and wt.deleted_at is null), '[]'::json),
+                 'vehicles', coalesce((select json_agg(json_build_object(
+                                 'id', v.id, 'registration_number', v.registration_number::text,
+                                 'type_name', vt.name, 'capacity_kg', v.capacity_kg, 'status', v.status::text)
+                                 order by v.registration_number)
+                               from wms.vehicle v join wms.vehicle_type vt on vt.id = v.vehicle_type_id
+                              where v.transporter_id = t.id and v.deleted_at is null
+                                and (v.status = 'ACTIVE' or (v.status = 'PENDING' and v.proposed_by_importer_id = ${importerId}::bigint))),
+                             '[]'::json),
+                 'drivers', coalesce((select json_agg(json_build_object(
+                                 'id', d.id, 'name', d.name, 'mobile', d.mobile::text,
+                                 'licence_number', d.licence_number, 'status', d.status::text)
+                                 order by d.name)
+                               from wms.driver d
+                              where d.transporter_id = t.id and d.deleted_at is null
+                                and (d.status = 'ACTIVE' or (d.status = 'PENDING' and d.proposed_by_importer_id = ${importerId}::bigint))),
+                             '[]'::json))
+               order by t.name), '[]'::json)
+         from wms.transporter t
+        where t.deleted_at is null and not t.blacklisted
+          and (t.status = 'ACTIVE' or (t.status = 'PENDING' and t.proposed_by_importer_id = ${importerId}::bigint))) as transporters,
+      (select coalesce(json_agg(json_build_object(
+                 'id', it.id, 'code', it.code, 'description', it.description, 'image_url', it.image_url,
+                 'unit_id', it.measurement_unit_id, 'unit_code', mu.code,
+                 'pieces_per_carton', it.pieces_per_carton, 'kg_per_carton', it.kg_per_carton)
+               order by it.code, it.description), '[]'::json)
+         from wms.item it left join wms.measurement_unit mu on mu.id = it.measurement_unit_id
+        where ${importerId}::bigint is not null and it.importer_id = ${importerId}::bigint
+          and it.deleted_at is null and it.is_active) as items,
+      (select json_build_object('warehouse_id', r.warehouse_id, 'container_type_id', r.container_type_id,
+                                'port_id', r.port_id, 'transporter_id', r.transporter_id,
+                                'vehicle_id', r.vehicle_id, 'driver_id', r.driver_id)
+         from wms.inward_request r
+        where ${importerId}::bigint is not null and r.importer_id = ${importerId}::bigint
+          and r.deleted_at is null and r.status <> 'CANCELLED'
+        order by coalesce(r.submitted_at, r.created_at) desc
+        limit 1) as last
+  `);
+  const row = rows[0]!;
+  if (importerId !== null && row.importer === null) {
     throw new InwardError("NOT_FOUND", "No such importer");
   }
 
-  const vehicleTypes = await db.execute<Record<string, string>>(sql`
-    select id, code, name from wms.vehicle_type where deleted_at is null and is_active order by name
-  `);
-
-  const idOr = (v: string | null | undefined) => (v === null || v === undefined ? null : Number(v));
-  type Loose = Record<string, string | null>;
-  const byTransporter = (rows: Loose[]): Map<number, Loose[]> => {
-    const map = new Map<number, Loose[]>();
-    for (const r of rows) {
-      const k = Number(r.transporter_id);
-      map.set(k, [...(map.get(k) ?? []), r]);
-    }
-    return map;
-  };
-  const vByT = byTransporter([...vehicles]);
-  const dByT = byTransporter([...drivers]);
+  const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
   return {
     /** Whose request — null until a platform user picks one. */
-    importer:
-      importer[0] === undefined
-        ? null
-        : { id: Number(importer[0].id), code: importer[0].code, name: importer[0].name, status: importer[0].status },
+    importer: row.importer === null ? null : { ...row.importer, id: Number(row.importer.id) },
     /** Only for a platform user: the importers they may write for. */
-    importers:
-      importers === null
-        ? null
-        : importers.map((i) => ({ id: Number(i.id), code: i.code, name: i.name })),
-    warehouses: warehouses.map((w) => ({ id: Number(w.id), code: w.code, name: w.name, city: w.city ?? null })),
-    containerTypes: containerTypes.map((c) => ({
+    importers: row.importers === null ? null : row.importers.map((i) => ({ ...i, id: Number(i.id) })),
+    warehouses: row.warehouses.map((w) => ({ id: Number(w.id), code: w.code, name: w.name, city: w.city ?? null })),
+    containerTypes: row.container_types.map((c) => ({
       id: Number(c.id),
       code: c.code,
       name: c.name,
       isHighCube: Boolean(c.is_high_cube),
     })),
-    ports: ports.map((p) => ({ id: Number(p.id), code: p.code, name: p.name, state: p.state ?? null })),
-    units: units.map((u) => ({ id: Number(u.id), code: u.code, name: u.name })),
-    vehicleTypes: vehicleTypes.map((v) => ({ id: Number(v.id), code: v.code, name: v.name })),
-    transporters: transporters.map((t) => ({
+    ports: row.ports.map((p) => ({ id: Number(p.id), code: p.code, name: p.name, state: p.state ?? null })),
+    units: row.units.map((u) => ({ id: Number(u.id), code: u.code, name: u.name })),
+    vehicleTypes: row.vehicle_types.map((v) => ({ id: Number(v.id), code: v.code, name: v.name })),
+    transporters: row.transporters.map((t) => ({
       id: Number(t.id),
       code: t.code,
       name: t.name,
       mobile: t.mobile,
       status: t.status,
       pending: t.status === "PENDING",
-      warehouseIds: (t.warehouse_ids ?? "{}")
-        .replace(/[{}]/g, "")
-        .split(",")
-        .filter(Boolean)
-        .map(Number),
-      vehicles: (vByT.get(Number(t.id)) ?? []).map((v) => ({
+      warehouseIds: t.warehouse_ids.map(Number),
+      vehicles: t.vehicles.map((v) => ({
         id: Number(v.id),
         registrationNumber: v.registration_number ?? "",
         typeName: v.type_name,
-        capacityKg: v.capacity_kg === null ? null : Number(v.capacity_kg),
+        capacityKg: num(v.capacity_kg),
         pending: v.status === "PENDING",
       })),
-      drivers: (dByT.get(Number(t.id)) ?? []).map((d) => ({
+      drivers: t.drivers.map((d) => ({
         id: Number(d.id),
         name: d.name ?? "",
         mobile: d.mobile,
@@ -647,26 +659,26 @@ export async function lookupsFor(importerId: number | null, options: { chooser?:
         pending: d.status === "PENDING",
       })),
     })),
-    items: items.map((it) => ({
+    items: row.items.map((it) => ({
       id: Number(it.id),
       code: it.code ?? "",
       description: it.description ?? "",
       imageUrl: it.image_url,
-      unitId: idOr(it.measurement_unit_id),
+      unitId: num(it.unit_id),
       unitCode: it.unit_code,
-      piecesPerCarton: it.pieces_per_carton === null ? null : Number(it.pieces_per_carton),
-      kgPerCarton: it.kg_per_carton === null ? null : Number(it.kg_per_carton),
+      piecesPerCarton: num(it.pieces_per_carton),
+      kgPerCarton: num(it.kg_per_carton),
     })),
     last:
-      last[0] === undefined
+      row.last === null
         ? null
         : {
-            warehouseId: idOr(last[0].warehouse_id),
-            containerTypeId: idOr(last[0].container_type_id),
-            portId: idOr(last[0].port_id),
-            transporterId: idOr(last[0].transporter_id),
-            vehicleId: idOr(last[0].vehicle_id),
-            driverId: idOr(last[0].driver_id),
+            warehouseId: num(row.last.warehouse_id),
+            containerTypeId: num(row.last.container_type_id),
+            portId: num(row.last.port_id),
+            transporterId: num(row.last.transporter_id),
+            vehicleId: num(row.last.vehicle_id),
+            driverId: num(row.last.driver_id),
           },
   };
 }

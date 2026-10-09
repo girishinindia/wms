@@ -45,7 +45,7 @@ describe("route loading boundaries", () => {
      * lands, everything moves, and the page jumps twice instead of
      * once. The forms and the dashboard say so for themselves.
      */
-    for (const route of ["profile", "company", "(overview)"]) {
+    for (const route of ["profile", "company", "(overview)", "inward/new", "inward/[id]/edit"]) {
       expect(existsSync(join(root, `src/app/admin/${route}/loading.tsx`)), route).toBe(true);
     }
   });
