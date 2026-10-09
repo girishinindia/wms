@@ -146,3 +146,32 @@ export const proposeSchema = z.discriminatedUnion("kind", [
   proposeDriverSchema,
 ]);
 export type ProposeInput = z.infer<typeof proposeSchema>;
+
+// ── Cartons ───────────────────────────────────────────────────────
+
+export const cartonPrintedSchema = z.object({
+  ids: z.array(id).max(5000),
+});
+
+export const cartonScanSchema = z.object({
+  scans: z
+    .array(
+      z.object({
+        code: z.string().trim().min(1, "Empty scan").max(1000),
+        clientScanId: z.string().trim().max(80).nullable().optional(),
+        via: z.enum(["SCAN", "MANUAL"]).optional(),
+        device: z.string().trim().max(80).nullable().optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+
+export const cartonHoldSchema = z.object({
+  reason: z.string().trim().min(2, "Choose a reason").max(60),
+  note: blank(z.string().trim().max(300)),
+});
+
+export const cartonFinishSchema = z.object({
+  confirm: z.boolean().optional(),
+});

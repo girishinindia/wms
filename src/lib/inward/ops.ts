@@ -11,6 +11,7 @@ import { announce } from "@/lib/notify/announce";
 import { configured, deleteObject, publicUrl, putObject } from "@/lib/storage/bunny";
 import { actorWarehouseIds } from "@/lib/users/authority";
 import { arrivalProblem } from "@/lib/inward/arrival";
+import { cartonCan, cartonsLocked, dropUnprintedCartons } from "@/lib/inward/cartons";
 import { parsePackingList, unitAlias, type Cell, type ParsedPackingList } from "@/lib/inward/packing-list";
 import type { InwardSaveInput, ItemSaveInput, ProposeInput } from "@/lib/validation/api-inward";
 
@@ -192,7 +193,7 @@ export function canDo(actor: Actor, row: { status: InwardStatus; importerId: num
 
 // ── Shapes ────────────────────────────────────────────────────────
 
-type HeaderRow = {
+export type HeaderRow = {
   id: number;
   code: string;
   status: InwardStatus;
@@ -451,7 +452,7 @@ export async function listRequests(scope: InwardScope, filter: ListFilter) {
   return rows.map(toSummary);
 }
 
-async function headerOf(id: number): Promise<HeaderRow | null> {
+export async function headerOf(id: number): Promise<HeaderRow | null> {
   const rows = await getDb().execute<HeaderRow>(sql`
     ${HEADER_SELECT}
     where r.id = ${id} and r.deleted_at is null
@@ -461,7 +462,7 @@ async function headerOf(id: number): Promise<HeaderRow | null> {
 
 /** The row, or NOT_FOUND. A row outside the scope is also NOT_FOUND —
  *  "exists but not yours" is a map of other people's business. */
-async function visibleHeader(scope: InwardScope, id: number): Promise<HeaderRow> {
+export async function visibleHeader(scope: InwardScope, id: number): Promise<HeaderRow> {
   const row = await headerOf(id);
   if (!row) throw new InwardError("NOT_FOUND", "No such inward request");
   const inScope =
@@ -477,13 +478,25 @@ async function visibleHeader(scope: InwardScope, id: number): Promise<HeaderRow>
 
 export async function getRequest(actor: Actor, scope: InwardScope, id: number) {
   const row = await visibleHeader(scope, id);
-  const [items, documents, moves] = await Promise.all([linesOf(id), documentsOf(id), movesOf(id)]);
+  const [items, documents, moves, locked] = await Promise.all([linesOf(id), documentsOf(id), movesOf(id), cartonsLocked(id)]);
   const summary = toSummary(row);
+  const can = canDo(actor, {
+    status: row.status,
+    importerId: Number(row.importer_id),
+    warehouseId: Number(row.warehouse_id),
+  });
+  // Once a sticker is printed (or a carton received) the goods list is
+  // fixed: no sending it back for edits, no moving it elsewhere.
+  if (locked) {
+    can.needs_changes = false;
+    can.move = false;
+  }
   return {
     ...summary,
     items,
     documents,
     moves,
+    cartons: cartonCan(actor, { status: row.status, warehouseId: Number(row.warehouse_id) }),
     people: {
       createdBy: row.created_by_name,
       submittedBy: row.submitted_by_name,
@@ -491,11 +504,7 @@ export async function getRequest(actor: Actor, scope: InwardScope, id: number) {
       completedBy: row.completed_by_name,
       cancelledBy: row.cancelled_by_name,
     },
-    can: canDo(actor, {
-      status: row.status,
-      importerId: Number(row.importer_id),
-      warehouseId: Number(row.warehouse_id),
-    }),
+    can,
   };
 }
 
@@ -955,7 +964,7 @@ function valuesFor(row: HeaderRow, extra: Record<string, string> = {}): Record<s
   };
 }
 
-async function tell(
+export async function tell(
   eventKey: string,
   row: HeaderRow,
   actor: Actor,
@@ -1089,6 +1098,13 @@ export async function decideRequest(
   if (action === "NEEDS_CHANGES" && !note) {
     throw new InwardError("VALIDATION_FAILED", "Say what needs to change", { note: "Required" });
   }
+  if (action === "NEEDS_CHANGES") {
+    if (await cartonsLocked(id)) {
+      throw new InwardError("CONFLICT", "Carton stickers are already printed — it cannot be sent back now. Put the cartons on hold instead.");
+    }
+    // Numbers made but never printed go: the importer may change the lines.
+    await dropUnprintedCartons(id);
+  }
 
   const next: InwardStatus = {
     ACKNOWLEDGE: "ACKNOWLEDGED" as const,
@@ -1170,6 +1186,9 @@ export async function moveRequest(
   const can = canDo(actor, { status: row.status, importerId: Number(row.importer_id), warehouseId: Number(row.warehouse_id) });
   if (!can.move) {
     throw new InwardError("CONFLICT", `A ${STATUS_LABEL[row.status].toLowerCase()} request cannot be moved`);
+  }
+  if (await cartonsLocked(id)) {
+    throw new InwardError("CONFLICT", "Carton stickers are already printed for this warehouse — it cannot be moved now");
   }
   if (warehouseId === Number(row.warehouse_id)) {
     throw new InwardError("VALIDATION_FAILED", "Choose a different warehouse", { warehouseId: "It is already going there" });

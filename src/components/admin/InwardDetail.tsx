@@ -8,6 +8,7 @@ import { api } from "@/lib/api/client";
 import { useToast } from "@/components/Toast";
 import { Card, ConfirmDialog, Facts, StatusBadge } from "@/components/admin/ui";
 
+import CartonsPanel from "./CartonsPanel";
 import type { Detail } from "./InwardForm";
 import { fmt } from "./InwardTable";
 
@@ -189,6 +190,18 @@ export default function InwardDetail({ detail: initial }: { detail: Detail }) {
             </table>
           </div>
         </Card>
+
+        {d.cartons.view ? (
+          <CartonsPanel
+            key={d.status}
+            requestId={d.id}
+            onChanged={async () => {
+              const r = await api<Detail>(`/inward-requests/${d.id}`, { method: "GET" });
+              if (r.ok) setD(r.data);
+              router.refresh();
+            }}
+          />
+        ) : null}
 
         {d.documents.length ? (
           <Card className="p-5">

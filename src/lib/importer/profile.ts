@@ -21,6 +21,8 @@ export type ImporterProfile = {
   status: string;
   kycStatus: string;
   rejectionReason: string | null;
+  /** Printed on carton stickers; null until uploaded. */
+  logoUrl: string | null;
   profile: {
     companyName: string;
     legalName?: string;
@@ -91,7 +93,7 @@ export async function loadImporterProfile(importerId: number): Promise<ImporterP
            i.area, i.city_id, i.pincode::text as pincode, i.gstin::text as gstin, i.pan::text as pan,
            i.contact_person, i.contact_email::text as contact_email,
            i.contact_mobile::text as contact_mobile, i.alternate_mobile::text as alternate_mobile,
-           c.name as city_label, s.id as state_id, s.country_id
+           c.name as city_label, s.id as state_id, s.country_id, i.logo_url
       from wms.importer i
       left join wms.city c on c.id = i.city_id
       left join wms.state s on s.id = c.state_id
@@ -124,6 +126,7 @@ export async function loadImporterProfile(importerId: number): Promise<ImporterP
     status: String(r.status),
     kycStatus: String(r.kyc_status),
     rejectionReason: (r.rejection_reason as string | null) ?? null,
+    logoUrl: (r.logo_url as string | null) ?? null,
     profile,
     cityLabel: (r.city_label as string | null) ?? null,
     stateId: r.state_id === null ? null : Number(r.state_id),

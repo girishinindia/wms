@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import ImporterEditDrawer from "@/components/admin/ImporterEditDrawer";
+import LogoUploader from "@/components/admin/LogoUploader";
 import ImporterLifecycle from "@/components/admin/ImporterLifecycle";
 import ImporterReview, { type CityOption } from "@/components/admin/ImporterReview";
 import { Card, Denied, Facts, PageHeader, StatusBadge } from "@/components/admin/ui";
@@ -63,6 +64,7 @@ export default async function ImporterDetailPage({
       contact_mobile: string;
       alternate_mobile: string | null;
       notes: string | null;
+      logo_url: string | null;
       status: string;
       kyc_status: string;
       origin: string;
@@ -81,7 +83,7 @@ export default async function ImporterDetailPage({
              i.gstin::text as gstin, i.pan::text as pan,
              i.contact_person, i.contact_email::text as contact_email,
              i.contact_mobile::text as contact_mobile,
-             i.alternate_mobile::text as alternate_mobile, i.notes,
+             i.alternate_mobile::text as alternate_mobile, i.notes, i.logo_url,
              i.status::text as status, i.kyc_status, i.origin,
              i.created_at, i.approved_at, i.rejected_at, i.rejection_reason,
              d.email::text as decided_by,
@@ -213,6 +215,10 @@ export default async function ImporterDetailPage({
           </div>
         }
       />
+
+      <div className="mb-6 max-w-md">
+        <LogoUploader endpoint={`/admin/importers/${row.id}/logo`} initial={row.logo_url} name={row.company_name} readOnly={!canEdit} />
+      </div>
 
       <Card className="mb-6 p-6">
         <h2 className="mb-4 text-sm font-semibold text-verdigris-50">

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import LogoUploader from "@/components/admin/LogoUploader";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { StatusBadge } from "@/components/admin/ui";
@@ -313,6 +314,7 @@ export default function CompanyProfileForm({
       </form>
 
       <aside className="space-y-4">
+        <LogoUploader endpoint="/importer/me/logo" initial={profile.logoUrl} name={profile.profile.companyName} readOnly={readOnly} />
         <div className="rounded-2xl border border-verdigris-300/10 bg-ink-850 p-5 card-shadow">
           <p className="text-xs uppercase tracking-[0.12em] text-verdigris-200/55">Verification</p>
           <div className="mt-2 flex items-center gap-2">
