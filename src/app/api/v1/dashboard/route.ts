@@ -2,7 +2,8 @@ import { sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import { handler, ok, toResponse } from "@/lib/api/respond";
-import { importerGateFor, requireActor } from "@/lib/auth/guard";
+import { grantFor, importerGateFor, requireActor } from "@/lib/auth/guard";
+import { inwardTiles, scopeFor } from "@/lib/inward/ops";
 import { loadImporterProfile } from "@/lib/importer/profile";
 import { listSalesAgents } from "@/lib/sales-agents/ops";
 import { isAgentOnly } from "@/lib/sales-agents/scope";
@@ -116,6 +117,7 @@ export async function GET() {
               agents: agents?.agents ?? 0,
               agentsActive: agents?.agents_active ?? 0,
             },
+            inward: await inwardTilesFor(actor),
           },
           requestId,
         );
@@ -165,6 +167,7 @@ export async function GET() {
       return ok(
         {
           kind: "admin" as const,
+          inward: await inwardTilesFor(actor),
           counts: {
             importersPending: counts?.importers_pending ?? 0,
             importersTotal: counts?.importers_total ?? 0,
@@ -187,4 +190,19 @@ export async function GET() {
       return toResponse(error, requestId);
     }
   })();
+}
+
+/**
+ * The inward tiles, or null for somebody with no inward grant at all.
+ * Scoped by the grant: an importer counts their own requests, a dock
+ * manager the ones addressed to their sites.
+ */
+async function inwardTilesFor(actor: Awaited<ReturnType<typeof requireActor>>) {
+  const grant = grantFor(actor, "inward.request.read");
+  if (!grant) return null;
+  try {
+    return await inwardTiles(scopeFor(actor, grant));
+  } catch {
+    return null;
+  }
 }

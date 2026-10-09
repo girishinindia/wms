@@ -6,7 +6,8 @@ import { fmtDay } from "@/lib/format/datetime";
 import { loadGeoOptions } from "@/lib/admin/geo";
 import { loadImporterProfile } from "@/lib/importer/profile";
 import { getDb } from "@/db";
-import { currentActor, importerGateFor } from "@/lib/auth/guard";
+import { currentActor, grantFor, importerGateFor } from "@/lib/auth/guard";
+import { inwardTiles, scopeFor } from "@/lib/inward/ops";
 import { listSalesAgents } from "@/lib/sales-agents/ops";
 import { isAgentOnly } from "@/lib/sales-agents/scope";
 import { sql } from "drizzle-orm";
@@ -95,6 +96,8 @@ export default async function AdminDashboard() {
         title="Dashboard"
         subtitle="What is waiting, and whether the master data is ready for it."
       />
+
+      <InwardStats actor={actor} dock />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
@@ -281,7 +284,50 @@ async function ImporterDashboard({
           ) : null
         }
       />
+      {verified ? <InwardStats actor={await currentActor()} dock={false} /> : null}
       <CompanyProfileForm initial={profile} geo={geo} readOnly={!canEdit} />
     </>
+  );
+}
+
+/**
+ * The inward tiles, for whoever holds `inward.request.read`. Counted over
+ * the grant's own scope — the importer's company, the dock's sites —
+ * and each one is a link into the list already filtered to it.
+ */
+async function InwardStats({
+  actor,
+  dock,
+}: {
+  actor: Awaited<ReturnType<typeof currentActor>>;
+  dock: boolean;
+}) {
+  if (!actor) return null;
+  const grant = grantFor(actor, "inward.request.read");
+  if (!grant) return null;
+  let t;
+  try {
+    t = await inwardTiles(scopeFor(actor, grant));
+  } catch (error) {
+    console.error("[dashboard] inward tiles", { error: String(error) });
+    return null;
+  }
+  const tile = (label: string, value: number, href: string, tone: "default" | "warn" | "danger") => (
+    <a href={href} className="block">
+      <Stat label={label} value={value} tone={value > 0 ? tone : "default"} />
+    </a>
+  );
+  return (
+    <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {dock
+        ? tile("Awaiting acknowledgement", t.awaiting, "/admin/inward?status=SUBMITTED", "warn")
+        : tile("Open inward requests", t.open, "/admin/inward", "default")}
+      {dock
+        ? tile("Arriving today", t.arrivingToday, "/admin/inward?status=ACKNOWLEDGED", "default")
+        : tile("Needs changes", t.needsChanges, "/admin/inward?status=NEEDS_CHANGES", "danger")}
+      {dock
+        ? tile("In process", t.open - t.awaiting - t.needsChanges, "/admin/inward?status=IN_PROCESS", "default")
+        : tile("Awaiting acknowledgement", t.awaiting, "/admin/inward?status=SUBMITTED", "warn")}
+    </div>
   );
 }

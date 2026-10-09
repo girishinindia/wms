@@ -182,6 +182,9 @@ describe("admin navigation: grouping", () => {
       "Cities",
       "Warehouse types",
       "Vehicle types",
+      "Container types",
+      "Ports",
+      "Measurement units",
       "Expense categories",
       "FAQ categories",
     ]);
@@ -238,6 +241,9 @@ describe("admin navigation: grouping", () => {
     // `groupNav` walks that array — so this is the list, top to bottom.
     expect(groupNav(visibleNav(SUPER_ADMIN)).map((n) => n.label)).toEqual([
       "Dashboard",
+      // Both sides of the counter, right under the dashboard: the one
+      // screen an importer and a dock manager both open every day.
+      "Inward requests",
       "Notifications",
       "Enquiry",
       "Users & Roles",

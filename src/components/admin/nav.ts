@@ -55,6 +55,16 @@ export type AdminNavItem = {
    * the day that line moves the sidebar should not be what decides.
    */
   allOnly?: boolean;
+  /**
+   * Shown to a sales agent as well.
+   *
+   * An agent's sidebar is otherwise the dashboard alone (see
+   * `visibleNav`), because every list they could be given is a list of
+   * themselves. Inward requests are the exception: an agent raises them
+   * for their company, exactly as they raise dispatch orders in the
+   * matrix, so the entry is theirs too.
+   */
+  agent?: boolean;
   icon: AdminNavIcon;
   /**
    * A live counter to draw beside the label.
@@ -141,6 +151,27 @@ export const MASTER_ITEMS: AdminNavItem[] = [
     label: "Vehicle types",
     permission: "master.vehicle_type.create",
     icon: "truck",
+  },
+  {
+    href: "/admin/master/container-types",
+    label: "Container types",
+    permission: "master.container_type.create",
+    allOnly: true,
+    icon: "grid",
+  },
+  {
+    href: "/admin/master/ports",
+    label: "Ports",
+    permission: "master.port.create",
+    allOnly: true,
+    icon: "pin",
+  },
+  {
+    href: "/admin/master/measurement-units",
+    label: "Measurement units",
+    permission: "master.measurement_unit.create",
+    allOnly: true,
+    icon: "grid",
   },
   {
     href: "/admin/master/expense-categories",
@@ -231,6 +262,12 @@ export const TRANSPORT_ITEMS: AdminNavItem[] = [
     permission: "vehicle.create",
     icon: "truck",
   },
+  {
+    href: "/admin/drivers",
+    label: "Drivers",
+    permission: "driver.create",
+    icon: "users",
+  },
 ];
 
 /**
@@ -311,6 +348,22 @@ export const ADMIN_NAV: AdminNavNode[] = [
    * whatever else the user earned instead — and everyone who is already
    * inside can see their own bell.
    */
+  /**
+   * Inward requests — both sides of the counter on one entry.
+   *
+   * Keyed on `inward.request.read` with `own` set: the importer holds it
+   * at OWN (their company's requests), the dock at WAREHOUSE (what is
+   * addressed to their sites), the platform at ALL. The page narrows
+   * what each sees; the entry only decides whether the door is there.
+   */
+  {
+    href: "/admin/inward",
+    label: "Inward requests",
+    permission: "inward.request.read",
+    own: true,
+    agent: true,
+    icon: "box",
+  },
   {
     href: "/admin/notifications",
     label: "Notifications",
@@ -358,7 +411,7 @@ export const ADMIN_NAV: AdminNavNode[] = [
   {
     label: "Transporters & Vehicles",
     icon: "truck",
-    match: "/admin/(transporters|vehicles)",
+    match: "/admin/(transporters|vehicles|drivers)",
     children: TRANSPORT_ITEMS,
   },
   {
@@ -435,7 +488,11 @@ export function visibleNav(
    * admission. Same shape the unverified-importer path already uses.
    */
   if (options.agentOnly) {
-    return ADMIN_NAV_ITEMS.filter((item) => item.permission === null);
+    const held = new Set(permissions.map((p) => p.permission));
+    return ADMIN_NAV_ITEMS.filter(
+      (item) =>
+        item.permission === null || (item.agent === true && held.has(item.permission)),
+    );
   }
 
   const wide = new Set(

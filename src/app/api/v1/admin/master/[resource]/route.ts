@@ -10,6 +10,8 @@ import { deleteOne, dependentCounts, dropPublicCache, identifier } from "@/lib/a
 import { invalidateGeo } from "@/lib/admin/geo";
 import {
   activeColumnFor,
+  isMaskedEcho,
+  maskSensitive,
   resolveResource,
   type MasterField,
   type MasterResource,
@@ -298,7 +300,9 @@ export async function GET(
               id: Number(r.id),
               isActive: Boolean(r.is_active),
             };
-            for (const f of resource.fields) out[f.key] = r[f.column] ?? null;
+            for (const f of resource.fields) {
+              out[f.key] = f.sensitive ? maskSensitive(r[f.column]) : (r[f.column] ?? null);
+            }
             if (resource.parent) {
               out.parentId = r.parent_id === null ? null : Number(r.parent_id);
               out.parentLabel = r.parent_label ?? null;
@@ -705,6 +709,8 @@ export async function PATCH(
         }
         if (!(field.key in input)) continue;
         const value = input[field.key];
+        // The drawer sending back the mask it was shown is not an edit.
+        if (field.sensitive && isMaskedEcho(value)) continue;
         sets.push(sql`${identifier(field.column)} = ${value ?? null}`);
       }
       // Moving a row to another parent (a city to another state). Same

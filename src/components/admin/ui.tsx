@@ -99,6 +99,12 @@ const STATUS_TONE: Record<string, string> = {
   NOT_STARTED: "border-verdigris-300/20 bg-ink-900/70 text-verdigris-200/60",
   SUBMITTED: "border-amber-400/35 bg-amber-500/10 text-amber-200",
   UNDER_REVIEW: "border-amber-400/35 bg-amber-500/10 text-amber-200",
+  // Inward requests.
+  NEEDS_CHANGES: "border-rose-400/35 bg-rose-500/10 text-rose-200",
+  ACKNOWLEDGED: "border-verdigris-300/35 bg-verdigris-500/15 text-verdigris-100",
+  IN_PROCESS: "border-patina/40 bg-patina/10 text-patina",
+  COMPLETED: "border-verdigris-300/35 bg-verdigris-500/15 text-verdigris-100",
+  CANCELLED: "border-verdigris-300/20 bg-ink-900/70 text-verdigris-200/60",
 };
 
 /** Status pills. Unknown values fall back to neutral rather than throwing —

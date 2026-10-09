@@ -83,7 +83,28 @@ export type MasterField = {
    * because a screen is not a control.
    */
   showWhen?: { field: string; equals: boolean };
+  /**
+   * Never leaves the server whole.
+   *
+   * A driver's Aadhaar. The list GET replaces all but the last four
+   * characters with bullets, and an update whose value still carries
+   * those bullets is the drawer echoing what it was shown, not a
+   * change — so it is ignored rather than written over the real value.
+   */
+  sensitive?: boolean;
 };
+
+/** "••••••••1234" — what a sensitive field looks like on the way out. */
+export function maskSensitive(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const s = String(value);
+  if (s.length <= 4) return "••••";
+  return `${"•".repeat(s.length - 4)}${s.slice(-4)}`;
+}
+
+export function isMaskedEcho(value: unknown): boolean {
+  return typeof value === "string" && value.includes("•");
+}
 
 export type MasterDependent = {
   table: string;
@@ -1364,18 +1385,210 @@ const expense: MasterResource = {
  * `resolveResource` is the only way in, and it takes a string from the
  * URL. Anything not a key here never reaches a query.
  */
+// ── container_type ────────────────────────────────────────────────
+/**
+ * ISO container sizes an inward request names. Three lines of data and
+ * nothing clever — the point of putting it here is that the Master
+ * screen, the list GET and the phone's picker all read one definition.
+ */
+const containerType: MasterResource = {
+  slug: "container-types",
+  table: "container_type",
+  label: "Container types",
+  singular: "container type",
+  permission: "master.container_type",
+  intro:
+    "The box the goods arrive in. A high cube is a foot taller than a standard, and a dock that cannot take one needs to know before the lorry turns up.",
+  hasAudit: true,
+  fields: [
+    { key: "code", column: "code", label: "Code", type: "text", required: true, mono: true, width: 7 },
+    { key: "name", column: "name", label: "Name", type: "text", required: true },
+    { key: "lengthFt", column: "length_ft", label: "Length ft", type: "number", align: "right", width: 6 },
+    { key: "isHighCube", column: "is_high_cube", label: "High cube", type: "boolean", width: 6 },
+    { key: "description", column: "description", label: "Description", type: "text", hideInTable: true },
+  ],
+  dependents: [{ table: "inward_request", column: "container_type_id", noun: "inward requests" }],
+  conflict: "A container type with that code already exists",
+  orderBy: "sort_order, name",
+  createSchema: withActive({
+    code: codeText(2, 12),
+    name: name(60),
+    lengthFt: optionalNumber(60),
+    isHighCube: z.boolean().optional(),
+    description: optionalText(300),
+  }),
+  updateSchema: withActive({
+    code: codeText(2, 12).optional(),
+    name: name(60).optional(),
+    lengthFt: optionalNumber(60),
+    isHighCube: z.boolean().optional(),
+    description: optionalText(300),
+  }),
+};
+
+// ── port ──────────────────────────────────────────────────────────
+const port: MasterResource = {
+  slug: "ports",
+  table: "port",
+  label: "Ports",
+  singular: "port",
+  permission: "master.port",
+  intro: "Where a container lands before it is trucked in. The code is the UN/LOCODE where one exists.",
+  hasAudit: true,
+  fields: [
+    { key: "code", column: "code", label: "Code", type: "text", required: true, mono: true, width: 7 },
+    { key: "name", column: "name", label: "Name", type: "text", required: true },
+    { key: "description", column: "description", label: "Description", type: "text", hideInTable: true },
+  ],
+  parent: {
+    key: "stateId",
+    column: "state_id",
+    label: "State",
+    optional: true,
+    table: "state",
+    labelColumn: "name",
+  },
+  dependents: [{ table: "inward_request", column: "port_id", noun: "inward requests" }],
+  conflict: "A port with that code already exists",
+  orderBy: "sort_order, name",
+  createSchema: withActive({
+    stateId: z.number().int().positive().nullable().optional(),
+    code: codeText(3, 12),
+    name: name(80),
+    description: optionalText(300),
+  }),
+  updateSchema: withActive({
+    stateId: z.number().int().positive().nullable().optional(),
+    code: codeText(3, 12).optional(),
+    name: name(80).optional(),
+    description: optionalText(300),
+  }),
+};
+
+// ── measurement_unit ──────────────────────────────────────────────
+const measurementUnit: MasterResource = {
+  slug: "measurement-units",
+  table: "measurement_unit",
+  label: "Measurement units",
+  singular: "measurement unit",
+  permission: "master.measurement_unit",
+  intro: "How the pieces inside a carton are counted — pieces, sets, rolls.",
+  hasAudit: true,
+  fields: [
+    { key: "code", column: "code", label: "Code", type: "text", required: true, mono: true, width: 8 },
+    { key: "name", column: "name", label: "Name", type: "text", required: true },
+    { key: "description", column: "description", label: "Description", type: "text", hideInTable: true },
+  ],
+  dependents: [{ table: "item", column: "measurement_unit_id", noun: "items" }],
+  conflict: "A unit with that code already exists",
+  orderBy: "sort_order, name",
+  createSchema: withActive({
+    code: codeText(1, 12),
+    name: name(60),
+    description: optionalText(300),
+  }),
+  updateSchema: withActive({
+    code: codeText(1, 12).optional(),
+    name: name(60).optional(),
+    description: optionalText(300),
+  }),
+};
+
+// ── driver ────────────────────────────────────────────────────────
+/**
+ * The third leg of the transport register. Same shape as a vehicle: it
+ * belongs to a transporter, its sites are its owner's, and it lives on
+ * a top-level screen beside Transporters and Vehicles.
+ *
+ * Aadhaar is stored whole and shown masked: the list payload carries
+ * the last four digits only (see the route), because a register of
+ * drivers is exactly the kind of table that gets exported.
+ */
+const driver: MasterResource = {
+  slug: "drivers",
+  route: "/admin/drivers",
+  table: "driver",
+  label: "Drivers",
+  singular: "driver",
+  listNoun: "drivers",
+  permission: "driver",
+  intro: "Who is behind the wheel. A driver is visible to whoever can see their transporter.",
+  hasAudit: true,
+  fields: [
+    { key: "name", column: "name", label: "Name", type: "text", required: true },
+    { key: "mobile", column: "mobile", label: "Mobile", type: "text", required: true, mono: true, width: 9 },
+    { key: "alternateMobile", column: "alternate_mobile", label: "Alternate mobile", type: "text", mono: true, hideInTable: true },
+    { key: "licenceNumber", column: "licence_number", label: "Licence", type: "text", required: true, mono: true, width: 12 },
+    { key: "licenceExpiry", column: "licence_expiry", label: "Licence expiry", type: "date", width: 9 },
+    { key: "aadhaarNumber", column: "aadhaar_number", label: "Aadhaar", type: "text", mono: true, hideInTable: true, sensitive: true, hint: "Optional. 12 digits. Shown masked once saved." },
+    { key: "notes", column: "notes", label: "Notes", type: "textarea", hideInTable: true },
+  ],
+  parent: {
+    key: "transporterId",
+    column: "transporter_id",
+    label: "Transporter",
+    table: "transporter",
+    labelColumn: "name",
+  },
+  scope: {
+    key: "warehouseIds",
+    label: "Warehouse",
+    table: "warehouse",
+    labelColumn: "name",
+    codeColumn: "code",
+    via: {
+      table: "warehouse_transporter",
+      linkColumn: "transporter_id",
+      localColumn: "transporter_id",
+      scopeColumn: "warehouse_id",
+    },
+    pickedByPivot: true,
+  },
+  statusColumn: { column: "status", activeValue: "ACTIVE", inactiveValue: "SUSPENDED" },
+  softDeleteOnly: true,
+  dependents: [{ table: "inward_request", column: "driver_id", noun: "inward requests" }],
+  conflict: "A driver with that licence number already exists",
+  orderBy: "name",
+  createSchema: withActive({
+    transporterId: z.number().int().positive(),
+    name: name(80),
+    mobile: mobile(),
+    alternateMobile: blankOptional(mobile()),
+    licenceNumber: codeText(5, 20),
+    licenceExpiry: blankOptional(isoDate()),
+    aadhaarNumber: blankOptional(z.string().trim().regex(/^[0-9]{12}$/, "Aadhaar is 12 digits")),
+    notes: blankOptional(prose(2, 1000)),
+  }),
+  updateSchema: withActive({
+    transporterId: z.number().int().positive().optional(),
+    name: name(80).optional(),
+    mobile: mobile().optional(),
+    alternateMobile: blankOptional(mobile()),
+    licenceNumber: codeText(5, 20).optional(),
+    licenceExpiry: blankOptional(isoDate()),
+    aadhaarNumber: blankOptional(
+      z.string().trim().regex(/^([0-9]{12}|•+[0-9]{4})$/, "Aadhaar is 12 digits"),
+    ),
+    notes: blankOptional(prose(2, 1000)),
+  }),
+};
+
 export const MASTER_RESOURCES = Object.freeze({
   countries: country,
   states: state,
   cities: city,
   "warehouse-types": warehouseType,
   "vehicle-types": vehicleType,
+  "container-types": containerType,
+  ports: port,
+  "measurement-units": measurementUnit,
   "faq-categories": faqCategory,
   faqs: faq,
   "expense-categories": expenseCategory,
   expenses: expense,
   transporters: transporter,
   vehicles: vehicle,
+  drivers: driver,
 } as const);
 
 export type MasterSlug = keyof typeof MASTER_RESOURCES;
