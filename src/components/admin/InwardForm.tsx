@@ -161,6 +161,7 @@ function Combo({
   disabled,
   onAddNew,
   addLabel = "Add new",
+  compact = false,
 }: {
   id: string;
   options: ComboOption[];
@@ -170,6 +171,8 @@ function Combo({
   disabled?: boolean;
   onAddNew?: (typed: string) => void;
   addLabel?: string;
+  /** Table-cell sizing, so a picker lines up with the inputs beside it. */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
@@ -235,7 +238,7 @@ function Combo({
           if (!open) setOpen(true);
         }}
         onKeyDown={onKey}
-        className={`${input} ${chosen && !open ? "pr-8" : ""}`}
+        className={`${compact ? cell : input} ${chosen && !open ? "pr-8" : ""}`}
         role="combobox"
         aria-expanded={open}
         aria-controls={`${id}-listbox`}
@@ -1057,7 +1060,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                   const c = Number(l.cartonQty) || 0;
                   return (
                     <tr key={l.key} className="align-top">
-                      <td className="py-1 pr-2 pt-3 text-verdigris-200/50">{i + 1}</td>
+                      <td className="py-1 pr-2 pt-[11px] text-verdigris-200/50">{i + 1}</td>
                       <td className="py-1 pr-2">
                         <div className="flex items-center gap-2">
                           {l.itemId !== null ? (
@@ -1070,7 +1073,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                                 photoFor.current = l.itemId;
                                 photoRef.current?.click();
                               }}
-                              className="h-9 w-9 shrink-0 overflow-hidden rounded-md border border-verdigris-300/15 text-verdigris-300 hover:border-patina/50 hover:text-patina disabled:opacity-50"
+                              className="h-[34px] w-[34px] shrink-0 overflow-hidden rounded-lg border border-verdigris-300/15 text-verdigris-300 hover:border-patina/50 hover:text-patina disabled:opacity-50"
                             >
                               {photoBusy === l.itemId ? (
                                 <span className="block text-[10px]">…</span>
@@ -1097,6 +1100,7 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                               }))}
                               onAddNew={(typed) => setAdding({ kind: "item", typed, line: i })}
                               addLabel="New item"
+                              compact
                             />
                           </div>
                         </div>
@@ -1158,13 +1162,13 @@ export default function InwardForm({ lookups: initial, existing }: { lookups: Lo
                         />
                         <Err text={fields[`items.${i}.kgPerCarton`]} />
                       </td>
-                      <td className="py-1 pr-2 pt-3 text-right font-mono text-verdigris-100">
+                      <td className="py-1 pr-2 pt-[11px] text-right font-mono text-verdigris-100">
                         {fmt(c * (Number(l.piecesPerCarton) || 0))}
                       </td>
-                      <td className="py-1 pr-2 pt-3 text-right font-mono text-verdigris-100">
+                      <td className="py-1 pr-2 pt-[11px] text-right font-mono text-verdigris-100">
                         {fmt(c * (Number(l.kgPerCarton) || 0))}
                       </td>
-                      <td className="py-1 pt-2">
+                      <td className="py-1 pt-[7px]">
                         <button
                           type="button"
                           aria-label="Remove line"
