@@ -10,6 +10,7 @@ import { Card, ConfirmDialog } from "@/components/admin/ui";
 import { fmtTime } from "@/lib/format/datetime";
 
 import { fmt } from "./InwardTable";
+import { beep, uid } from "./scan-kit";
 
 /**
  * The scan station. One box, always focused. A handheld or USB scanner
@@ -26,32 +27,6 @@ const HOLD_REASONS = ["Damaged", "Short quantity", "Wrong item", "Wet", "Weight 
 type Pending = { clientScanId: string; code: string; via: "SCAN" | "MANUAL" };
 type Seen = ScanResult & { at: number };
 
-function beep(ok: boolean) {
-  try {
-    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    const ctx = new Ctx();
-    const tone = (freq: number, start: number, len: number) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.frequency.value = freq;
-      o.type = ok ? "sine" : "square";
-      g.gain.value = 0.15;
-      o.connect(g).connect(ctx.destination);
-      o.start(ctx.currentTime + start);
-      o.stop(ctx.currentTime + start + len);
-    };
-    if (ok) tone(1046, 0, 0.12);
-    else {
-      tone(220, 0, 0.16);
-      tone(220, 0.22, 0.16);
-    }
-    setTimeout(() => ctx.close(), 800);
-  } catch {
-    /* no audio: the colour still says it */
-  }
-}
-
-const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export default function ScanStation({ initial }: { initial: CartonOverview }) {
   const toast = useToast();

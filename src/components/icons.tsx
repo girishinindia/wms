@@ -53,6 +53,14 @@ export const QrIcon = (p: P) => (
   </svg>
 );
 
+export const StackIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 3.5 3.5 8 12 12.5 20.5 8Z" />
+    <path d="m3.5 12 8.5 4.5 8.5-4.5" />
+    <path d="m3.5 16 8.5 4.5 8.5-4.5" />
+  </svg>
+);
+
 export const ReceiptIcon = (p: P) => (
   <svg {...base} {...p}>
     <path d="M5 3h14v18l-2.3-1.4-2.4 1.4-2.3-1.4L9.7 21l-2.4-1.4L5 21Z" />

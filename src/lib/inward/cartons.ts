@@ -10,6 +10,7 @@ import type { Actor } from "@/lib/auth/guard";
 import { announce } from "@/lib/notify/announce";
 import { configured, publicUrl, putObject } from "@/lib/storage/bunny";
 import { PHOTO_EDGE, toWebp } from "@/lib/storage/picture";
+import { placesOf, type CartonPlace } from "@/lib/storage/store";
 import { cartonNoFromScan, qrText, type LabelData } from "@/lib/inward/carton-format";
 import {
   headerOf,
@@ -196,6 +197,8 @@ export type ScanRow = {
 };
 
 export type CartonOverview = {
+  /** Where the received cartons are stored: one row per gala. */
+  storage: { stored: number; places: CartonPlace[] };
   request: { id: number; code: string; status: InwardStatus; statusLabel: string; importer: string; warehouse: string };
   ready: { vehicle: boolean; driver: boolean };
   can: CartonCan & { finish: boolean };
@@ -335,8 +338,9 @@ async function visibleFor(actor: Actor, scope: InwardScope, id: number, need: ke
 
 export async function cartonOverview(actor: Actor, scope: InwardScope, id: number): Promise<CartonOverview> {
   const { row, can } = await visibleFor(actor, scope, id, "view");
-  const [{ totals, lines }, recent] = await Promise.all([totalsOf(id), recentScans(id)]);
+  const [{ totals, lines }, recent, storage] = await Promise.all([totalsOf(id), recentScans(id), placesOf(id)]);
   return {
+    storage,
     request: requestOf(row),
     ready: { vehicle: row.vehicle_id !== null, driver: row.driver_id !== null },
     can: { ...can, finish: can.work && totals.generated > 0 },

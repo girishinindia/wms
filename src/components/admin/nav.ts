@@ -98,7 +98,8 @@ export type AdminNavIcon =
   | "clock"
   | "mail"
   | "sitemap"
-  | "qr";
+  | "qr"
+  | "stack";
 
 /** A collapsible section. Its children are ordinary items and are what
  *  `visibleNav` returns — the group itself grants nothing. */
@@ -376,6 +377,24 @@ export const ADMIN_NAV: AdminNavNode[] = [
     label: "QR codes",
     permission: "inward.goods.update",
     icon: "qr",
+  },
+  /**
+   * Storage — cartons into galas, and the floors and galas themselves.
+   * Keyed on `storage.goods.update`, which the super admin (ALL) and the
+   * warehouse admin and storage manager (WAREHOUSE) hold. The importer's
+   * OWN read of their goods earns nothing here.
+   */
+  {
+    href: "/admin/storage",
+    label: "Store cartons",
+    permission: "storage.goods.update",
+    icon: "stack",
+  },
+  {
+    href: "/admin/locations",
+    label: "Floors and galas",
+    permission: "storage.goods.update",
+    icon: "grid",
   },
   {
     href: "/admin/notifications",

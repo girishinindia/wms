@@ -177,3 +177,54 @@ export async function printMarkerList(labels: PrintableLabel[], title: string) {
 export function qrSvg(text: string): Promise<string> {
   return QRCode.toString(text, { type: "svg", errorCorrectionLevel: "M", margin: 0 });
 }
+
+// ── Gala labels ───────────────────────────────────────────────────
+
+export type GalaLabelSize = "a4" | "t100x75";
+
+export const GALA_LABEL_SIZES: { id: GalaLabelSize; label: string; hint: string }[] = [
+  { id: "a4", label: "A4 · 4 per page", hint: "Wall labels, readable from a distance" },
+  { id: "t100x75", label: "Thermal 100 × 75 mm", hint: "Sticker roll" },
+];
+
+export type PrintableGala = { code: string; fullId: string; qr: string; warehouseName: string; floorName: string; galaName: string };
+
+/**
+ * One label per gala: the gala code huge (read from across the floor), the
+ * warehouse / floor / gala in words, and the QR the phone or scanner reads.
+ */
+export async function printGalaLabels(galas: PrintableGala[], size: GalaLabelSize, title: string) {
+  const svgs = await Promise.all(
+    galas.map((g) => QRCode.toString(g.qr, { type: "svg", errorCorrectionLevel: "M", margin: 0 })),
+  );
+  const css =
+    BASE_CSS_GALA +
+    (size === "a4"
+      ? `@page { size: A4; margin: 8mm; }
+         .sheet { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 138mm; gap: 4mm; }
+         .gl { border: 0.6mm solid #000; border-radius: 3mm; padding: 6mm; }
+         .gc { font-size: 46pt; } .gq { width: 72mm; height: 72mm; } .gw { font-size: 12pt; }`
+      : `@page { size: 100mm 75mm; margin: 0; }
+         .sheet { display: block; }
+         .gl { width: 100mm; height: 75mm; padding: 3mm 4mm; break-after: page; flex-direction: row; gap: 4mm; }
+         .gc { font-size: 26pt; } .gq { width: 48mm; height: 48mm; } .gw { font-size: 9pt; }`);
+  const body = `<div class="sheet">${galas
+    .map(
+      (g, i) => `<div class="gl"><div class="gt"><div class="gc">${esc(g.code)}</div>
+        <div class="gw"><b>${esc(g.galaName)}</b> · ${esc(g.floorName)}</div>
+        <div class="gw">${esc(g.warehouseName)}</div><div class="gw gm">${esc(g.fullId)}</div></div>
+        <div class="gq">${svgs[i]}</div></div>`,
+    )
+    .join("")}</div>`;
+  await printHtml(title, css, body);
+}
+
+const BASE_CSS_GALA = `
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; }
+  .gl { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow: hidden; break-inside: avoid; }
+  .gt { display: flex; flex-direction: column; gap: 1.5mm; align-items: center; }
+  .gc { font-family: "Courier New", monospace; font-weight: 700; letter-spacing: 1pt; line-height: 1; }
+  .gm { font-family: "Courier New", monospace; color: #333; }
+  .gq svg { width: 100%; height: 100%; display: block; }
+`;

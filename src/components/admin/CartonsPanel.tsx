@@ -119,6 +119,7 @@ export default function CartonsPanel({
     ["Numbered", t.generated, "text-verdigris-50"],
     ["Printed", t.printed, "text-amber-300"],
     ["Received", t.received, "text-emerald-300"],
+    ["Stored", o.storage?.stored ?? 0, "text-emerald-300"],
     ["On hold", t.hold, "text-rose-300"],
     ["Not scanned", t.missing, "text-verdigris-200/70"],
   ];
@@ -161,7 +162,7 @@ export default function CartonsPanel({
         </p>
       ) : null}
 
-      <div className="mb-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
+      <div className="mb-4 grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-7">
         {tiles.map(([k, v, c]) => (
           <div key={k} className="rounded-xl border border-verdigris-300/10 bg-ink-900/40 px-3 py-2">
             <p className="text-[11px] text-verdigris-200/55">{k}</p>
@@ -235,6 +236,32 @@ export default function CartonsPanel({
           </tbody>
         </table>
       </div>
+
+      {o.storage && (o.storage.stored > 0 || t.received > 0) ? (
+        <div className="mt-5" id="cartons-where">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-verdigris-300">Where the cartons are</p>
+          <ul className="space-y-1 text-sm">
+            {o.storage.places.map((p) => (
+              <li key={p.galaCode} className="flex flex-wrap gap-x-3">
+                <span className="font-mono text-verdigris-50">{p.galaCode}</span>
+                <span className="text-verdigris-200/60">{p.floor}</span>
+                <span className="text-verdigris-100">{fmt(p.cartons)} cartons</span>
+                <span className="font-mono text-xs text-verdigris-200/55">
+                  {p.from === p.to ? p.from : `${p.from} → ${p.to.slice(-4)}`}
+                </span>
+              </li>
+            ))}
+            {t.received - o.storage.stored > 0 ? (
+              <li className="text-amber-300">
+                {fmt(t.received - o.storage.stored)} received, not in a gala yet ·{" "}
+                <Link href="/admin/storage" className="underline hover:text-patina">
+                  Store cartons
+                </Link>
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
 
       {holds.length ? (
         <div className="mt-5">

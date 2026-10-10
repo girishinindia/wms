@@ -266,6 +266,9 @@ describe("admin navigation: grouping", () => {
       "Inward requests",
       // Stickers and scanning, right under the requests they belong to.
       "QR codes",
+      // Cartons into galas, and the floors and galas themselves.
+      "Store cartons",
+      "Floors and galas",
       "Notifications",
       "Enquiry",
       "Users & Roles",
