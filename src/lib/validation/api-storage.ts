@@ -20,5 +20,10 @@ export const storeCartonsSchema = z.object({
 /** POST /storage/floors/{id}/galas */
 export const addGalasSchema = z.object({ count: z.number().int().min(1).max(50) });
 
-/** PATCH /storage/floors/{id}, /storage/galas/{id} */
-export const setActiveSchema = z.object({ active: z.boolean() });
+/** PATCH /storage/floors/{id}, /storage/galas/{id} — switch on/off, or rename. */
+export const locationPatchSchema = z
+  .object({
+    active: z.boolean().optional(),
+    name: z.string().trim().min(1, "Give it a name").max(60, "At most 60 characters").optional(),
+  })
+  .refine((v) => v.active !== undefined || v.name !== undefined, { message: "Nothing to change" });

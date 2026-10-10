@@ -58,4 +58,11 @@ describe("who stores", () => {
     expect(sql).toContain("create table if not exists carton_movement");
     expect(sql).not.toMatch(/\b(zone|rack)\b.*\bnot null\b/i);
   });
+
+  it("renaming, switching off and deleting are the super admin's and warehouse admin's, not the storage manager's", () => {
+    const sql = readFileSync(new URL("../../sql/35_location_rights.sql", import.meta.url), "utf8");
+    expect(sql).toMatch(/delete from role_permission\s+where role = 'STORAGE_MANAGER' and permission = 'warehouse.location.update'/);
+    expect(sql).toContain("('WAREHOUSE_ADMIN', 'warehouse.location.delete', 'WAREHOUSE')");
+    expect(sql).not.toMatch(/STORAGE_MANAGER', 'warehouse.location.(update|delete)/);
+  });
 });
