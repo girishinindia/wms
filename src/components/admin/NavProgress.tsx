@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef } from "react";
 
 import { endNavigation, startNavigation, useNavStage } from "@/lib/admin/navigating";
 
@@ -27,6 +28,28 @@ import { endNavigation, startNavigation, useNavStage } from "@/lib/admin/navigat
  * and its state back exactly as they were, and the abandonment timeout
  * inside the store.
  */
+
+/**
+ * Some links are Next `<Link>`s (the "New inward request" button, row
+ * links, gala pages…). Those swap the page in place instead of loading
+ * a new document, so this component survives the trip and nothing above
+ * clears the bar — the page sat faded for the full 10 s abandonment
+ * timeout although it had arrived in well under a second. When the
+ * address changes, the navigation is over.
+ */
+function ArrivalWatch() {
+  const pathname = usePathname();
+  const search = useSearchParams()?.toString() ?? "";
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    endNavigation();
+  }, [pathname, search]);
+  return null;
+}
 
 /** Whether the click would have navigated this tab at all. */
 function navigates(event: MouseEvent, link: HTMLAnchorElement): boolean {
@@ -95,7 +118,12 @@ export default function NavProgress() {
     };
   }, []);
 
-  if (stage === "none") return null;
+  // useSearchParams needs a Suspense boundary of its own.
+  const watch = (
+    <Suspense fallback={null}>
+      <ArrivalWatch />
+    </Suspense>
+  );
 
   /*
    * The bar only. The dim belongs to `<main>`, which is the element
@@ -110,13 +138,18 @@ export default function NavProgress() {
    * interruption level for "the next page is coming".
    */
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="pointer-events-none fixed inset-x-0 top-0 z-[60]"
-    >
-      <span className="sr-only">Loading the next page</span>
-      <span aria-hidden className="nav-progress block h-0.5 bg-verdigris-400" />
-    </div>
+    <>
+      {watch}
+      {stage !== "none" && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="pointer-events-none fixed inset-x-0 top-0 z-[60]"
+        >
+          <span className="sr-only">Loading the next page</span>
+          <span aria-hidden className="nav-progress block h-0.5 bg-verdigris-400" />
+        </div>
+      )}
+    </>
   );
 }
