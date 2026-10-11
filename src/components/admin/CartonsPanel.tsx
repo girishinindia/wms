@@ -8,7 +8,7 @@ import type { CartonLabel, CartonOverview } from "@/lib/inward/cartons";
 import { useToast } from "@/components/Toast";
 import { Card, ConfirmDialog } from "@/components/admin/ui";
 
-import { printMarkerList, printStickers, qrSvg, STICKER_MM, STICKER_SIZES, stickerPreviewDoc, type StickerSize } from "./carton-print";
+import { fitNumbers, printMarkerList, printStickers, qrSvg, STICKER_MM, STICKER_SIZES, stickerPreviewDoc, type StickerSize } from "./carton-print";
 import { fmtTime } from "@/lib/format/datetime";
 
 import { fmt } from "./InwardTable";
@@ -393,6 +393,21 @@ function PrintDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** First carton small, last carton bigger, both inside this inward. */
+  const rangeProblem = useMemo(() => {
+    if (what !== "range" || !labels) return null;
+    const total = labels.length;
+    const a = Number(from);
+    const b = Number(to);
+    if (!from) return { field: "from", text: "Enter the first carton number." };
+    if (!to) return { field: "to", text: "Enter the last carton number." };
+    if (a < 1) return { field: "from", text: "Cartons start at 1." };
+    if (a > total) return { field: "from", text: `This inward has ${fmt(total)} cartons — the first can be at most ${fmt(total)}.` };
+    if (b > total) return { field: "to", text: `This inward has ${fmt(total)} cartons — the last can be at most ${fmt(total)}.` };
+    if (a > b) return { field: "to", text: `The last carton (${fmt(b)}) must be bigger than the first (${fmt(a)}).` };
+    return null;
+  }, [what, labels, from, to]);
+
   const chosen = useMemo(() => {
     if (!labels) return [];
     switch (what) {
@@ -403,9 +418,10 @@ function PrintDialog({
       case "line":
         return labels.filter((l) => l.lineId === lineId);
       case "range": {
-        const a = Number(from) || 1;
-        const b = Number(to) || a;
-        return labels.filter((l) => l.seq >= Math.min(a, b) && l.seq <= Math.max(a, b));
+        if (rangeProblem) return [];
+        const a = Number(from);
+        const b = Number(to);
+        return labels.filter((l) => l.seq >= a && l.seq <= b);
       }
       case "one": {
         const q = one.trim().toUpperCase();
@@ -415,7 +431,7 @@ function PrintDialog({
       default:
         return labels;
     }
-  }, [labels, what, lineId, from, to, one]);
+  }, [labels, what, lineId, from, to, one, rangeProblem]);
 
   useEffect(() => {
     const first = chosen[0];
@@ -487,11 +503,38 @@ function PrintDialog({
                   </select>
                 ) : null}
                 {what === "range" ? (
-                  <div className="mt-2 flex items-center gap-2 text-sm text-verdigris-200/70">
-                    Carton
-                    <input value={from} onChange={(e) => setFrom(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className="w-20 rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-2 py-1.5 text-verdigris-50" />
-                    to
-                    <input value={to} onChange={(e) => setTo(e.target.value.replace(/\D/g, ""))} inputMode="numeric" className="w-20 rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-2 py-1.5 text-verdigris-50" />
+                  <div className="mt-2">
+                    <div className="flex items-center gap-2 text-sm text-verdigris-200/70">
+                      Carton
+                      <input
+                        id="print-from"
+                        aria-label="First carton"
+                        aria-invalid={rangeProblem?.field === "from"}
+                        value={from}
+                        onChange={(e) => setFrom(e.target.value.replace(/\D/g, ""))}
+                        inputMode="numeric"
+                        placeholder="1"
+                        className={`w-20 rounded-lg border bg-ink-900/60 px-2 py-1.5 text-verdigris-50 ${rangeProblem?.field === "from" ? "border-rose-400/70" : "border-verdigris-300/15"}`}
+                      />
+                      to
+                      <input
+                        id="print-to"
+                        aria-label="Last carton"
+                        aria-invalid={rangeProblem?.field === "to"}
+                        value={to}
+                        onChange={(e) => setTo(e.target.value.replace(/\D/g, ""))}
+                        inputMode="numeric"
+                        placeholder={labels ? String(labels.length) : ""}
+                        className={`w-20 rounded-lg border bg-ink-900/60 px-2 py-1.5 text-verdigris-50 ${rangeProblem?.field === "to" ? "border-rose-400/70" : "border-verdigris-300/15"}`}
+                      />
+                    </div>
+                    {rangeProblem ? (
+                      <p role="alert" id="print-range-error" className="mt-1 text-xs text-rose-300">{rangeProblem.text}</p>
+                    ) : (
+                      <p className="mt-1 text-[11px] text-verdigris-200/50" id="print-range-count">
+                        {fmt(chosen.length)} sticker{chosen.length === 1 ? "" : "s"} · carton {from} to {to}
+                      </p>
+                    )}
                   </div>
                 ) : null}
                 {what === "one" ? (
@@ -518,6 +561,7 @@ function PrintDialog({
               </div>
               <p className="text-[11px] leading-relaxed text-verdigris-200/50">
                 Opens your computer&apos;s print window, so any installed printer works — or choose “Save as PDF” and print elsewhere.
+                In that window pick the sticker paper size, set margins to None, and switch off “Headers and footers”.
               </p>
             </div>
             <div>
@@ -525,7 +569,7 @@ function PrintDialog({
               {first ? (
                 <StickerPreview label={first} qr={preview} size={size} />
               ) : (
-                <p className="rounded-lg border border-dashed border-verdigris-300/20 p-6 text-center text-sm text-verdigris-200/50">Nothing matches.</p>
+                <p className="rounded-lg border border-dashed border-verdigris-300/20 p-6 text-center text-sm text-verdigris-200/50">{rangeProblem ? "Fix the carton range first." : "Nothing matches."}</p>
               )}
               {first ? (
                 <details className="mt-2 text-[11px] text-verdigris-200/55">
@@ -539,12 +583,16 @@ function PrintDialog({
         <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
           <button
             type="button"
+            id="print-marker"
             disabled={!labels || busy || !chosen.length}
             onClick={() => labels && printMarkerList(chosen, requestCode)}
-            className="text-xs text-verdigris-200/60 hover:text-patina"
-            title="Printer not working? Print the numbers on A4 to write on the cartons."
+            className={`${secondary} inline-flex items-center gap-2`}
+            title="Printer not working? Print the carton numbers on A4 paper to write on the cartons with a marker."
           >
-            Printer down? Print a marker list
+            <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />
+            </svg>
+            Printer down? Print number list
           </button>
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className={secondary}>Cancel</button>
@@ -590,8 +638,12 @@ function StickerPreview({ label, qr, size }: { label: CartonLabel; qr: string; s
           <iframe
             title={`Sticker preview, ${mm.note}`}
             srcDoc={doc}
-            sandbox=""
+            sandbox="allow-same-origin"
             tabIndex={-1}
+            onLoad={(e) => {
+              const d = e.currentTarget.contentDocument;
+              if (d) void fitNumbers(d);
+            }}
             style={{ width: w, height: h, border: 0, transform: `scale(${scale})`, transformOrigin: "0 0", pointerEvents: "none", background: "#fff" }}
           />
         ) : null}

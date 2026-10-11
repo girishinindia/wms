@@ -129,6 +129,27 @@ async function imagesReady(doc: Document, timeoutMs = 4000) {
   ]);
 }
 
+/**
+ * The carton number must never be cut. The sizes are set so it fits in
+ * Courier New, but a computer whose monospace font runs wider would push
+ * it under the QR — so each number is shrunk, a quarter point at a time,
+ * until the whole of it fits its column.
+ */
+export async function fitNumbers(doc: Document) {
+  try {
+    await doc.fonts?.ready;
+  } catch {
+    /* fonts API missing: measure as is */
+  }
+  for (const el of Array.from(doc.querySelectorAll<HTMLElement>(".no"))) {
+    let size = parseFloat(doc.defaultView?.getComputedStyle(el).fontSize ?? "0");
+    while (size > 9 && el.scrollWidth > el.clientWidth + 0.5) {
+      size -= 0.33; // px ≈ a quarter point
+      el.style.fontSize = `${size}px`;
+    }
+  }
+}
+
 /** Print through a hidden frame and the browser's print window. */
 async function printHtml(title: string, css: string, body: string) {
   const frame = document.createElement("iframe");
@@ -140,6 +161,7 @@ async function printHtml(title: string, css: string, body: string) {
   doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${css}</style></head><body>${body}</body></html>`);
   doc.close();
   await imagesReady(doc);
+  await fitNumbers(doc);
   const win = frame.contentWindow!;
   const done = () => setTimeout(() => frame.remove(), 1000);
   win.addEventListener("afterprint", done, { once: true });
