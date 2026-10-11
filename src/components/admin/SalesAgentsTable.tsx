@@ -30,6 +30,8 @@ export type SalesAgentsSpec = {
   canCreate: boolean;
   canUpdate: boolean;
   canDelete: boolean;
+  /** The importer (or super admin): may mark agents as trusted (auto-approve delivery notes). */
+  canTrust: boolean;
   /** Super admin: the list spans importers, and creating asks which. */
   crossImporter: boolean;
   importers: { id: number; name: string; code: string }[];
@@ -152,6 +154,15 @@ export default function SalesAgentsTable({
     router.refresh();
   }
 
+  async function trust(row: SalesAgentRow) {
+    setBusy(row.id);
+    const result = await api<{ autoApprove: boolean }>(`/sales-agents/${row.id}/auto-approve`, { body: { on: !row.autoApprove } });
+    setBusy(null);
+    if (!result.ok) { toast.error(result.error.message); return; }
+    toast.success(row.autoApprove ? `${name(row)}'s delivery notes need your approval again.` : `${name(row)} is trusted — their delivery notes are approved automatically.`);
+    router.refresh();
+  }
+
   async function bulk(action: "activate" | "deactivate" | "delete", ids: number[]) {
     setBusy("bulk");
     const result = await api<{ done: number[]; skipped: { id: number; reason: string }[] }>("/sales-agents/bulk", { body: { action, ids } });
@@ -234,6 +245,16 @@ export default function SalesAgentsTable({
           label={row.original.isActive ? `Deactivate ${name(row.original)}` : `Activate ${name(row.original)}`}
           onChange={() => toggle(row.original)} />
       ) : <StatusBadge value={row.original.isActive ? "ACTIVE" : "CLOSED"} />,
+    });
+    cols.push({
+      id: "trusted", accessorFn: (r) => r.autoApprove, header: "Trusted",
+      cell: ({ row }) => spec.canTrust ? (
+        <span title="Trusted agents' delivery notes are approved automatically">
+          <Switch checked={row.original.autoApprove} busy={busy === row.original.id}
+            label={row.original.autoApprove ? `Stop auto-approving ${name(row.original)}` : `Auto-approve ${name(row.original)}'s delivery notes`}
+            onChange={() => trust(row.original)} />
+        </span>
+      ) : row.original.autoApprove ? <StatusBadge value="TRUSTED" /> : <span className="text-xs text-verdigris-200/40">—</span>,
     });
     cols.push({
       id: "actions", header: "", enableSorting: false, meta: { className: "whitespace-nowrap text-right" } satisfies ColumnMeta,

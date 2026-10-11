@@ -28,6 +28,9 @@ export type AnnounceInput = {
   /** Distinguishes this occurrence; combined with the recipient id. */
   dedupeSuffix: string;
   actorUserId?: number | null;
+  /** The person the event is about, for SUBJECT rules (e.g. the sales
+   *  agent who made a delivery note). */
+  subjectUserId?: number | null;
   entityType?: string;
   entityId?: string;
   importerId?: number | null;
@@ -73,7 +76,7 @@ export async function announce(input: AnnounceInput): Promise<AnnounceResult> {
         ${rule.audience}::wms.notif_audience,
         ${rule.role_filter}::wms.role_key,
         ${input.actorUserId ?? null},
-        null,
+        ${input.subjectUserId ?? null},
         ${input.warehouseId ?? null},
         ${input.importerId ?? null}
       )

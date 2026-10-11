@@ -79,6 +79,8 @@ export type SalesAgentRow = {
   salesAreas: SalesArea[];
   status: string;
   isActive: boolean;
+  /** Trusted by the importer: this agent's delivery notes are approved on submit. */
+  autoApprove: boolean;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
@@ -90,7 +92,7 @@ const SELECT = sql`
          a.birth_date::text as birth_date, a.joining_date::text as joining_date,
          a.pan::text as pan, a.address, a.landmark, a.area, a.city_id,
          c.name as city_label, a.pincode::text as pincode, a.sales_areas,
-         a.status::text as status, a.is_active, a.notes,
+         a.status::text as status, a.is_active, coalesce(a.auto_approve, false) as auto_approve, a.notes,
          a.created_at::text as created_at, a.updated_at::text as updated_at
     from wms.sales_agent a
     join wms.importer i on i.id = a.importer_id
@@ -119,6 +121,7 @@ function map(r: Record<string, unknown>): SalesAgentRow {
     salesAreas: normaliseAreas(r.sales_areas),
     status: String(r.status),
     isActive: Boolean(r.is_active),
+    autoApprove: Boolean(r.auto_approve),
     notes: (r.notes as string | null) ?? null,
     createdAt: String(r.created_at),
     updatedAt: String(r.updated_at),

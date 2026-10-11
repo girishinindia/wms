@@ -29,6 +29,7 @@
     "drizzle-orm": "^0.45.2",
     "jszip": "^3.10.1",
     "next": "15.5.23",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "postgres": "^3.4.9",
     "qrcode": "^1.5.4",

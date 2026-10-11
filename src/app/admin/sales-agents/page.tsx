@@ -67,6 +67,8 @@ export default async function SalesAgentsPage() {
     canCreate: grantFor(guard.actor, "sales_agent.create") !== null,
     canUpdate: grantFor(guard.actor, "sales_agent.update") !== null,
     canDelete: grantFor(guard.actor, "sales_agent.delete") !== null,
+    // Trusting an agent is the importer's call (the super admin may set it on their word).
+    canTrust: wide || guard.actor.roles.some((r) => r.role === "IMPORTER"),
     crossImporter: wide,
     importers,
     geo,

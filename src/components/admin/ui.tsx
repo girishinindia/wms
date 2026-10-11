@@ -105,6 +105,10 @@ const STATUS_TONE: Record<string, string> = {
   IN_PROCESS: "border-patina/40 bg-patina/10 text-patina",
   COMPLETED: "border-verdigris-300/35 bg-verdigris-500/15 text-verdigris-100",
   CANCELLED: "border-verdigris-300/20 bg-ink-900/70 text-verdigris-200/60",
+  // Delivery notes.
+  APPROVED: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
+  PENDING_APPROVAL: "border-amber-400/35 bg-amber-500/10 text-amber-200",
+  TRUSTED: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
 };
 
 /** Status pills. Unknown values fall back to neutral rather than throwing —

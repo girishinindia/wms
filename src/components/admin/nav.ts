@@ -367,6 +367,21 @@ export const ADMIN_NAV: AdminNavNode[] = [
     icon: "box",
   },
   /**
+   * Delivery notes (DN / DO) — goods going out to a buyer. Keyed on
+   * `dispatch.order.read` with `own` and `agent` set: the sales agent
+   * (their own notes) and the importer (their company's) at OWN; the
+   * warehouse admin, package manager and outward (dispatch) manager at
+   * WAREHOUSE; the super admin at ALL.
+   */
+  {
+    href: "/admin/delivery-notes",
+    label: "Delivery notes",
+    permission: "dispatch.order.read",
+    own: true,
+    agent: true,
+    icon: "truck",
+  },
+  /**
    * QR codes — carton numbers, stickers and scanning, reached without
    * opening the request first. Keyed on `inward.goods.update`, which only
    * the super admin (ALL), warehouse admin and inward manager (WAREHOUSE)

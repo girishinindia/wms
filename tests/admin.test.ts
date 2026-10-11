@@ -264,6 +264,8 @@ describe("admin navigation: grouping", () => {
       // Both sides of the counter, right under the dashboard: the one
       // screen an importer and a dock manager both open every day.
       "Inward requests",
+      // Goods going out to a buyer: the agent's note, the importer's approval.
+      "Delivery notes",
       // Stickers and scanning, right under the requests they belong to.
       "QR codes",
       // Cartons into galas, and the floors and galas themselves.
