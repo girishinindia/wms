@@ -115,7 +115,14 @@ export default function StickyTableBox({
        * is what created the problem this component exists to solve.
        * Both axes, deliberately and visibly.
        */
-      className={`overflow-auto ${className}`}
+      /*
+       * `relative` makes the box the containing block of anything
+       * absolutely positioned inside it. Screen-reader labels (`sr-only`
+       * is `position: absolute`) in rows far down the list otherwise
+       * escape the box's clipping and stretch the PAGE — a long empty
+       * scroll below the table, measured at +800px on Notifications.
+       */
+      className={`relative overflow-auto ${className}`}
     >
       {children}
     </div>
