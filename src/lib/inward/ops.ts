@@ -439,21 +439,110 @@ export async function listRequests(scope: InwardScope, filter: ListFilter) {
   }
   // The dock side never needs to see somebody's half-typed draft.
   if (scope.side === "warehouse") where.push(sql`r.status <> 'DRAFT'`);
-  if (filter.q) {
-    const like = `%${filter.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-    where.push(
-      sql`(r.code ilike ${like} or r.container_number ilike ${like} or i.company_name ilike ${like} or w.name ilike ${like})`,
-    );
-  }
+  if (filter.q) where.push(searchWhere(filter.q));
   const rows = await getDb().execute<HeaderRow>(sql`
     ${HEADER_SELECT}
     where ${sql.join(where, sql` and `)}
-    order by case r.status when 'SUBMITTED' then 0 when 'NEEDS_CHANGES' then 1 when 'DRAFT' then 2
-                           when 'ACKNOWLEDGED' then 3 when 'IN_PROCESS' then 4 else 9 end,
-             coalesce(r.expected_arrival, date '2999-12-31'), r.updated_at desc
+    order by ${LIST_ORDER}
     limit ${filter.limit} offset ${filter.offset}
   `);
   return rows.map(toSummary);
+}
+
+const LIST_ORDER = sql`case r.status when 'SUBMITTED' then 0 when 'NEEDS_CHANGES' then 1 when 'DRAFT' then 2
+                           when 'ACKNOWLEDGED' then 3 when 'IN_PROCESS' then 4 else 9 end,
+             coalesce(r.expected_arrival, date '2999-12-31'), r.updated_at desc`;
+
+/** Number, container, importer, warehouse, transporter, vehicle, driver,
+ *  or any item code / description in the goods. */
+function searchWhere(q: string): SQL {
+  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  return sql`(r.code ilike ${like} or r.container_number ilike ${like} or i.company_name ilike ${like}
+          or w.name ilike ${like} or t.name ilike ${like} or v.registration_number::text ilike ${like}
+          or d.name ilike ${like}
+          or exists (select 1 from wms.inward_request_item s
+                      where s.inward_request_id = r.id
+                        and (s.item_code ilike ${like} or s.description ilike ${like})))`;
+}
+
+/** Where the cartons of a request are: numbered, printed, in, held, in a gala. */
+export type CartonCounts = { generated: number; printed: number; received: number; hold: number; stored: number };
+
+/** One row of the list screens: the summary, the carton counts and the
+ *  words it can be found by (lower case), so search and filters run on
+ *  the screen without asking the server again. */
+export type BoardRow = InwardSummary & { cartonCounts: CartonCounts; find: string };
+
+export const BOARD_LIMIT = 500;
+
+/**
+ * Everything the list screens need in one read — every status, up to
+ * BOARD_LIMIT rows. `truncated` says there are more; then the screen
+ * asks again with the search words (`q`) as the person types.
+ */
+export async function listBoard(scope: InwardScope, opts: { q?: string } = {}): Promise<{ rows: BoardRow[]; truncated: boolean }> {
+  const where: SQL[] = [sql`r.deleted_at is null`, scopeWhere(scope)];
+  if (scope.side === "warehouse") where.push(sql`r.status <> 'DRAFT'`);
+  if (opts.q) where.push(searchWhere(opts.q));
+  const rows = await getDb().execute<
+    HeaderRow & { generated: string; printed: string; received: string; held: string; stored: string; item_text: string | null }
+  >(sql`
+    with base as (
+      ${HEADER_SELECT}
+      where ${sql.join(where, sql` and `)}
+      order by ${LIST_ORDER}
+      limit ${BOARD_LIMIT + 1}
+    )
+    select base.*,
+           coalesce(c.generated, 0)::text as generated, coalesce(c.printed, 0)::text as printed,
+           coalesce(c.received, 0)::text as received, coalesce(c.held, 0)::text as held,
+           coalesce(c.stored, 0)::text as stored,
+           it.item_text
+      from base
+      left join lateral (
+        select count(*) as generated,
+               count(*) filter (where ic.print_count > 0) as printed,
+               count(*) filter (where ic.status = 'RECEIVED') as received,
+               count(*) filter (where ic.status = 'HOLD') as held,
+               count(*) filter (where ic.gala_id is not null) as stored
+          from wms.inward_carton ic where ic.inward_request_id = base.id
+      ) c on true
+      left join lateral (
+        select left(string_agg(coalesce(li.item_code, '') || ' ' || li.description, ' '), 1200) as item_text
+          from wms.inward_request_item li where li.inward_request_id = base.id
+      ) it on true
+  `);
+  const truncated = rows.length > BOARD_LIMIT;
+  return {
+    truncated,
+    rows: rows.slice(0, BOARD_LIMIT).map((r) => {
+      const summary = toSummary(r);
+      const find = [
+        summary.code,
+        summary.containerNumber,
+        summary.importer.name,
+        summary.warehouse.name,
+        summary.transporter?.name,
+        summary.vehicle?.registrationNumber,
+        summary.driver?.name,
+        r.item_text,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return {
+        ...summary,
+        cartonCounts: {
+          generated: num(r.generated),
+          printed: num(r.printed),
+          received: num(r.received),
+          hold: num(r.held),
+          stored: num(r.stored),
+        },
+        find,
+      };
+    }),
+  };
 }
 
 export async function headerOf(id: number): Promise<HeaderRow | null> {

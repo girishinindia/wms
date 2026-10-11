@@ -3,7 +3,7 @@ import { type NextRequest } from "next/server";
 import { fail, fieldsFrom, handler, ok } from "@/lib/api/respond";
 import { requirePermission, requireVerifiedImporter } from "@/lib/auth/guard";
 import { actingImporterId, jsonBody, metaOf, respondError } from "@/lib/inward/http";
-import { createRequest, getRequest, listRequests, scopeFor } from "@/lib/inward/ops";
+import { createRequest, getRequest, listBoard, listRequests, scopeFor } from "@/lib/inward/ops";
 import { inwardListQuerySchema, inwardSaveSchema } from "@/lib/validation/api-inward";
 
 export const runtime = "nodejs";
@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * GET  /api/v1/inward-requests   — mine (importer side), my sites' (dock side), or all
+ *      ?view=board → up to 500 rows of every status, with carton counts
  * POST /api/v1/inward-requests   — a new draft; the importer must be verified
  */
 export async function GET(request: NextRequest) {
@@ -23,6 +24,12 @@ export async function GET(request: NextRequest) {
       }
       const q = parsed.data;
       const scope = scopeFor(actor, grant, { importerId: q.importerId ?? null, warehouseId: q.warehouseId ?? null });
+      // view=board: every status with carton counts and search words, for
+      // screens that search and filter on the device (web list, app list).
+      if (q.view === "board") {
+        const board = await listBoard(scope, { q: q.q });
+        return ok({ ...board, side: scope.side }, requestId);
+      }
       const requests = await listRequests(scope, { status: q.status, q: q.q, limit: q.limit, offset: q.offset });
       return ok({ requests, side: scope.side }, requestId);
     } catch (error) {

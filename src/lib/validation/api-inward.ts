@@ -72,6 +72,7 @@ export const inwardListQuerySchema = z.object({
   warehouseId: z.coerce.number().int().positive().optional(),
   importerId: z.coerce.number().int().positive().optional(),
   q: z.string().trim().max(60).optional(),
+  view: z.enum(["board"]).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });

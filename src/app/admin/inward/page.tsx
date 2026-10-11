@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 import InwardTable from "@/components/admin/InwardTable";
 import { Denied, PageHeader } from "@/components/admin/ui";
 import { grantFor, importerGateFor, pageGuard } from "@/lib/auth/guard";
-import { listRequests, scopeFor } from "@/lib/inward/ops";
-import { inwardListQuerySchema } from "@/lib/validation/api-inward";
+import { filtersFromParams } from "@/lib/inward/board";
+import { listBoard, scopeFor } from "@/lib/inward/ops";
 
 export const dynamic = "force-dynamic";
 
@@ -28,15 +28,10 @@ export default async function InwardPage({
   if (gate.kind === "importer" && !gate.verified) redirect("/admin");
 
   const raw = await searchParams;
-  const parsed = inwardListQuerySchema.safeParse({
-    status: raw.status ?? "OPEN",
-    q: raw.q,
-  });
-  const q = parsed.success ? parsed.data : { status: "OPEN" as const, q: undefined, limit: 50, offset: 0 };
-  const status = raw.status === "ALL" ? undefined : q.status;
-
+  const initial = filtersFromParams(raw);
   const scope = scopeFor(guard.actor, guard.grant);
-  const rows = await listRequests(scope, { status, q: q.q, limit: 200, offset: 0 });
+  // Every request in reach, every status — the screen filters as you type.
+  const board = await listBoard(scope);
   const dock = scope.side === "warehouse";
 
   return (
@@ -50,10 +45,10 @@ export default async function InwardPage({
         }
       />
       <InwardTable
-        rows={rows}
+        rows={board.rows}
+        truncated={board.truncated}
         side={scope.side}
-        status={raw.status === "ALL" ? null : (raw.status as string | undefined) ?? "OPEN"}
-        q={q.q ?? ""}
+        initial={initial}
         canCreate={!dock && grantFor(guard.actor, "inward.request.create") !== null}
       />
     </>
