@@ -108,15 +108,21 @@ describe("who works the cartons", () => {
   const row = (status: string, warehouseId = 5) => ({ status: status as never, warehouseId });
 
   it("super admin and the request's own warehouse, once acknowledged", () => {
-    expect(cartonCan(superAdmin, row("ACKNOWLEDGED"))).toEqual({ view: true, generate: true, work: true });
-    expect(cartonCan(dock, row("IN_PROCESS"))).toEqual({ view: true, generate: true, work: true });
+    expect(cartonCan(superAdmin, row("ACKNOWLEDGED"))).toEqual({ view: true, generate: true, work: true, print: true });
+    expect(cartonCan(dock, row("IN_PROCESS"))).toEqual({ view: true, generate: true, work: true, print: true });
   });
 
   it("another warehouse, the importer, and early or closed requests get nothing to do", () => {
-    expect(cartonCan(dock, row("ACKNOWLEDGED", 6))).toEqual({ view: false, generate: false, work: false });
-    expect(cartonCan(importer, row("ACKNOWLEDGED"))).toEqual({ view: false, generate: false, work: false });
-    expect(cartonCan(superAdmin, row("SUBMITTED"))).toEqual({ view: false, generate: false, work: false });
-    expect(cartonCan(superAdmin, row("COMPLETED"))).toEqual({ view: true, generate: false, work: false });
+    expect(cartonCan(dock, row("ACKNOWLEDGED", 6))).toEqual({ view: false, generate: false, work: false, print: false });
+    expect(cartonCan(importer, row("ACKNOWLEDGED"))).toEqual({ view: false, generate: false, work: false, print: false });
+    expect(cartonCan(superAdmin, row("SUBMITTED"))).toEqual({ view: false, generate: false, work: false, print: false });
+    expect(cartonCan(dock, row("CANCELLED"))).toEqual({ view: false, generate: false, work: false, print: false });
+  });
+
+  it("a completed inward can still print and reprint stickers — but not number or scan", () => {
+    expect(cartonCan(superAdmin, row("COMPLETED"))).toEqual({ view: true, generate: false, work: false, print: true });
+    expect(cartonCan(dock, row("COMPLETED"))).toEqual({ view: true, generate: false, work: false, print: true });
+    expect(cartonCan(dock, row("COMPLETED", 6)).print).toBe(false);
   });
 });
 

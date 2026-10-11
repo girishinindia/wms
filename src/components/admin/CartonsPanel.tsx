@@ -138,15 +138,17 @@ export default function CartonsPanel({
               {t.generated ? `Number the other ${fmt(t.declared - t.generated)}` : "Generate carton numbers"}
             </button>
           ) : null}
+          {/* Printing stays open after the inward is completed (a sticker
+              for a typed-in carton, or a torn one); scanning does not. */}
+          {o.can.print && t.generated > 0 ? (
+            <button type="button" id="cartons-print" disabled={busy} onClick={() => setPrinting({})} className={t.printPending && t.generated >= t.declared ? primary : secondary}>
+              {t.printPending ? `Print stickers (${fmt(t.printPending)} pending)` : "Print / reprint"}
+            </button>
+          ) : null}
           {o.can.work && t.generated > 0 ? (
-            <>
-              <button type="button" id="cartons-print" disabled={busy} onClick={() => setPrinting({})} className={t.printPending && t.generated >= t.declared ? primary : secondary}>
-                {t.printPending ? `Print stickers (${fmt(t.printPending)} pending)` : "Print / reprint"}
-              </button>
-              <Link href={`/admin/inward/${requestId}/scan`} id="cartons-scan" className={`${secondary} text-center`}>
-                Open scan station
-              </Link>
-            </>
+            <Link href={`/admin/inward/${requestId}/scan`} id="cartons-scan" className={`${secondary} text-center`}>
+              Open scan station
+            </Link>
           ) : null}
           {o.can.finish ? (
             <button type="button" id="cartons-finish" disabled={busy} onClick={() => finish(false)} className={secondary}>
@@ -172,7 +174,8 @@ export default function CartonsPanel({
       </div>
       {t.labelPending ? (
         <p className="mb-3 text-xs text-amber-300">
-          {fmt(t.labelPending)} received by typed number still need a sticker — print “Label pending”, paste and scan.
+          {fmt(t.labelPending)} received by typed number still need a sticker — print “Label pending”, paste
+          {o.can.work ? " and scan." : " it on the carton; it is scanned when the carton is stored."}
         </p>
       ) : null}
 
@@ -224,7 +227,7 @@ export default function CartonsPanel({
                     </span>
                   </td>
                   <td className="py-2 text-right">
-                    {o.can.work && l.generated ? (
+                    {o.can.print && l.generated ? (
                       <button type="button" onClick={() => setPrinting({ lineId: l.lineId })} className="text-xs text-patina hover:underline">
                         Print
                       </button>

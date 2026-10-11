@@ -41,7 +41,12 @@ import {
 
 const WORKING: InwardStatus[] = ["ACKNOWLEDGED", "IN_PROCESS"];
 
-export type CartonCan = { view: boolean; generate: boolean; work: boolean };
+/**
+ * `print` is wider than `work`: a completed inward is closed for scanning,
+ * but a sticker can still be printed for it — a carton received by typed
+ * number, or a label torn off before the carton was stored.
+ */
+export type CartonCan = { view: boolean; generate: boolean; work: boolean; print: boolean };
 
 /** Whether this actor may see / generate / print-and-scan cartons on this row. */
 export function cartonCan(actor: Actor, row: { status: InwardStatus; warehouseId: number }): CartonCan {
@@ -57,6 +62,7 @@ export function cartonCan(actor: Actor, row: { status: InwardStatus; warehouseId
     view: update && (working || row.status === "COMPLETED"),
     generate: covers("inward.goods.create") && working,
     work: update && working,
+    print: update && (working || row.status === "COMPLETED"),
   };
 }
 
@@ -330,7 +336,9 @@ async function visibleFor(actor: Actor, scope: InwardScope, id: number, need: ke
     const why =
       need === "view"
         ? "Cartons are not available for this request"
-        : `Cartons can be ${need === "generate" ? "generated" : "printed and scanned"} once the warehouse has acknowledged the request, and until it is completed`;
+        : need === "print"
+          ? "Stickers can be printed once the warehouse has acknowledged the request"
+          : `Cartons can be ${need === "generate" ? "generated" : "scanned"} once the warehouse has acknowledged the request, and until it is completed`;
     throw new InwardError(need === "view" ? "NOT_FOUND" : "CONFLICT", why);
   }
   return { row, can };
@@ -527,7 +535,7 @@ export async function generateCartons(actor: Actor, scope: InwardScope, id: numb
 /** The print button was pressed for these cartons: count it. A reprint
  *  keeps the number and adds one to print_count. */
 export async function markPrinted(actor: Actor, scope: InwardScope, id: number, ids: number[], meta: Meta) {
-  const { row } = await visibleFor(actor, scope, id, "work");
+  const { row } = await visibleFor(actor, scope, id, "print");
   if (ids.length === 0) return cartonOverview(actor, scope, id);
   const by = actor.session.userId;
   const out = await getDb().execute<{ id: number; reprint: boolean }>(sql`
