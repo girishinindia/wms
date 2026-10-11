@@ -49,8 +49,8 @@ export async function storageWarehouses(actor: Actor): Promise<StoreWarehouse[]>
   if (ids !== null && ids.length === 0) return [];
   const rows = await getDb().execute<{ id: number; code: string; name: string; floors: string; galas: string }>(sql`
     select w.id, w.code, w.name,
-           (select count(*) from wms.warehouse_floor f where f.warehouse_id = w.id and f.is_active)::text as floors,
-           (select count(*) from wms.warehouse_gala g where g.warehouse_id = w.id and g.is_active)::text as galas
+           (select count(*) from wms.warehouse_floor f where f.warehouse_id = w.id and f.is_active and f.deleted_at is null)::text as floors,
+           (select count(*) from wms.warehouse_gala g where g.warehouse_id = w.id and g.is_active and g.deleted_at is null)::text as galas
       from wms.warehouse w
      where w.deleted_at is null
        ${ids === null ? sql`` : sql`and w.id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`}
@@ -105,7 +105,8 @@ export async function layout(actor: Actor, warehouseId: number): Promise<Layout>
   const w = { id: Number(wh[0].id), code: wh[0].code, name: wh[0].name };
 
   const floors = await db.execute<{ id: number; floor_no: number; code: string; name: string; is_active: boolean }>(sql`
-    select id, floor_no, code, name, is_active from wms.warehouse_floor where warehouse_id = ${warehouseId} order by floor_no
+    select id, floor_no, code, name, is_active from wms.warehouse_floor
+     where warehouse_id = ${warehouseId} and deleted_at is null order by floor_no
   `);
   const galas = await db.execute<{
     id: number;
@@ -123,7 +124,7 @@ export async function layout(actor: Actor, warehouseId: number): Promise<Layout>
            (exists (select 1 from wms.inward_carton c where c.gala_id = g.id)
              or exists (select 1 from wms.carton_movement m where m.to_gala_id = g.id or m.from_gala_id = g.id)) as used
       from wms.warehouse_gala g join wms.warehouse_floor f on f.id = g.floor_id
-     where g.warehouse_id = ${warehouseId}
+     where g.warehouse_id = ${warehouseId} and g.deleted_at is null and f.deleted_at is null
      order by f.floor_no, g.gala_no
   `);
   const rows: FloorRow[] = floors.map((f) => ({
@@ -224,7 +225,7 @@ export async function addFloor(actor: Actor, warehouseId: number, meta: Meta): P
 export async function addGalas(actor: Actor, floorId: number, count: number, meta: Meta): Promise<Layout> {
   const db = getDb();
   const floors = await db.execute<{ warehouse_id: number; floor_no: number; is_active: boolean }>(sql`
-    select warehouse_id, floor_no, is_active from wms.warehouse_floor where id = ${floorId}
+    select warehouse_id, floor_no, is_active from wms.warehouse_floor where id = ${floorId} and deleted_at is null
   `);
   const floor = floors[0];
   if (!floor) throw new InwardError("NOT_FOUND", "No such floor");
@@ -281,12 +282,12 @@ export async function setActive(
           select f.warehouse_id, f.code,
                  (select count(*) from wms.inward_carton c join wms.warehouse_gala g on g.id = c.gala_id
                    where g.floor_id = f.id)::text as cartons
-            from wms.warehouse_floor f where f.id = ${id}
+            from wms.warehouse_floor f where f.id = ${id} and f.deleted_at is null
         `)
       : await db.execute<{ warehouse_id: number; code: string; cartons: string }>(sql`
           select g.warehouse_id, g.code,
                  (select count(*) from wms.inward_carton c where c.gala_id = g.id)::text as cartons
-            from wms.warehouse_gala g where g.id = ${id}
+            from wms.warehouse_gala g where g.id = ${id} and g.deleted_at is null
         `);
   const row = rows[0];
   if (!row) throw new InwardError("NOT_FOUND", kind === "floor" ? "No such floor" : "No such gala");
@@ -320,8 +321,10 @@ export async function setActive(
   return layout(actor, warehouseId);
 }
 
-type Target = { warehouse_id: number; code: string; name: string; used: boolean };
+type Target = { warehouse_id: number; code: string; name: string; used: boolean; cartons: string };
 
+/** "Used" = a carton was ever stored there (now or in the history);
+ *  "cartons" = how many are in it right now. */
 async function target(kind: "floor" | "gala", id: number): Promise<Target> {
   const db = getDb();
   const rows =
@@ -332,14 +335,17 @@ async function target(kind: "floor" | "gala", id: number): Promise<Target> {
                           where g.floor_id = f.id
                             and (exists (select 1 from wms.inward_carton c where c.gala_id = g.id)
                                  or exists (select 1 from wms.carton_movement m
-                                             where m.to_gala_id = g.id or m.from_gala_id = g.id))) as used
-            from wms.warehouse_floor f where f.id = ${id}
+                                             where m.to_gala_id = g.id or m.from_gala_id = g.id))) as used,
+                 (select count(*) from wms.inward_carton c join wms.warehouse_gala g on g.id = c.gala_id
+                   where g.floor_id = f.id)::text as cartons
+            from wms.warehouse_floor f where f.id = ${id} and f.deleted_at is null
         `)
       : await db.execute<Target>(sql`
           select g.warehouse_id, g.code, g.name,
                  (exists (select 1 from wms.inward_carton c where c.gala_id = g.id)
-                   or exists (select 1 from wms.carton_movement m where m.to_gala_id = g.id or m.from_gala_id = g.id)) as used
-            from wms.warehouse_gala g where g.id = ${id}
+                   or exists (select 1 from wms.carton_movement m where m.to_gala_id = g.id or m.from_gala_id = g.id)) as used,
+                 (select count(*) from wms.inward_carton c where c.gala_id = g.id)::text as cartons
+            from wms.warehouse_gala g where g.id = ${id} and g.deleted_at is null
         `);
   const row = rows[0];
   if (!row) throw new InwardError("NOT_FOUND", kind === "floor" ? "No such floor" : "No such gala");
@@ -376,26 +382,31 @@ export async function rename(actor: Actor, kind: "floor" | "gala", id: number, n
   return layout(actor, warehouseId);
 }
 
-/** Delete a floor (with its galas) or a gala — only if no carton was
- *  ever stored there. One that has history is switched off instead. */
+/**
+ * Delete a floor (with its galas) or a gala — only when nothing is in it.
+ *
+ *   · Never held a carton: removed outright.
+ *   · Held cartons before, empty now: marked deleted. It leaves every
+ *     list and the store screen, but the carton history keeps pointing at
+ *     it, and its code is never given to a new gala.
+ */
 export async function remove(actor: Actor, kind: "floor" | "gala", id: number, meta: Meta): Promise<Layout> {
   const row = await target(kind, id);
   const warehouseId = Number(row.warehouse_id);
   need(actor, "warehouse.location.delete", warehouseId);
-  if (row.used) {
+  const stored = Number(row.cartons);
+  if (stored > 0) {
     throw new InwardError(
       "CONFLICT",
-      kind === "floor"
-        ? `Cartons have been stored on ${row.code}, so it cannot be deleted. Switch it off instead.`
-        : `Cartons have been stored in ${row.code}, so it cannot be deleted. Switch it off instead.`,
+      `${row.code} still holds ${stored} carton${stored === 1 ? "" : "s"}. Move ${stored === 1 ? "it" : "them"} to another gala first.`,
     );
   }
   const db = getDb();
-  // Checked again inside the delete, so a carton stored a moment ago still blocks it.
+  const by = actor.session.userId;
   // One statement each, re-checked inside it, so a carton stored a moment
   // ago still blocks the delete. A floor goes together with its galas.
-  const deleted =
-    kind === "floor"
+  const done = !row.used
+    ? kind === "floor"
       ? await db.execute<{ id: number }>(sql`
           with blocked as (
             select 1 from wms.warehouse_gala g
@@ -416,9 +427,32 @@ export async function remove(actor: Actor, kind: "floor" | "gala", id: number, m
              and not exists (select 1 from wms.inward_carton c where c.gala_id = g.id)
              and not exists (select 1 from wms.carton_movement m where m.to_gala_id = g.id or m.from_gala_id = g.id)
           returning g.id
+        `)
+    : kind === "floor"
+      ? await db.execute<{ id: number }>(sql`
+          with blocked as (
+            select 1 from wms.inward_carton c join wms.warehouse_gala g on g.id = c.gala_id where g.floor_id = ${id}
+          ),
+          galas as (
+            update wms.warehouse_gala g
+               set deleted_at = now(), deleted_by = ${by}, is_active = false, updated_by = ${by}, updated_at = now()
+             where g.floor_id = ${id} and g.deleted_at is null and not exists (select 1 from blocked)
+            returning g.id
+          )
+          update wms.warehouse_floor f
+             set deleted_at = now(), deleted_by = ${by}, is_active = false, updated_by = ${by}, updated_at = now()
+           where f.id = ${id} and f.deleted_at is null and not exists (select 1 from blocked)
+          returning f.id, (select count(*) from galas) as galas
+        `)
+      : await db.execute<{ id: number }>(sql`
+          update wms.warehouse_gala g
+             set deleted_at = now(), deleted_by = ${by}, is_active = false, updated_by = ${by}, updated_at = now()
+           where g.id = ${id} and g.deleted_at is null
+             and not exists (select 1 from wms.inward_carton c where c.gala_id = g.id)
+          returning g.id
         `);
-  if (!deleted[0]) {
-    throw new InwardError("CONFLICT", `${row.code} was just used for storing, so it cannot be deleted. Switch it off instead.`);
+  if (!done[0]) {
+    throw new InwardError("CONFLICT", `A carton was just stored in ${row.code}, so it cannot be deleted. Move it out first.`);
   }
   await auditQuietly({
     action: `storage.${kind}.deleted`,
@@ -427,7 +461,7 @@ export async function remove(actor: Actor, kind: "floor" | "gala", id: number, m
     entityId: String(id),
     entityLabel: row.code,
     before: { code: row.code, name: row.name, warehouseId },
-    reason: "Never used for storing",
+    reason: row.used ? "Empty now; held cartons before — removed from the lists, history kept" : "Never used for storing",
     ...auditOf(actor, meta),
   });
   return layout(actor, warehouseId);

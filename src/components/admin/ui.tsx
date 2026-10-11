@@ -341,12 +341,15 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   children,
+  confirmDisabled,
 }: {
   title: string;
   message: ReactNode;
   confirmLabel: string;
   tone?: "danger" | "warn";
   busy?: boolean;
+  /** Keep the confirm button off — e.g. while a required box is empty. */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
   /** Extra content between the message and the buttons — a reason box. */
@@ -384,8 +387,8 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={busy}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${
+            disabled={busy || confirmDisabled}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${
               tone === "danger" ? "bg-rose-500/85 hover:bg-rose-500" : "bg-amber-500/85 text-ink-900 hover:bg-amber-500"
             }`}
           >

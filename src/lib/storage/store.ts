@@ -54,16 +54,18 @@ export type StoreResult = {
   from?: { galaId: number; code: string; at: string | null; by: string | null } | null;
 };
 
-type GalaHit = { id: number; warehouse_id: number; code: string; is_active: boolean; floor_active: boolean };
+type GalaHit = { id: number; warehouse_id: number; code: string; is_active: boolean; floor_active: boolean; deleted: boolean };
 
 async function galaIn(warehouseId: number, galaId: number): Promise<GalaHit> {
   const rows = await getDb().execute<GalaHit>(sql`
-    select g.id, g.warehouse_id, g.code, g.is_active, f.is_active as floor_active
+    select g.id, g.warehouse_id, g.code, g.is_active, f.is_active as floor_active,
+           (g.deleted_at is not null or f.deleted_at is not null) as deleted
       from wms.warehouse_gala g join wms.warehouse_floor f on f.id = g.floor_id
      where g.id = ${galaId}
   `);
   const g = rows[0];
   if (!g || Number(g.warehouse_id) !== warehouseId) throw new InwardError("NOT_FOUND", "No such gala in this warehouse");
+  if (g.deleted) throw new InwardError("CONFLICT", `${g.code} was deleted. Choose another gala.`);
   if (!g.is_active || !g.floor_active) throw new InwardError("CONFLICT", `${g.code} is switched off. Choose an active gala.`);
   return g;
 }
@@ -273,7 +275,7 @@ export async function galaContents(actor: Actor, galaId: number): Promise<GalaCo
   }>(sql`
     select g.id, g.code, g.name, f.name as floor, w.name as warehouse, g.warehouse_id, (g.is_active and f.is_active) as is_active
       from wms.warehouse_gala g join wms.warehouse_floor f on f.id = g.floor_id join wms.warehouse w on w.id = g.warehouse_id
-     where g.id = ${galaId}
+     where g.id = ${galaId} and g.deleted_at is null and f.deleted_at is null
   `);
   const g = head[0];
   if (!g || !mayUse(actor, "storage.goods.update", Number(g.warehouse_id))) throw new InwardError("NOT_FOUND", "No such gala");
@@ -342,7 +344,10 @@ export async function recentStores(actor: Actor, warehouseId: number) {
     carton_no: string; item_code: string | null; description: string; gala: string; from_gala: string | null;
     action: string; at: string; by: string | null;
   }>(sql`
-    select c.carton_no, li.item_code, li.description, g.code as gala, fg.code as from_gala, m.action, m.moved_at::text as at,
+    select c.carton_no, li.item_code, li.description,
+           g.code || case when g.deleted_at is not null then ' (deleted)' else '' end as gala,
+           fg.code || case when fg.deleted_at is not null then ' (deleted)' else '' end as from_gala,
+           m.action, m.moved_at::text as at,
            trim(u.first_name || ' ' || coalesce(u.last_name, '')) as by
       from wms.carton_movement m
       join wms.inward_carton c on c.id = m.carton_id

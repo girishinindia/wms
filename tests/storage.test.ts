@@ -66,3 +66,14 @@ describe("who stores", () => {
     expect(sql).not.toMatch(/STORAGE_MANAGER', 'warehouse.location.(update|delete)/);
   });
 });
+
+describe("deleting a gala or floor that held cartons before (SQL 37)", () => {
+  const s = readFileSync(new URL("../../sql/37_location_soft_delete.sql", import.meta.url), "utf8");
+  it("marks it deleted instead of removing the row, so the history keeps its meaning", () => {
+    expect(s).toMatch(/alter table warehouse_floor\s+add column if not exists deleted_at timestamptz/);
+    expect(s).toMatch(/alter table warehouse_gala\s+add column if not exists deleted_at timestamptz/);
+    expect(s).toMatch(/set search_path = wms;/);
+    expect(s).not.toMatch(/\b(public|auth|storage)\./);
+    expect(s).not.toMatch(/drop |delete from/i);
+  });
+});

@@ -15,7 +15,8 @@ import { fmt } from "./InwardTable";
  * Floors and galas of a warehouse: add the next floor, add N galas to a
  * floor (numbers are given out automatically), print the QR labels —
  * super admin, warehouse admin, storage manager. Rename, switch off and
- * delete (only if never used) — super admin and warehouse admin.
+ * delete (only when empty; one that held cartons before keeps its history)
+ * — super admin and warehouse admin.
  */
 
 const primary =
@@ -37,8 +38,17 @@ export default function LocationsScreen({
   const [busy, setBusy] = useState(false);
   const [size, setSize] = useState<GalaLabelSize>("a4");
   const [adding, setAdding] = useState<Record<number, string>>({});
-  const [renaming, setRenaming] = useState<{ kind: "floor" | "gala"; id: number; code: string; value: string } | null>(null);
-  const [deleting, setDeleting] = useState<{ kind: "floor" | "gala"; id: number; code: string; galas: number } | null>(null);
+  const [renaming, setRenaming] = useState<{
+    kind: "floor" | "gala";
+    id: number;
+    code: string;
+    value: string;
+    /** The name it has now — saving the same name is not a change. */
+    was: string;
+    /** Shown under the box once Save was tried. */
+    error?: string;
+  } | null>(null);
+  const [deleting, setDeleting] = useState<{ kind: "floor" | "gala"; id: number; code: string; galas: number; used: boolean } | null>(null);
 
   useEffect(() => {
     try {
@@ -91,13 +101,25 @@ export default function LocationsScreen({
 
   const path = (kind: "floor" | "gala", id: number) => `/storage/${kind === "floor" ? "floors" : "galas"}/${id}`;
 
+  /** Why the name cannot be saved yet, or null. */
+  const nameProblem = (r: { value: string; was: string }) => {
+    const name = r.value.trim().replace(/\s+/g, " ");
+    if (!name) return "Give it a name";
+    if (name.length > 60) return "At most 60 characters";
+    if (name === r.was.trim()) return "That is the name it has now";
+    return null;
+  };
+
   const saveName = async () => {
     if (!renaming) return;
-    const name = renaming.value.trim();
-    if (!name) {
-      toast.error("Give it a name");
+    const problem = nameProblem(renaming);
+    if (problem) {
+      // Said in the box itself, not in a corner of the page.
+      setRenaming({ ...renaming, error: problem });
+      document.getElementById("loc-rename-input")?.focus();
       return;
     }
+    const name = renaming.value.trim().replace(/\s+/g, " ");
     if (await run(path(renaming.kind, renaming.id), { name }, "PATCH", `${renaming.code} renamed`)) setRenaming(null);
   };
 
@@ -260,7 +282,7 @@ export default function LocationsScreen({
                     id={`floor-${f.code}-rename`}
                     className="rounded-xl px-2 py-2 text-xs text-verdigris-200/60 hover:text-patina"
                     disabled={busy}
-                    onClick={() => setRenaming({ kind: "floor", id: f.id, code: f.code, value: f.name })}
+                    onClick={() => setRenaming({ kind: "floor", id: f.id, code: f.code, value: f.name, was: f.name })}
                   >
                     Rename
                   </button>
@@ -275,13 +297,13 @@ export default function LocationsScreen({
                   </button>
                 </>
               ) : null}
-              {l.can.delete && !f.used ? (
+              {l.can.delete && f.cartons === 0 ? (
                 <button
                   type="button"
                   id={`floor-${f.code}-delete`}
                   className="rounded-xl px-2 py-2 text-xs text-rose-300/80 hover:text-rose-300"
                   disabled={busy}
-                  onClick={() => setDeleting({ kind: "floor", id: f.id, code: f.code, galas: f.galas.length })}
+                  onClick={() => setDeleting({ kind: "floor", id: f.id, code: f.code, galas: f.galas.length, used: f.used })}
                 >
                   Delete
                 </button>
@@ -318,7 +340,7 @@ export default function LocationsScreen({
                           id={`gala-${g.code}-rename`}
                           className="text-verdigris-200/60 hover:text-patina"
                           disabled={busy}
-                          onClick={() => setRenaming({ kind: "gala", id: g.id, code: g.code, value: g.name })}
+                          onClick={() => setRenaming({ kind: "gala", id: g.id, code: g.code, value: g.name, was: g.name })}
                         >
                           Rename
                         </button>
@@ -333,13 +355,13 @@ export default function LocationsScreen({
                         </button>
                       </>
                     ) : null}
-                    {l.can.delete && !g.used ? (
+                    {l.can.delete && g.cartons === 0 ? (
                       <button
                         type="button"
                         id={`gala-${g.code}-delete`}
                         className="text-rose-300/80 hover:text-rose-300"
                         disabled={busy}
-                        onClick={() => setDeleting({ kind: "gala", id: g.id, code: g.code, galas: 0 })}
+                        onClick={() => setDeleting({ kind: "gala", id: g.id, code: g.code, galas: 0, used: g.used })}
                       >
                         Delete
                       </button>
@@ -359,6 +381,7 @@ export default function LocationsScreen({
           message="The code and the QR label stay the same — only the name shown changes."
           confirmLabel="Save"
           busy={busy}
+          confirmDisabled={!!nameProblem(renaming)}
           onConfirm={() => void saveName()}
           onCancel={() => setRenaming(null)}
         >
@@ -367,12 +390,29 @@ export default function LocationsScreen({
             autoFocus
             maxLength={60}
             value={renaming.value}
-            onChange={(e) => setRenaming({ ...renaming, value: e.target.value })}
+            aria-invalid={!!renaming.error}
+            // The page-wide focus ring is green; on an error it must be red too.
+            style={renaming.error ? { outlineColor: "rgb(244 63 94)" } : undefined}
+            aria-describedby={renaming.error ? "loc-rename-error" : undefined}
+            onChange={(e) => {
+              const next = { ...renaming, value: e.target.value };
+              // Once an error is showing, it follows the typing.
+              setRenaming({ ...next, error: renaming.error ? (nameProblem(next) ?? undefined) : undefined });
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") void saveName();
             }}
-            className="mt-3 w-full rounded-xl border border-verdigris-300/20 bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50"
+            className={`mt-3 w-full rounded-xl border bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50 focus:outline-none focus:ring-2 ${
+              renaming.error
+                ? "border-2 border-rose-500 bg-rose-500/5 focus:ring-rose-500/30"
+                : "border-verdigris-300/20 focus:ring-patina/25"
+            }`}
           />
+          {renaming.error ? (
+            <p id="loc-rename-error" role="alert" className="mt-1.5 text-sm font-medium text-rose-300">
+              {renaming.error}
+            </p>
+          ) : null}
         </ConfirmDialog>
       ) : null}
 
@@ -380,9 +420,13 @@ export default function LocationsScreen({
         <ConfirmDialog
           title={`Delete ${deleting.code}?`}
           message={
-            deleting.kind === "floor"
-              ? `The floor and its ${deleting.galas} gala${deleting.galas === 1 ? "" : "s"} are removed for good. Their printed labels will no longer work.`
-              : "The gala is removed for good. Its printed label will no longer work."
+            deleting.used
+              ? deleting.kind === "floor"
+                ? `${deleting.code} had cartons before. The floor and its ${deleting.galas} gala${deleting.galas === 1 ? "" : "s"} are removed from the list; the carton history is kept. Their printed labels will no longer work, and the codes are not given to new galas.`
+                : `${deleting.code} had cartons before. It will be removed from the list; its history is kept. Its printed label will no longer work, and the code is not given to a new gala.`
+              : deleting.kind === "floor"
+                ? `The floor and its ${deleting.galas} gala${deleting.galas === 1 ? "" : "s"} are removed for good. Their printed labels will no longer work.`
+                : "The gala is removed for good. Its printed label will no longer work."
           }
           confirmLabel="Delete"
           busy={busy}
