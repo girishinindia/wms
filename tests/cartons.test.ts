@@ -139,3 +139,22 @@ describe("the SQL", () => {
     expect(s).not.toMatch(/^\s*drop /im);
   });
 });
+
+describe("a carton is received once, whoever scans it", () => {
+  it("says who got it first and when", async () => {
+    const { alreadyText, scanWhen } = await import("@/lib/inward/carton-format");
+    const now = new Date("2026-10-11T08:00:00Z"); // 1:30 pm in India
+    expect(scanWhen("2026-10-11 10:56:06+05:30", now)).toBe("10:56 am");
+    expect(scanWhen("2026-10-09 22:05:00+05:30", now)).toBe("9 Oct, 10:05 pm");
+    expect(scanWhen("2026-10-11 05:26:06.803757+00", now)).toBe("10:56 am"); // as Postgres writes it
+    expect(alreadyText("Already received", "Hardik Chaudhary", null)).toBe("Already received by Hardik Chaudhary — not counted again");
+    expect(alreadyText("Already in F1-G02 — stored", null, null)).toBe("Already in F1-G02 — stored — not counted again");
+  });
+
+  it("the database refuses a second RECEIVED row for one carton", () => {
+    const s = readFileSync(new URL("../../sql/36_scan_once.sql", import.meta.url), "utf8");
+    expect(s).toMatch(/create unique index if not exists inward_scan_received_once\s+on inward_scan \(carton_id\)\s+where result = 'RECEIVED'/);
+    expect(s).toMatch(/set search_path = wms;/);
+    expect(s).not.toMatch(/\b(public|auth|storage)\./);
+  });
+});

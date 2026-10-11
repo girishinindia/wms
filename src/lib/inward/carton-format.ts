@@ -83,3 +83,23 @@ export function initials(name: string): string {
     .filter(Boolean);
   return (words.length >= 2 ? words[0]![0]! + words[1]![0]! : (words[0] ?? "?").slice(0, 2)).toUpperCase();
 }
+
+const AT = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
+const DAY = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short" });
+
+/** "10:56 am" today, "9 Oct, 10:56 am" before — for "already received at …". */
+export function scanWhen(value: string | Date | null | undefined, now: Date = new Date()): string {
+  if (!value) return "";
+  // Postgres text: "2026-10-11 05:26:06.8+00" — make it ISO ("…T…+00:00").
+  const d = value instanceof Date ? value : new Date(String(value).replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00"));
+  if (Number.isNaN(d.getTime())) return "";
+  const time = AT.format(d).replace(/\s?([AP]M)$/i, (_m, x: string) => ` ${x.toLowerCase()}`);
+  return DAY.format(d) === DAY.format(now) ? time : `${DAY.format(d)}, ${time}`;
+}
+
+/** "Already received by Hardik Chaudhary at 10:56 am — not counted again." */
+export function alreadyText(what: string, by: string | null | undefined, at: string | Date | null | undefined): string {
+  const who = by?.trim() ? ` by ${by.trim()}` : "";
+  const when = scanWhen(at);
+  return `${what}${who}${when ? ` at ${when}` : ""} — not counted again`;
+}

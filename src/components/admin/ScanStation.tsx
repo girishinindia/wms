@@ -187,11 +187,11 @@ export default function ScanStation({ initial }: { initial: CartonOverview }) {
               <>
                 <p className="text-2xl font-semibold">
                   {last.result === "RECEIVED"
-                    ? last.labelConfirmed
-                      ? "✓ Label confirmed"
-                      : "✓ Received"
+                    ? "✓ Received"
                     : last.result === "DUPLICATE"
-                      ? "✕ Already scanned"
+                      ? last.previous?.status === "HOLD"
+                        ? "✕ Already scanned — on hold"
+                        : "✕ Already received"
                       : last.result === "OTHER_REQUEST"
                         ? "✕ Wrong inward"
                         : "✕ Not a known carton"}
@@ -233,7 +233,7 @@ export default function ScanStation({ initial }: { initial: CartonOverview }) {
               {seen.map((s, i) => (
                 <li key={`${s.clientScanId}-${i}`} className="flex items-center gap-3">
                   <span className={`w-28 shrink-0 text-xs font-medium ${s.result === "RECEIVED" ? "text-emerald-300" : "text-rose-300"}`}>
-                    {s.result === "RECEIVED" ? (s.labelConfirmed ? "label ok" : "received") : s.result.replace("_", " ").toLowerCase()}
+                    {s.result === "RECEIVED" ? "received" : s.result.replace("_", " ").toLowerCase()}
                   </span>
                   <span className="font-mono text-verdigris-100">{s.cartonNo ?? s.code.slice(0, 30)}</span>
                   <span className="truncate text-xs text-verdigris-200/50">{s.carton?.description ?? s.message}</span>

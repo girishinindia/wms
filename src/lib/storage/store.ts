@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import type { Actor } from "@/lib/auth/guard";
-import { cartonNoFromScan } from "@/lib/inward/carton-format";
+import { alreadyText, cartonNoFromScan, scanWhen } from "@/lib/inward/carton-format";
 import { InwardError, type Meta } from "@/lib/inward/ops";
 import { mayUse } from "@/lib/storage/locations";
 
@@ -171,11 +171,18 @@ export async function storeCartons(
       continue;
     }
     if (where && where.galaId === Number(gala.id)) {
-      results.push({ clientScanId, code, cartonNo, result: "ALREADY_HERE", carton, from: where, message: `Already in ${gala.code}` });
+      results.push({
+        clientScanId, code, cartonNo, result: "ALREADY_HERE", carton, from: where,
+        message: alreadyText(`Already in ${gala.code} — stored`, where.by, where.at),
+      });
       continue;
     }
     if (where && !s.move) {
-      results.push({ clientScanId, code, cartonNo, result: "MOVE_CONFIRM", carton, from: where, message: `Already in ${where.code} — move it to ${gala.code}?` });
+      const stored = [where.by ? `by ${where.by}` : "", scanWhen(where.at) ? `at ${scanWhen(where.at)}` : ""].filter(Boolean).join(" ");
+      results.push({
+        clientScanId, code, cartonNo, result: "MOVE_CONFIRM", carton, from: where,
+        message: `Already in ${where.code}${stored ? ` (stored ${stored})` : ""} — move it to ${gala.code}?`,
+      });
       continue;
     }
 
@@ -198,7 +205,20 @@ export async function storeCartons(
     `);
     if (!done[0]) {
       // Someone else stored or moved it a moment ago.
-      results.push({ clientScanId, code, cartonNo, result: "MOVE_CONFIRM", carton, from: where, message: "It was just moved by someone else — scan it again" });
+      // Someone else stored or moved it a moment ago: say where it is now.
+      const now = (await db.execute<{ code: string | null; at: string | null; by: string | null }>(sql`
+        select g.code, c.stored_at::text as at, trim(u.first_name || ' ' || coalesce(u.last_name, '')) as by
+          from wms.inward_carton c
+          left join wms.warehouse_gala g on g.id = c.gala_id
+          left join wms.users u on u.id = c.stored_by
+         where c.id = ${carton.id}
+      `))[0];
+      results.push({
+        clientScanId, code, cartonNo, result: "ALREADY_HERE", carton, from: where,
+        message: now?.code
+          ? alreadyText(`Just stored in ${now.code}`, now.by, now.at)
+          : "Someone else is storing this carton right now — scan it again",
+      });
       continue;
     }
     results.push({

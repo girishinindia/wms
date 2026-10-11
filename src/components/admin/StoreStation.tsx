@@ -26,7 +26,9 @@ type Seen = StoreResult & { at: number; gala: string };
 type Recent = { cartonNo: string; itemCode: string | null; description: string; gala: string; fromGala: string | null; action: string; at: string; by: string | null };
 
 const WH_KEY = "wms.storageWarehouse";
-const GOOD = new Set(["STORED", "MOVED", "ALREADY_HERE"]);
+// A carton scanned again where it already is: not counted again, and said
+// plainly — amber with the error beep, not a green "done".
+const GOOD = new Set(["STORED", "MOVED"]);
 
 export default function StoreStation({
   warehouses,
@@ -238,7 +240,7 @@ export default function StoreStation({
     ? "border-verdigris-300/15 bg-ink-900/40 text-verdigris-200/60"
     : ok
       ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-200"
-      : last.result === "MOVE_CONFIRM"
+      : last.result === "MOVE_CONFIRM" || last.result === "ALREADY_HERE"
         ? "border-amber-400/60 bg-amber-500/10 text-amber-200"
         : "border-rose-400/60 bg-rose-500/10 text-rose-200";
   const title = !last
@@ -250,7 +252,7 @@ export default function StoreStation({
         : last.result === "MOVED"
           ? `✓ Moved to ${(last as Seen).gala}`
           : last.result === "ALREADY_HERE"
-            ? "Already here"
+            ? "! Already stored — not counted again"
             : last.result === "MOVE_CONFIRM"
               ? "In another gala"
               : "✕ Not stored";

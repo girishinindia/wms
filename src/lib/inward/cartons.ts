@@ -11,7 +11,7 @@ import { announce } from "@/lib/notify/announce";
 import { configured, publicUrl, putObject } from "@/lib/storage/bunny";
 import { PHOTO_EDGE, toWebp } from "@/lib/storage/picture";
 import { placesOf, type CartonPlace } from "@/lib/storage/store";
-import { cartonNoFromScan, qrText, type LabelData } from "@/lib/inward/carton-format";
+import { alreadyText, cartonNoFromScan, qrText, type LabelData } from "@/lib/inward/carton-format";
 import {
   headerOf,
   InwardError,
@@ -700,20 +700,20 @@ export async function recordScans(actor: Actor, scope: InwardScope, id: number, 
       continue;
     }
 
-    // Received earlier by typing the number: this scan proves the sticker
-    // is on now. Not counted again.
-    if (hit.status === "RECEIVED" && hit.label_pending && via === "SCAN") {
-      await db.execute(sql`update wms.inward_carton set label_pending = false, updated_at = now() where id = ${hit.id}`);
-      await log("RECEIVED", Number(hit.id), "Label confirmed");
-      results.push({ clientScanId, code, cartonNo: hit.carton_no, result: "RECEIVED", message: "Label confirmed", labelConfirmed: true, carton });
-      continue;
-    }
-
+    // Already in — whoever scanned it, on whichever phone or computer:
+    // never received twice. When it came in by a typed number and this is
+    // a real sticker scan, the sticker is quietly noted as on now.
     const fresh = (await findCarton(hit.carton_no))!;
+    let labelConfirmed = false;
+    if (fresh.status === "RECEIVED" && fresh.label_pending && via === "SCAN") {
+      await db.execute(sql`update wms.inward_carton set label_pending = false, updated_at = now() where id = ${hit.id}`);
+      labelConfirmed = true;
+    }
     const message =
       fresh.status === "HOLD"
-        ? `Already scanned — on hold: ${fresh.hold_reason ?? ""}`.trim()
-        : `Already scanned${fresh.received_by_name ? ` by ${fresh.received_by_name}` : ""}`;
+        ? `Already scanned — on hold${fresh.hold_reason ? `: ${fresh.hold_reason}` : ""}`
+        : alreadyText("Already received", fresh.received_by_name, fresh.received_at) +
+          (labelConfirmed ? " · sticker now confirmed" : "");
     await log("DUPLICATE", Number(hit.id), message);
     results.push({
       clientScanId,
@@ -722,6 +722,7 @@ export async function recordScans(actor: Actor, scope: InwardScope, id: number, 
       result: "DUPLICATE",
       message,
       carton,
+      ...(labelConfirmed ? { labelConfirmed: true } : {}),
       previous: { at: fresh.received_at, by: fresh.received_by_name, status: fresh.status },
     });
   }
