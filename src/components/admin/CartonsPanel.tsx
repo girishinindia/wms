@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api } from "@/lib/api/client";
 import type { CartonLabel, CartonOverview } from "@/lib/inward/cartons";
 import { useToast } from "@/components/Toast";
 import { Card, ConfirmDialog } from "@/components/admin/ui";
 
-import { printMarkerList, printStickers, qrSvg, STICKER_SIZES, type StickerSize } from "./carton-print";
+import { printMarkerList, printStickers, qrSvg, STICKER_MM, STICKER_SIZES, stickerPreviewDoc, type StickerSize } from "./carton-print";
 import { fmtTime } from "@/lib/format/datetime";
 
 import { fmt } from "./InwardTable";
@@ -463,7 +463,7 @@ function PrintDialog({
         {!labels ? (
           <p className="mt-4 text-sm text-verdigris-200/60">Getting the cartons…</p>
         ) : (
-          <div className="mt-4 grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+          <div className="mt-4 grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
             <div className="space-y-4">
               <div>
                 <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-verdigris-300">What to print</p>
@@ -523,27 +523,7 @@ function PrintDialog({
             <div>
               <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-verdigris-300">Preview</p>
               {first ? (
-                <div className="grid grid-cols-[minmax(0,1fr)_7.5rem] items-center gap-3 rounded-md border-2 border-black bg-white p-3 text-black">
-                  <div className="min-w-0 space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      {first.importerLogoUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={first.importerLogoUrl} alt="" className="h-9 w-9 object-contain" />
-                      ) : null}
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold uppercase">{first.importerName}</p>
-                        {first.importerMobile ? <p className="text-[11px]">+91 {first.importerMobile}</p> : null}
-                      </div>
-                    </div>
-                    <p className="font-mono text-base font-bold">{first.cartonNo}</p>
-                    <p className="line-clamp-2 text-[11px]">{[first.itemCode, first.description].filter(Boolean).join(" · ")}</p>
-                    <p className="text-[11px]">
-                      <b>{first.piecesPerCarton} {first.unitCode ?? "PCS"}</b> / carton · <b>{first.kgPerCarton} kg</b>
-                    </p>
-                    <p className="text-[10px] text-neutral-600">Carton {first.seq} of {first.total}</p>
-                  </div>
-                  <div className="h-[7.5rem] w-[7.5rem] [&_svg]:h-full [&_svg]:w-full" dangerouslySetInnerHTML={{ __html: preview }} />
-                </div>
+                <StickerPreview label={first} qr={preview} size={size} />
               ) : (
                 <p className="rounded-lg border border-dashed border-verdigris-300/20 p-6 text-center text-sm text-verdigris-200/50">Nothing matches.</p>
               )}
@@ -575,6 +555,51 @@ function PrintDialog({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The first chosen sticker, drawn by the print template itself at the
+ * picked size — a wide 100 × 50 strip, a taller 100 × 75 label, or the
+ * small 99 × 38 A4 sticker — scaled down only if the column is narrower.
+ */
+function StickerPreview({ label, qr, size }: { label: CartonLabel; qr: string; size: StickerSize }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState(0);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const watch = new ResizeObserver(([e]) => setRoom(e.contentRect.width));
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+  const mm = STICKER_MM[size];
+  const PX = 96 / 25.4; // CSS pixels per millimetre
+  const w = mm.w * PX;
+  const h = mm.h * PX;
+  const scale = room ? Math.min(1, room / w) : 1;
+  const doc = useMemo(() => (qr ? stickerPreviewDoc(label, qr, size) : ""), [label, qr, size]);
+  return (
+    <div ref={box} id="sticker-preview" data-size={size} className="w-full min-w-0">
+      <div
+        className="overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-black/40 transition-[height] duration-150"
+        style={{ width: w * scale, height: h * scale }}
+      >
+        {doc ? (
+          <iframe
+            title={`Sticker preview, ${mm.note}`}
+            srcDoc={doc}
+            sandbox=""
+            tabIndex={-1}
+            style={{ width: w, height: h, border: 0, transform: `scale(${scale})`, transformOrigin: "0 0", pointerEvents: "none", background: "#fff" }}
+          />
+        ) : null}
+      </div>
+      <p className="mt-1.5 text-[11px] text-verdigris-200/60" id="sticker-preview-size">
+        {mm.note}
+        {scale < 0.98 ? ` · shown at ${Math.round(scale * 100)}%` : ""}
+      </p>
     </div>
   );
 }

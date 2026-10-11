@@ -53,9 +53,9 @@ const CSS: Record<StickerSize, string> = {
   t100x75: `
     @page { size: 100mm 75mm; margin: 0; }
     .sheet { display: block; }
-    .label { width: 100mm; height: 75mm; padding: 3.5mm 4mm; break-after: page; grid-template-columns: 1fr 48mm; }
-    .qr { width: 48mm; height: 48mm; }
-    .no { font-size: 17pt; } .name { font-size: 11pt; } .meta { font-size: 9.5pt; } .logo { width: 13mm; height: 13mm; font-size: 12pt; }`,
+    .label { width: 100mm; height: 75mm; padding: 3.5mm 3mm; break-after: page; grid-template-columns: 1fr 42mm; }
+    .qr { width: 42mm; height: 42mm; }
+    .no { font-size: 15pt; } .name { font-size: 11pt; } .meta { font-size: 9.5pt; } .logo { width: 13mm; height: 13mm; font-size: 12pt; }`,
   a4: `
     @page { size: A4; margin: 10.7mm 4.6mm; }
     .sheet { display: grid; grid-template-columns: 99.1mm 99.1mm; grid-auto-rows: 38.1mm; column-gap: 2.5mm; }
@@ -94,12 +94,30 @@ const BASE_CSS = `
   .logo { object-fit: contain; flex: none; }
   .initials { border: 0.35mm solid #000; border-radius: 1mm; display: flex; align-items: center; justify-content: center; font-weight: 700; }
   .name { font-weight: 700; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
-  .no { font-family: "Courier New", monospace; font-weight: 700; letter-spacing: 0.2pt; white-space: nowrap; }
+  .no { font-family: "Courier New", monospace; font-weight: 700; letter-spacing: 0.2pt; white-space: nowrap; overflow: hidden; }
   .meta { line-height: 1.2; }
   .item { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .muted { color: #333; }
   .qr svg { width: 100%; height: 100%; display: block; }
 `;
+
+/** A sticker's printed size, for the preview. */
+export const STICKER_MM: Record<StickerSize, { w: number; h: number; note: string }> = {
+  t100x50: { w: 100, h: 50, note: "100 × 50 mm sticker" },
+  t100x75: { w: 100, h: 75, note: "100 × 75 mm sticker" },
+  a4: { w: 99.1, h: 38.1, note: "99 × 38 mm sticker · 14 on one A4 page" },
+};
+
+/**
+ * One sticker as a standalone page, drawn by the very same template and
+ * size rules the print uses — so the preview is what comes out of the
+ * printer, not a look-alike.
+ */
+export function stickerPreviewDoc(l: PrintableLabel, qr: string, size: StickerSize): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${BASE_CSS}${CSS[size]}
+    html, body { overflow: hidden; } .sheet { display: block; } .label { break-after: auto; }
+  </style></head><body><div class="sheet">${stickerHtml(l, qr)}</div></body></html>`;
+}
 
 /** Wait for every <img> in the document (logos) — a sticker printed before
  *  its logo loads comes out with a hole in it. */
