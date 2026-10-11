@@ -10,7 +10,7 @@ import { Card, ConfirmDialog } from "@/components/admin/ui";
 import { fmtTime } from "@/lib/format/datetime";
 
 import { fmt } from "./InwardTable";
-import { beep, uid } from "./scan-kit";
+import { beep, uid, keepScanFocus } from "./scan-kit";
 
 /**
  * The scan station. One box, always focused. A handheld or USB scanner
@@ -52,14 +52,7 @@ export default function ScanStation({ initial }: { initial: CartonOverview }) {
   const sending = useRef(false);
 
   // Keep the cursor in the box — a scanner types wherever focus is.
-  useEffect(() => {
-    const refocus = () => {
-      if (!hold && !finishAsk) setTimeout(() => box.current?.focus(), 0);
-    };
-    refocus();
-    window.addEventListener("click", refocus);
-    return () => window.removeEventListener("click", refocus);
-  }, [hold, finishAsk]);
+  useEffect(() => keepScanFocus(box, () => !!hold || !!finishAsk), [hold, finishAsk]);
 
   const flush = useCallback(async () => {
     if (sending.current) return;

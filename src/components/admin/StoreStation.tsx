@@ -12,7 +12,7 @@ import { useToast } from "@/components/Toast";
 import { Card } from "@/components/admin/ui";
 
 import { fmt } from "./InwardTable";
-import { beep, uid } from "./scan-kit";
+import { beep, uid, keepScanFocus } from "./scan-kit";
 
 /**
  * Storing cartons: scan the gala's QR once, then carton after carton —
@@ -58,13 +58,9 @@ export default function StoreStation({
   const firstKeyAt = useRef<number | null>(null);
   const keys = useRef(0);
 
-  // A scanner types wherever focus is: keep it in the box.
-  useEffect(() => {
-    const refocus = () => setTimeout(() => box.current?.focus(), 0);
-    refocus();
-    window.addEventListener("click", refocus);
-    return () => window.removeEventListener("click", refocus);
-  }, []);
+  // A scanner types wherever focus is: keep it in the box — but never
+  // take it from the warehouse or gala dropdown while it is being used.
+  useEffect(() => keepScanFocus(box), []);
 
   const loadWaiting = useCallback(async (warehouseId: number) => {
     const r = await api<{ waiting: WaitingRow[] }>(`/storage/warehouses/${warehouseId}/waiting`, { method: "GET" });
