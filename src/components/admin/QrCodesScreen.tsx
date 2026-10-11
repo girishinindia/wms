@@ -14,11 +14,10 @@ import { fmt } from "./InwardTable";
 /**
  * The "QR codes" menu: one box to find the inward (by number, container,
  * importer or warehouse), one tap to pick it, and its cartons panel —
- * generate, print, scan, finish — right underneath. The last inward
- * picked is remembered on this computer.
+ * generate, print, scan, finish — right underneath. The menu always
+ * opens on the list; a picked inward lives in the address (?id=), so
+ * reload and Back keep it.
  */
-
-const LAST = "wms.qrInward";
 
 function progress(r: CartonQueueRow): { text: string; tone: string } {
   if (!r.ready && r.generated === 0) return { text: "needs vehicle & driver", tone: "text-rose-300" };
@@ -49,22 +48,12 @@ export default function QrCodesScreen({
   const [open, setOpen] = useState(initialId === null);
   const box = useRef<HTMLInputElement>(null);
 
-  // No inward in the address: come back to the one picked last time.
+  // No inward in the address (the menu link): the list, ready to search.
+  // An earlier version reopened the last inward here, which hid the list
+  // every time the QR codes menu was clicked.
   useEffect(() => {
-    if (initialId !== null) return;
-    let last: number | null = null;
-    try {
-      last = Number(window.localStorage.getItem(LAST)) || null;
-    } catch {
-      last = null;
-    }
-    if (last && initial.some((r) => r.id === last)) {
-      setPicked(last);
-      setOpen(false);
-    } else {
-      box.current?.focus();
-    }
-  }, [initial, initialId]);
+    if (initialId === null) box.current?.focus();
+  }, [initialId]);
 
   const reload = useCallback(
     async (withCompleted = completed) => {
@@ -78,11 +67,6 @@ export default function QrCodesScreen({
     setPicked(id);
     setOpen(false);
     setQ("");
-    try {
-      window.localStorage.setItem(LAST, String(id));
-    } catch {
-      /* private window: just not remembered */
-    }
     const url = new URL(window.location.href);
     url.searchParams.set("id", String(id));
     window.history.replaceState(null, "", url);
