@@ -43,7 +43,7 @@ export async function quickFind(actor: Actor, raw: string): Promise<FindHit[]> {
   if (no) {
     const c = (await db.execute<Record<string, unknown>>(sql`
       select c.carton_no, c.status, c.area, c.gala_id, g.code as gala, f.name as floor, d.id as dn_id, d.dn_no,
-             r.id as inward_id, r.code as inward_code, r.warehouse_id, li.item_code, li.description
+             r.id as inward_id, r.code as inward_code, r.warehouse_id, r.importer_id, li.item_code, li.description
         from wms.inward_carton c
         join wms.inward_request r on r.id = c.inward_request_id
         join wms.inward_request_item li on li.id = c.inward_request_item_id
@@ -74,6 +74,21 @@ export async function quickFind(actor: Actor, raw: string): Promise<FindHit[]> {
           kind: "CARTON",
           title: String(c.carton_no),
           subtitle: `${item} — ${c.status === "RECEIVED" ? "at the dock, not stored yet" : c.status === "HOLD" ? "on hold at the dock" : "not received yet"}`,
+          href: `/admin/inward/${c.inward_id}`,
+        });
+      }
+    } else if (c && importerIdOf(actor) !== null && importerIdOf(actor) === Number(c.importer_id)) {
+      // The importer's own carton (the importer, their agents): which delivery note it went on — never where it lies.
+      const item = [c.item_code, c.description].filter(Boolean).join(" · ");
+      const dnGrant = grantFor(actor, "dispatch.order.read");
+      const note = c.dn_id && dnGrant ? (await listNotes(dnScope(actor, dnGrant), { q: no })).find((n) => n.id === Number(c.dn_id)) : undefined;
+      if (note) {
+        hits.push({ kind: "CARTON", title: String(c.carton_no), subtitle: `${item} — on delivery note ${note.dnNo} · ${note.statusLabel}`, href: `/admin/delivery-notes/${note.id}` });
+      } else if (!c.dn_id && grantFor(actor, "inward.request.read")) {
+        hits.push({
+          kind: "CARTON",
+          title: String(c.carton_no),
+          subtitle: `${item} — ${c.status === "RECEIVED" ? "in the warehouse, not on a delivery note" : c.status === "HOLD" ? "on hold at the dock" : "not received yet"}`,
           href: `/admin/inward/${c.inward_id}`,
         });
       }

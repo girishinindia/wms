@@ -454,6 +454,8 @@ export type Draft = {
   secondsLeft: number | null;
   header: Header;
   lines: DraftLine[];
+  /** Set on a new draft that took its buyer and transport from one that ran out of time. */
+  keptFromExpired?: boolean;
 };
 
 async function loadDraft(id: number): Promise<Draft | null> {
@@ -529,6 +531,23 @@ async function ownDraft(actor: Actor, id: number): Promise<Draft> {
 export async function startDraft(actor: Actor, copyFrom: number | null): Promise<Draft> {
   const importerId = creatorImporter(actor);
   const db = getDb();
+  if (copyFrom === null) {
+    // The last note this person started ran out of time (the page was closed, or reopened later):
+    // keep its buyer and transport, the same as "Start again" does.
+    const last = await db.execute<{ id: number; status: string; expired: boolean; recent: boolean }>(sql`
+      select id, status,
+             (status = 'EXPIRED' or (status = 'DRAFT' and expires_at is not null and expires_at <= clock_timestamp())) as expired,
+             updated_at > now() - interval '12 hours' or expires_at > now() - interval '12 hours' as recent
+        from wms.delivery_order
+       where created_by = ${actor.session.userId} and importer_id = ${importerId}
+       order by id desc limit 1
+    `);
+    const l = last[0];
+    if (l && l.expired && l.recent) {
+      copyFrom = Number(l.id);
+      await db.execute(sql`update wms.delivery_order set status = 'EXPIRED', updated_at = now() where id = ${copyFrom} and status = 'DRAFT'`);
+    }
+  }
   await db.execute(sql`
     update wms.delivery_order set status = 'CANCELLED', updated_at = now()
      where created_by = ${actor.session.userId} and status = 'DRAFT'
@@ -553,7 +572,8 @@ export async function startDraft(actor: Actor, copyFrom: number | null): Promise
         on o.id = ${copyFrom} and o.created_by = ${actor.session.userId} and o.importer_id = ${importerId}
     returning id
   `);
-  return (await loadDraft(Number(rows[0]!.id)))!;
+  const fresh = (await loadDraft(Number(rows[0]!.id)))!;
+  return copyFrom === null ? fresh : { ...fresh, keptFromExpired: true };
 }
 
 export type HeaderInput = Partial<Header>;
@@ -648,7 +668,12 @@ export async function holdLine(
     select wms.dn_hold(${id}, ${input.warehouseId}, ${input.key}, ${cartons}, ${HOLD_SECONDS}, ${cartons === 0 ? null : pieces}::int) as r
   `);
   const r = rows[0]!.r;
-  const fresh = (await loadDraft(id))!;
+  let fresh = (await loadDraft(id))!;
+  if (r.ok && fresh.status === "DRAFT" && fresh.lines.length === 0 && fresh.expiresAt) {
+    // The last item was taken off: nothing is held, so the 15 minutes stop. The next item starts them afresh.
+    await getDb().execute(sql`update wms.delivery_order set expires_at = null, updated_at = now() where id = ${id} and status = 'DRAFT'`);
+    fresh = (await loadDraft(id))!;
+  }
   if (r.ok) return { draft: fresh, ok: true };
   if (r.reason === "EXPIRED") return { draft: fresh, ok: false, message: "Time ran out — the cartons were put back. Start again." };
   const free = Number(r.free ?? 0);
@@ -722,6 +747,8 @@ export async function submitDraft(actor: Actor, id: number, meta: Meta): Promise
   const status = owner || auto ? "APPROVED" : "PENDING";
   const kind = owner ? "IMPORTER_CREATED" : auto ? "AUTO" : null;
   const { fy, today } = fyOf();
+  // A next number that is already used (set too low, or used with another prefix) moves on to the next free one.
+  await skipUsedNumbers(importerId, fy);
 
   let ids: number[];
   try {
@@ -846,7 +873,8 @@ export async function listNotes(
                     or lower(coalesce(n.destination, '')) like ${like} or lower(i.company_name) like ${like}
                     or lower(u.first_name || ' ' || coalesce(u.last_name, '')) like ${like}
                     or exists (select 1 from wms.delivery_line l where l.delivery_note_id = n.id
-                                and lower(coalesce(l.item_code, '') || ' ' || l.description) like ${like}))`);
+                                and lower(coalesce(l.item_code, '') || ' ' || l.description) like ${like})
+                    or exists (select 1 from wms.inward_carton c where c.dn_id = n.id and lower(c.carton_no) like ${like}))`);
   }
   const rows = await getDb().execute<Record<string, unknown>>(sql`
     ${SUMMARY}
@@ -1264,7 +1292,52 @@ export async function editNote(scope: DnScope, actor: Actor, id: number, input: 
 
 // ── Numbering ─────────────────────────────────────────────────────
 
-export type Series = { prefix: string; orderPrefix: string; fy: string; nextNo: number; nextOrderNo: number; sample: string };
+export type Series = {
+  prefix: string;
+  orderPrefix: string;
+  fy: string;
+  nextNo: number;
+  nextOrderNo: number;
+  sample: string;
+  /** The highest note / order number already used this year (any prefix), e.g. "0/26-27/13893"; null when none. */
+  lastNo: { no: number; label: string } | null;
+  lastOrderNo: { no: number; label: string } | null;
+};
+
+/** The highest note and order numbers this importer has used in a financial year — whatever the prefix. */
+async function usedUpTo(importerId: number, fy: string): Promise<{ note: Series["lastNo"]; order: Series["lastOrderNo"] }> {
+  const rows = await getDb().execute<{ kind: string; no: string | null; label: string | null }>(sql`
+    with n as (
+      select dn_no as label, nullif(regexp_replace(split_part(dn_no, '/', 3), '[^0-9]', '', 'g'), '')::bigint as no
+        from wms.delivery_note where importer_id = ${importerId} and split_part(dn_no, '/', 2) = ${fy}
+    ), o as (
+      select order_no as label, nullif(regexp_replace(split_part(order_no, '/', 3), '[^0-9]', '', 'g'), '')::bigint as no
+        from wms.delivery_note where importer_id = ${importerId} and split_part(order_no, '/', 2) = ${fy}
+    )
+    (select 'NOTE' as kind, no::text, label from n where no is not null order by no desc limit 1)
+    union all
+    (select 'ORDER' as kind, no::text, label from o where no is not null order by no desc limit 1)
+  `);
+  const pick = (k: string) => {
+    const r = rows.find((x) => x.kind === k);
+    return r && r.no ? { no: Number(r.no), label: String(r.label) } : null;
+  };
+  return { note: pick("NOTE"), order: pick("ORDER") };
+}
+
+/** Before numbers are handed out: never a number at or below one already used (any prefix). */
+async function skipUsedNumbers(importerId: number, fy: string): Promise<void> {
+  const used = await usedUpTo(importerId, fy);
+  if (!used.note && !used.order) return;
+  await getDb().execute(sql`
+    update wms.delivery_series
+       set next_no = greatest(next_no, ${(used.note?.no ?? 0) + 1}),
+           next_order_no = greatest(next_order_no, ${(used.order?.no ?? 0) + 1}),
+           updated_at = now()
+     where importer_id = ${importerId} and fy = ${fy}
+       and (next_no <= ${used.note?.no ?? 0} or next_order_no <= ${used.order?.no ?? 0})
+  `);
+}
 
 function seriesImporter(actor: Actor, requested: number | null): number {
   const g = grantFor(actor, "dispatch.order.approve");
@@ -1286,6 +1359,7 @@ export async function getSeries(actor: Actor, requested: number | null = null): 
   const sameYear = r && String(r.fy) === fy;
   const prefix = r ? String(r.prefix) : "";
   const nextNo = sameYear ? Number(r.next_no) : 1;
+  const used = await usedUpTo(importerId, fy);
   return {
     prefix,
     orderPrefix: r ? String(r.order_prefix) : "E",
@@ -1293,6 +1367,8 @@ export async function getSeries(actor: Actor, requested: number | null = null): 
     nextNo,
     nextOrderNo: sameYear ? Number(r.next_order_no) : 1,
     sample: `${prefix}/${fy}/${nextNo}`,
+    lastNo: used.note,
+    lastOrderNo: used.order,
   };
 }
 
@@ -1317,16 +1393,14 @@ export async function setSeries(
   if (/[/\s]/.test(prefix) || /[/\s]/.test(orderPrefix)) {
     throw new InwardError("VALIDATION_FAILED", "Prefixes cannot contain spaces or /", { prefix: "No spaces or /" });
   }
-  // The next number must not already be on a note (or a number above it).
-  const used = await getDb().execute<{ n: string }>(sql`
-    select count(*)::text as n from wms.delivery_note
-     where importer_id = ${importerId} and dn_no like ${`${prefix}/${current.fy}/%`}
-       and nullif(split_part(dn_no, '/', 3), '')::bigint >= ${nextNo}
-  `);
-  if (Number(used[0]?.n ?? 0) > 0) {
-    throw new InwardError("CONFLICT", `Numbers from ${prefix}/${current.fy}/${nextNo} are already used. Choose a higher next number.`, {
-      nextNo: "Already used — choose a higher number",
-    });
+  // Never a number already used — whatever prefix it was used with.
+  if (current.lastNo && nextNo <= current.lastNo.no) {
+    const msg = `Already used up to ${current.lastNo.label}. Enter ${current.lastNo.no + 1} or more.`;
+    throw new InwardError("CONFLICT", msg, { nextNo: msg });
+  }
+  if (current.lastOrderNo && nextOrderNo <= current.lastOrderNo.no) {
+    const msg = `Already used up to ${current.lastOrderNo.label}. Enter ${current.lastOrderNo.no + 1} or more.`;
+    throw new InwardError("CONFLICT", msg, { nextOrderNo: msg });
   }
   await getDb().execute(sql`
     insert into wms.delivery_series (importer_id, prefix, order_prefix, fy, next_no, next_order_no, updated_by, updated_at)
