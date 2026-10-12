@@ -55,6 +55,7 @@ import { useEnquiryCount, useUnreadCount } from "@/lib/notifications/unread";
 import { groupNav, inSection, isGroup, type AdminNavItem } from "./nav";
 import NavProgress from "./NavProgress";
 import NotificationBell from "./NotificationBell";
+import QuickFind from "./QuickFind";
 import RouterRecovery, { rememberIntent } from "./RouterRecovery";
 import { useNavigating, useNavStage } from "@/lib/admin/navigating";
 
@@ -543,6 +544,7 @@ export default function AdminShell({
           <span className={`text-sm font-semibold text-verdigris-50 ${collapsed ? "" : "lg:hidden"}`}>
             Genius WMS
           </span>
+          <QuickFind items={items} />
 
           <div className="ml-auto flex items-center gap-1.5">
             {/* Text size: smaller, reset, larger. Scales the root font,

@@ -78,6 +78,7 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => keepScanFocus(box, () => dialog !== null), [dialog]);
+  const nextRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     try {
       const v = window.localStorage.getItem(SIZE_KEY);
@@ -234,6 +235,41 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
     }
   };
 
+  // Shortcuts with Alt (a scanner never sends Alt, so a scan can't set them off):
+  // Alt+1…4 step · Alt+N / Alt+B new package / bundle · Alt+W where next · Alt+P pick list · Alt+L labels.
+  const altKeys = useRef<(e: KeyboardEvent) => void>(() => {});
+  altKeys.current = (e: KeyboardEvent) => {
+    if (!e.altKey || e.ctrlKey || e.metaKey || dialog !== null) return;
+    const step = { Digit1: "PICK", Digit2: "ARRIVE", Digit3: "PACK", Digit4: "VERIFY" }[e.code] as Mode | undefined;
+    if (step && allowed.some((m) => m.id === step)) {
+      e.preventDefault();
+      setMode(step);
+      return;
+    }
+    if (e.code === "KeyN" && w.can.pack && !w.onHold) {
+      e.preventDefault();
+      void newPackage("PACKAGE");
+    } else if (e.code === "KeyB" && w.can.pack && !w.onHold) {
+      e.preventDefault();
+      void newPackage("BUNDLE");
+    } else if (e.code === "KeyW") {
+      e.preventDefault();
+      setMode("PICK");
+      setTimeout(() => nextRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }), 50);
+    } else if (e.code === "KeyP") {
+      e.preventDefault();
+      void printPickList(w);
+    } else if (e.code === "KeyL") {
+      e.preventDefault();
+      void printLabels(w.packageList.filter((p) => p.kind !== "SINGLE" && (p.status === "CLOSED" || p.status === "VERIFIED")));
+    }
+  };
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => altKeys.current(e);
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, []);
+
   const tone = !last
     ? "border-verdigris-300/15 bg-ink-900/40 text-verdigris-200/60"
     : last.result === "OK"
@@ -367,7 +403,46 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
               </button>
             ))}
           </div>
-          <p className="mt-2 text-sm text-verdigris-200/65">{MODES.find((m) => m.id === mode)?.hint}</p>
+          <p className="mt-2 text-sm text-verdigris-200/65">
+            {MODES.find((m) => m.id === mode)?.hint}
+            <span className="ml-2 text-xs text-verdigris-200/45">Alt+1…4 step · Alt+N package · Alt+B bundle · Alt+W where next</span>
+          </p>
+
+          {mode === "PICK" ? (
+            w.route.length ? (
+              <div ref={nextRef} tabIndex={-1} className="mt-3 rounded-xl border border-patina/40 bg-patina/10 p-3 outline-none" id="work-next-stop">
+                <p className="text-sm text-verdigris-50">
+                  <span className="mr-2 rounded-md bg-patina/25 px-2 py-0.5 text-xs font-semibold text-patina">
+                    Next stop 1 of {w.route.length}
+                  </span>
+                  {w.route[0]!.floor ? `${w.route[0]!.floor} › ` : ""}
+                  <b className="font-mono">{w.route[0]!.place}</b>
+                  {w.route[0]!.galaId ? (
+                    <Link href={`/admin/locations/galas/${w.route[0]!.galaId}`} className="ml-2 text-xs text-verdigris-300 hover:text-patina">
+                      open gala
+                    </Link>
+                  ) : null}
+                </p>
+                {w.route[0]!.items.map((it) => (
+                  <p key={it.lineId} className="mt-1 text-sm text-verdigris-100">
+                    {it.item}: <span className="font-mono text-verdigris-50">{it.cartonNos.join("  ")}</span>
+                  </p>
+                ))}
+                {w.route.length > 1 ? (
+                  <p className="mt-1 text-xs text-verdigris-200/65">
+                    Then {w.route.slice(1, 4).map((r) => `${r.place} (${r.cartonNos.length})`).join(", ")}
+                    {w.route.length > 4 ? " …" : ""}. Scan any right carton — the route adjusts.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-verdigris-200/65">Last stop. Scan any right carton — the route adjusts.</p>
+                )}
+              </div>
+            ) : w.picked >= w.required ? (
+              <p className="mt-3 rounded-xl border border-emerald-400/40 bg-emerald-500/10 p-3 text-sm text-emerald-100">Everything is picked.</p>
+            ) : (
+              <p className="mt-3 rounded-xl border border-rose-400/40 bg-rose-500/10 p-3 text-sm text-rose-100">No free carton of what is left — check with the warehouse admin.</p>
+            )
+          ) : null}
 
           {mode === "PACK" ? (
             <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-verdigris-300/10 bg-ink-900/40 p-3" id="work-pack-bar">
@@ -497,6 +572,15 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
                         <span className="text-rose-300">No free carton found — check with the warehouse admin</span>
                       ) : (
                         <ul className="space-y-1">
+                          {l.suggested.map((st, i) => (
+                            <li key={`s${i}`} className="rounded-md bg-patina/10 px-2 py-1">
+                              <span className="font-semibold text-patina">Take {st.cartonNos.length}</span>
+                              <span className="text-verdigris-50"> · {st.place}</span>
+                              {st.floor ? <span className="text-verdigris-200/60"> · {st.floor}</span> : null}
+                              <p className="break-words font-mono text-[11px] text-verdigris-100">{st.cartonNos.join(", ")}</p>
+                            </li>
+                          ))}
+                          <li className="pt-1 text-[11px] uppercase tracking-[0.08em] text-verdigris-200/45">All free cartons</li>
                           {l.locations.map((loc, i) => (
                             <li key={i}>
                               <span className={`font-semibold ${loc.kind === "GALA" ? "text-verdigris-50" : "text-amber-200"}`}>{loc.place}</span>

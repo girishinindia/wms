@@ -184,7 +184,13 @@ export type WorkLine = {
   arrived: number;
   packed: number;
   locations: PickLocation[];
+  /** Which free cartons to take for what is still to pick: oldest stock first, by place. */
+  suggested: PickStop[];
 };
+/** One place to go to, and the cartons to take there. */
+export type PickStop = { kind: "GALA" | "DOCK" | "RETURN"; galaId: number | null; place: string; floor: string | null; cartonNos: string[] };
+/** The walk: every stop in floor → gala order (put-back shelf, then the dock, last), with what to take for each item. */
+export type RouteStop = PickStop & { items: { lineId: number; item: string; cartonNos: string[] }[] };
 export type WorkCarton = {
   id: number;
   cartonNo: string;
@@ -239,8 +245,147 @@ export type WorkDetail = WorkRow & {
   assigneeList: { id: number; name: string }[];
   assignable: { id: number; name: string; roles: string }[];
   scans: WorkScan[];
+  /** The suggested pick route for what is still to pick. */
+  route: RouteStop[];
   can: { assign: boolean; pick: boolean; pack: boolean; verify: boolean; hold: boolean; manage: boolean };
 };
+
+const placeName = (kind: string, gala: unknown) => (kind === "GALA" ? String(gala) : kind === "DOCK" ? "At dock (not stored)" : "Put-back shelf");
+
+/**
+ * Which cartons to pick next for a note: for each item, the oldest free
+ * cartons (received first) up to what is still to pick — then grouped into
+ * stops in walking order: floor by floor, gala by gala, the put-back shelf,
+ * the dock. Only a suggestion: any right carton scanned counts, and the
+ * route is worked out again after every scan.
+ */
+export async function pickPlan(noteId: number): Promise<{ byLine: Map<number, PickStop[]>; route: RouteStop[] }> {
+  const rows = await getDb().execute<Record<string, unknown>>(sql`
+    with n as (select importer_id, warehouse_id from wms.delivery_note where id = ${noteId}),
+    need as (
+      select l.id as line_id, l.stock_key, coalesce(l.item_code || ' · ', '') || l.description as item,
+             l.cartons - (select count(*) from wms.inward_carton c where c.dn_line_id = l.id and c.dn_id = ${noteId} and c.area = 'PACKING') as remaining
+        from wms.delivery_line l where l.delivery_note_id = ${noteId}
+    ),
+    free as (
+      select c.carton_no, wms.stock_key(li.item_id, li.description, li.pieces_per_carton) as stock_key,
+             case when c.area = 'RETURN' then 'RETURN' when c.gala_id is null then 'DOCK' else 'GALA' end as kind,
+             c.gala_id, g.code as gala, f.name as floor, f.floor_no, g.gala_no,
+             row_number() over (partition by wms.stock_key(li.item_id, li.description, li.pieces_per_carton)
+                                order by c.received_at nulls last, c.inward_request_id, c.seq) as rn
+        from wms.inward_carton c
+        join wms.inward_request r on r.id = c.inward_request_id
+        join wms.inward_request_item li on li.id = c.inward_request_item_id
+        left join wms.warehouse_gala g on g.id = c.gala_id
+        left join wms.warehouse_floor f on f.id = g.floor_id
+       where r.importer_id = (select importer_id from n) and r.warehouse_id = (select warehouse_id from n)
+         and c.status = 'RECEIVED' and (c.area is null or c.area = 'RETURN')
+         and wms.stock_key(li.item_id, li.description, li.pieces_per_carton) in (select stock_key from need where remaining > 0)
+    )
+    select need.line_id, need.item, free.carton_no, free.kind, free.gala_id, free.gala, free.floor, free.floor_no, free.gala_no
+      from need join free on free.stock_key = need.stock_key and free.rn <= need.remaining
+     order by case free.kind when 'GALA' then 0 when 'RETURN' then 1 else 2 end, free.floor_no nulls last, free.gala_no nulls last, free.carton_no
+  `);
+  const byLine = new Map<number, PickStop[]>();
+  const route: RouteStop[] = [];
+  for (const r of rows) {
+    const kind = String(r.kind) as PickStop["kind"];
+    const galaId = r.gala_id === null || r.gala_id === undefined ? null : Number(r.gala_id);
+    const place = placeName(kind, r.gala);
+    const floor = (r.floor as string | null) ?? null;
+    const no = String(r.carton_no);
+    const lineId = Number(r.line_id);
+    const stops = byLine.get(lineId) ?? [];
+    let s = stops.find((x) => x.kind === kind && x.galaId === galaId);
+    if (!s) {
+      s = { kind, galaId, place, floor, cartonNos: [] };
+      stops.push(s);
+      byLine.set(lineId, stops);
+    }
+    s.cartonNos.push(no);
+    let stop = route.find((x) => x.kind === kind && x.galaId === galaId);
+    if (!stop) {
+      stop = { kind, galaId, place, floor, cartonNos: [], items: [] };
+      route.push(stop);
+    }
+    stop.cartonNos.push(no);
+    let it = stop.items.find((x) => x.lineId === lineId);
+    if (!it) {
+      it = { lineId, item: String(r.item), cartonNos: [] };
+      stop.items.push(it);
+    }
+    it.cartonNos.push(no);
+  }
+  return { byLine, route };
+}
+
+export type NoteWhere = {
+  lines: {
+    lineId: number;
+    key: string;
+    item: string;
+    required: number;
+    picked: number;
+    /** Suggested cartons for what is still to pick, by place. */
+    suggested: PickStop[];
+    /** Already picked, and where each came from. */
+    pickedFrom: { cartonNo: string; place: string; floor: string | null }[];
+    /** Free cartons of the item not in the suggestion (choice for the picker). */
+    otherFree: number;
+  }[];
+  route: RouteStop[];
+};
+
+/** For the delivery note page: where each item's cartons are (warehouse staff and super admin). */
+export async function whereOf(noteId: number): Promise<NoteWhere> {
+  const db = getDb();
+  const [lines, picked, free, plan] = await Promise.all([
+    db.execute<Record<string, unknown>>(sql`
+      select l.id, l.stock_key, coalesce(l.item_code || ' · ', '') || l.description as item, l.cartons,
+             (select count(*) from wms.inward_carton c where c.dn_line_id = l.id and c.dn_id = ${noteId} and c.area = 'PACKING')::int as picked
+        from wms.delivery_line l where l.delivery_note_id = ${noteId} order by l.id
+    `),
+    db.execute<Record<string, unknown>>(sql`
+      select c.dn_line_id, c.carton_no, g.code as gala, f.name as floor, c.pick_from_gala_id
+        from wms.inward_carton c
+        left join wms.warehouse_gala g on g.id = c.pick_from_gala_id
+        left join wms.warehouse_floor f on f.id = g.floor_id
+       where c.dn_id = ${noteId} and c.area = 'PACKING'
+       order by c.carton_no
+    `),
+    db.execute<Record<string, unknown>>(sql`
+      select wms.stock_key(li.item_id, li.description, li.pieces_per_carton) as stock_key, count(*)::int as n
+        from wms.inward_carton c
+        join wms.inward_request r on r.id = c.inward_request_id
+        join wms.inward_request_item li on li.id = c.inward_request_item_id
+        join wms.delivery_note d on d.id = ${noteId}
+       where r.importer_id = d.importer_id and r.warehouse_id = d.warehouse_id
+         and c.status = 'RECEIVED' and (c.area is null or c.area = 'RETURN')
+         and wms.stock_key(li.item_id, li.description, li.pieces_per_carton) in (select stock_key from wms.delivery_line where delivery_note_id = ${noteId})
+       group by 1
+    `),
+    pickPlan(noteId),
+  ]);
+  return {
+    lines: lines.map((l) => {
+      const suggested = plan.byLine.get(Number(l.id)) ?? [];
+      const taking = suggested.reduce((n, s) => n + s.cartonNos.length, 0);
+      return {
+        lineId: Number(l.id),
+        key: String(l.stock_key),
+        item: String(l.item),
+        required: Number(l.cartons),
+        picked: Number(l.picked),
+        suggested,
+        pickedFrom: picked
+          .filter((c) => Number(c.dn_line_id) === Number(l.id))
+          .map((c) => ({ cartonNo: String(c.carton_no), place: c.gala ? String(c.gala) : "the dock", floor: (c.floor as string | null) ?? null })),
+        otherFree: Math.max(0, Number(free.find((f) => f.stock_key === l.stock_key)?.n ?? 0) - taking),
+      };
+    }),
+    route: plan.route,
+  };
+}
 
 async function noteRow(id: number): Promise<{ warehouse_id: number; importer_id: number; status: string; work_status: string; on_hold: boolean; dn_no: string; created_by: number } | null> {
   const rows = await getDb().execute<{ warehouse_id: number; importer_id: number; status: string; work_status: string; on_hold: boolean; dn_no: string; created_by: number }>(sql`
@@ -318,6 +463,7 @@ export async function workDetail(actor: Actor, id: number): Promise<WorkDetail> 
      group by 1, 2, g.code, f.name, f.floor_no, g.gala_no
      order by 1, case when g.code is null then 1 else 0 end, f.floor_no, g.gala_no
   `);
+  const plan = await pickPlan(id);
   const cartons = await db.execute<Record<string, unknown>>(sql`
     select c.id, c.carton_no, l.stock_key, l.description, g.code as from_gala, c.area,
            trim(u.first_name || ' ' || coalesce(u.last_name, '')) as picked_by, c.picked_at::text as picked_at,
@@ -396,7 +542,9 @@ export async function workDetail(actor: Actor, id: number): Promise<WorkDetail> 
           cartons: Number(x.cartons),
           cartonNos: ((x.nos as unknown[]) ?? []).map(String),
         })),
+      suggested: plan.byLine.get(Number(l.id)) ?? [],
     })),
+    route: plan.route,
     cartons: cartons.map((c) => ({
       id: Number(c.id),
       cartonNo: String(c.carton_no),
@@ -603,7 +751,13 @@ export async function setHold(actor: Actor, id: number, on: boolean, reason: str
 // ── Scans ─────────────────────────────────────────────────────────
 
 export type ScanInput = { code: string; clientScanId?: string | null; via?: "SCAN" | "MANUAL"; device?: string | null };
-export type ScanAnswer = { result: "OK" | "DUPLICATE" | "REJECTED"; message: string; workStatus: string };
+export type ScanAnswer = {
+  result: "OK" | "DUPLICATE" | "REJECTED";
+  message: string;
+  workStatus: string;
+  /** After a pick scan: where to go next (null when everything is picked). */
+  next?: RouteStop | null;
+};
 
 async function cartonIdOf(code: string): Promise<number | null> {
   const no = cartonNoFromScan(code);
@@ -657,7 +811,16 @@ export async function scan(actor: Actor, id: number, step: "PICK" | "ARRIVE" | "
   const workStatus = await afterStep(id, String(n.work_status), actor, meta);
   // Its last returned carton just left the shelf: the old note is done — tell the admins.
   if (shelf && r.result === "OK") await afterStep(Number(shelf.dn_id), String(shelf.work_status), actor, meta);
-  return { result: r.result, message: r.message, workStatus };
+  if (step !== "PICK") return { result: r.result, message: r.message, workStatus };
+  // Picking: say where to go next — and after a wrong carton, where the right ones are.
+  const next = (await pickPlan(id)).route[0] ?? null;
+  const message =
+    r.result === "REJECTED" && next && /^(Not on this delivery note|All \d+ cartons of)/.test(r.message)
+      ? `${r.message}. This note needs ${next.items[0]!.item} — ${
+          next.kind === "GALA" ? `in ${next.place}${next.floor ? ` (${next.floor})` : ""}` : next.kind === "DOCK" ? "at the dock (not stored yet)" : "on the put-back shelf"
+        }`
+      : r.message;
+  return { result: r.result, message, workStatus, next };
 }
 
 // ── Packages ──────────────────────────────────────────────────────

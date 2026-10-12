@@ -119,10 +119,27 @@ export async function printPickList(w: WorkDetail) {
         <td class="n">${l.required}</td><td class="n">${l.picked}</td><td class="n">${left}</td><td>${left === 0 ? "All picked" : where || "No free carton found"}</td></tr>`;
     })
     .join("");
+  // The suggested walk: oldest stock first, stop by stop in floor → gala order.
+  const route = w.route.length
+    ? `<h2 style="font-size:11pt;margin:2mm 0">Suggested walk — oldest stock first</h2>
+       <table><thead><tr><th>Stop</th><th>Where</th><th>Take these cartons (tick, then scan)</th></tr></thead><tbody>${w.route
+         .map(
+           (r, i) =>
+             `<tr><td class="n">${i + 1}</td><td><b>${esc(r.place)}</b>${r.floor ? `<div class="nos">${esc(r.floor)}</div>` : ""}</td><td>${r.items
+               .map(
+                 (it) =>
+                   `<div>${esc(it.item)} · ${it.cartonNos.length}</div><div class="nos">${it.cartonNos.map((no) => `<span class="box"></span>${esc(no)}`).join(" &nbsp; ")}</div>`,
+               )
+               .join("")}</td></tr>`,
+         )
+         .join("")}</tbody></table>`
+    : "";
   const body = `<h1>Pick list — ${esc(w.dnNo)}${warn ? `<span class="warn">${warn}</span>` : ""}</h1>
     <p class="sub">${esc(w.importerName)} · ${esc(w.warehouseName)} · to <b>${esc(w.buyerName)}</b>${w.buyerCity ? `, ${esc(w.buyerCity)}` : ""}${w.transportName ? ` · by ${esc(w.transportName)}` : ""}${w.priority === "URGENT" ? " · <b>URGENT</b>" : ""}
     · assigned: ${esc(w.assigneeList.map((a) => a.name).join(", ") || "—")}</p>
     ${w.instructions ? `<p class="sub"><b>Packing:</b> ${esc(w.instructions)}</p>` : ""}
+    ${route}
+    <h2 style="font-size:11pt;margin:3mm 0 2mm">All items and every free carton</h2>
     <table><thead><tr><th>#</th><th>Item</th><th>Cartons</th><th>Picked</th><th>Left</th><th>Take from (tick each carton you pick — then scan it)</th></tr></thead><tbody>${rows}</tbody></table>
     <p class="sub">Scan every carton where you pick it. A carton "At dock" is received but not yet in a gala.</p>
     <div class="sign"><div>Picked by</div><div>Checked at packing</div><div>Date / time</div></div>`;

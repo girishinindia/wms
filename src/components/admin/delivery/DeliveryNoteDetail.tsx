@@ -246,6 +246,62 @@ export default function DeliveryNoteDetail({ note, workLink = false }: { note: N
         </Card>
       </div>
 
+      {note.where && note.where.lines.some((l) => l.picked < l.required || l.pickedFrom.length) ? (
+        <div id="dn-where">
+          <Card className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className={label}>Where the cartons are</p>
+              <span className="flex flex-wrap gap-2">
+                {workLink ? (
+                  <Link href={`/admin/dispatch/${note.id}`} className="rounded-lg border border-verdigris-300/20 px-3 py-1.5 text-xs text-verdigris-100 hover:border-verdigris-300/45">
+                    Open pick &amp; pack
+                  </Link>
+                ) : null}
+              </span>
+            </div>
+            {note.where.route.length ? (
+              <p className="mt-1 text-xs text-verdigris-200/65" id="dn-where-route">
+                Suggested walk (oldest stock first): {note.where.route.map((r) => `${r.place} (${r.cartonNos.length})`).join(" → ")}
+              </p>
+            ) : null}
+            <ul className="mt-3 space-y-3">
+              {note.where.lines.map((l) => (
+                <li key={l.lineId} className="rounded-xl border border-verdigris-300/10 p-3">
+                  <p className="text-sm text-verdigris-50">
+                    {l.item} — {n(l.required)} carton{l.required === 1 ? "" : "s"}{" "}
+                    <span className={`ml-1 rounded-full px-2 py-0.5 text-[0.7rem] ${l.picked >= l.required ? "bg-emerald-500/15 text-emerald-200" : "bg-amber-500/15 text-amber-200"}`}>
+                      {n(l.picked)} of {n(l.required)} picked
+                    </span>
+                  </p>
+                  {l.suggested.map((st, i) => (
+                    <p key={i} className="mt-1 text-sm text-verdigris-100">
+                      {st.floor ? `${st.floor} › ` : ""}
+                      {st.galaId ? (
+                        <Link href={`/admin/locations/galas/${st.galaId}`} className="font-mono font-semibold text-patina hover:underline">
+                          {st.place}
+                        </Link>
+                      ) : (
+                        <b className="text-amber-200">{st.place}</b>
+                      )}{" "}
+                      — take {st.cartonNos.length}: <span className="font-mono text-xs text-verdigris-200/80">{st.cartonNos.join(", ")}</span>
+                    </p>
+                  ))}
+                  {l.picked < l.required && l.suggested.length === 0 ? (
+                    <p className="mt-1 text-sm text-rose-300">No free carton found for what is left.</p>
+                  ) : null}
+                  {l.pickedFrom.length ? (
+                    <p className="mt-1 text-xs text-verdigris-200/60">
+                      Picked: {l.pickedFrom.map((c) => `${c.cartonNo.slice(-4)} from ${c.place}`).join(", ")}
+                    </p>
+                  ) : null}
+                  {l.otherFree ? <p className="text-xs text-verdigris-200/50">Also free: {n(l.otherFree)} more carton{l.otherFree === 1 ? "" : "s"} of this item</p> : null}
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </div>
+      ) : null}
+
       {h.instructions || h.deliveryInstructions || h.remarks ? (
         <Card className="p-5">
           <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_minmax(0,1fr)]" id="dn-instructions-block">

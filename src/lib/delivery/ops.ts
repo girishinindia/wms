@@ -5,7 +5,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { auditQuietly } from "@/lib/audit";
 import { grantFor, importerIdOf, type Actor, type Grant } from "@/lib/auth/guard";
-import { afterStep, pickingStarted, progressOf, releaseNote } from "@/lib/dispatch/ops";
+import { afterStep, canSeeWork, pickingStarted, progressOf, releaseNote, whereOf, type NoteWhere } from "@/lib/dispatch/ops";
 import { InwardError, type Meta } from "@/lib/inward/ops";
 import { normalizeMobile } from "@/lib/normalize";
 import { announce } from "@/lib/notify/announce";
@@ -890,6 +890,8 @@ export type NoteDetail = NoteSummary & {
   work: { workStatus: string; onHold: boolean; workLabel: string; required: number; picked: number; packed: number; packages: number; returning: number } | null;
   /** Items are locked once the first carton is picked. */
   itemsLocked: boolean;
+  /** Where the cartons are (floor, gala, suggested cartons) — warehouse staff and super admin only; null for others or a closed note. */
+  where: NoteWhere | null;
   version: number;
   editedAt: string | null;
   lineItems: NoteLine[];
@@ -991,6 +993,7 @@ export async function getNote(scope: DnScope, actor: Actor, id: number): Promise
     cancelReason: (r.cancel_reason as string | null) ?? null,
     work: await progressOf(id),
     itemsLocked: await pickingStarted(id),
+    where: canSeeWork(actor) && (s.status === "PENDING" || s.status === "APPROVED") ? await whereOf(id) : null,
     version: Number(r.version),
     editedAt: (r.edited_at_text as string | null) ?? null,
     lineItems: lines.map((l) => ({
