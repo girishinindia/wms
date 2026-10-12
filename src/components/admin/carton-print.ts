@@ -151,7 +151,7 @@ export async function fitNumbers(doc: Document) {
 }
 
 /** Print through a hidden frame and the browser's print window. */
-async function printHtml(title: string, css: string, body: string) {
+export async function printHtml(title: string, css: string, body: string) {
   const frame = document.createElement("iframe");
   frame.setAttribute("aria-hidden", "true");
   frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";

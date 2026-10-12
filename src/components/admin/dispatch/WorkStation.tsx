@@ -10,6 +10,7 @@ import type { ScanAnswer, WorkDetail, WorkPackage } from "@/lib/dispatch/ops";
 import { fmtDateTime, fmtDay, fmtTime } from "@/lib/format/datetime";
 
 import { beep, keepScanFocus, uid } from "../scan-kit";
+import { PACKAGE_LABEL_SIZES, printPackageLabels, printPickList, type PackageLabelSize } from "./package-print";
 
 /**
  * One delivery note in the warehouse. Four scan steps, one box:
@@ -40,6 +41,7 @@ const n = (v: number) => v.toLocaleString("en-IN");
 const KIND_LABEL: Record<string, string> = { PACKAGE: "Package", BUNDLE: "Bundle", SINGLE: "Single carton" };
 const PKG_STATUS: Record<string, string> = { OPEN: "Open", CLOSED: "Closed", VERIFIED: "Verified", CANCELLED: "Cancelled" };
 const btn = "rounded-lg border border-verdigris-300/20 px-3 py-1.5 text-xs text-verdigris-100 hover:border-verdigris-300/45 disabled:opacity-50";
+const SIZE_KEY = "wms.packageLabelSize";
 const field = "w-full rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50";
 
 function firstMode(w: WorkDetail): Mode {
@@ -62,13 +64,31 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
   const [pending, setPending] = useState(0);
   const [dialog, setDialog] = useState<null | "assign" | "hold" | { close: WorkPackage } | { cancel: WorkPackage }>(null);
   const [busy, setBusy] = useState(false);
+  const [size, setSize] = useState<PackageLabelSize>("t100x75");
   const queue = useRef<Pending[]>([]);
   const sending = useRef(false);
   const box = useRef<HTMLInputElement>(null);
   const firstKeyAt = useRef<number | null>(null);
   const keys = useRef(0);
+  const buffer = useRef("");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => keepScanFocus(box, () => dialog !== null), [dialog]);
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem(SIZE_KEY);
+      if (v && PACKAGE_LABEL_SIZES.some((x) => x.id === v)) setSize(v as PackageLabelSize);
+    } catch {
+      /* not remembered */
+    }
+  }, []);
+
+  const printLabels = async (list: WorkPackage[]) => {
+    if (!list.length) return toast.error("No package to print yet — close a package first.");
+    await printPackageLabels(w, list, size);
+    // Counted so a reprint is visible later; never blocks the print.
+    for (const p of list) void api(`/dispatch/packages/${p.id}`, { method: "PATCH", body: { action: "PRINTED" } });
+  };
 
   const reload = useCallback(async () => {
     const r = await api<{ work: WorkDetail }>(`/dispatch/${initial.id}`, { method: "GET" });
@@ -149,19 +169,36 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
     void flush();
   };
 
-  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (firstKeyAt.current === null) firstKeyAt.current = Date.now();
-    keys.current += 1;
-    if (e.key !== "Enter") return;
-    e.preventDefault();
+  // A scanner reading a QR with several lines types Enter after each one:
+  // collect them for a moment and send them as one scan.
+  const submitBuffer = () => {
+    const code = buffer.current.trim();
+    buffer.current = "";
     const started = firstKeyAt.current;
     const k = keys.current;
     firstKeyAt.current = null;
     keys.current = 0;
+    if (!code) return;
     const perKey = started && k ? (Date.now() - started) / k : 999;
-    const code = value;
-    setValue("");
     handle(code, perKey < 40 && k >= 8 ? "SCAN" : "MANUAL");
+  };
+
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (firstKeyAt.current === null) firstKeyAt.current = Date.now();
+    keys.current += 1;
+    if (e.key !== "Enter") {
+      // More of the same QR still arriving: wait for the end of it.
+      if (buffer.current && timer.current) {
+        clearTimeout(timer.current);
+        timer.current = setTimeout(submitBuffer, 160);
+      }
+      return;
+    }
+    e.preventDefault();
+    buffer.current += `${value}\n`;
+    setValue("");
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(submitBuffer, 160);
   };
 
   const act = async (path: string, init: { method?: string; body?: unknown }, done?: string) => {
@@ -379,7 +416,7 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
                   {last.result === "OK" ? "✓ " : last.result === "DUPLICATE" ? "! " : "✕ "}
                   {last.message}
                 </p>
-                <p className="mt-0.5 font-mono text-xs opacity-70">{last.code}</p>
+                <p className="mt-0.5 font-mono text-xs opacity-70">{last.code.split("\n")[0]}</p>
               </>
             ) : (
               <p className="text-sm">Waiting for the first scan.</p>
@@ -390,7 +427,7 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
             <ul className="mt-3 max-h-40 space-y-1 overflow-y-auto text-xs" id="work-log">
               {log.slice(1, 30).map((s, i) => (
                 <li key={i} className={s.result === "OK" ? "text-verdigris-100" : s.result === "DUPLICATE" ? "text-amber-300" : "text-rose-300"}>
-                  <span className="font-mono">{s.code}</span> — {s.message}
+                  <span className="font-mono">{s.code.split("\n")[0]}</span> — {s.message}
                 </li>
               ))}
             </ul>
@@ -402,6 +439,9 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between px-4 pt-4">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-verdigris-300">Pick list — where the cartons are</p>
+          <button type="button" id="work-print-picklist" className={btn} onClick={() => void printPickList(w)}>
+            Print pick list
+          </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" id="work-lines">
@@ -462,6 +502,37 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
       <Card className="p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-verdigris-300">Packages</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              id="work-label-size"
+              value={size}
+              onChange={(e) => {
+                const v = e.target.value as PackageLabelSize;
+                setSize(v);
+                try {
+                  window.localStorage.setItem(SIZE_KEY, v);
+                } catch {
+                  /* not remembered */
+                }
+              }}
+              className="rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-2 py-1.5 text-xs text-verdigris-50"
+              title={PACKAGE_LABEL_SIZES.find((x) => x.id === size)?.hint}
+            >
+              {PACKAGE_LABEL_SIZES.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              id="work-print-labels"
+              className={btn}
+              onClick={() => void printLabels(w.packageList.filter((p) => p.kind !== "SINGLE" && (p.status === "CLOSED" || p.status === "VERIFIED")))}
+            >
+              Print package labels
+            </button>
+          </div>
           {w.can.pack && loose > 0 ? (
             <button
               type="button"
@@ -507,6 +578,11 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
                         Close
                       </button>
                     </>
+                  ) : null}
+                  {p.status !== "CANCELLED" ? (
+                    <button type="button" className={btn} onClick={() => void printLabels([p])}>
+                      Print label
+                    </button>
                   ) : null}
                   {(p.status === "CLOSED" || p.status === "VERIFIED") && w.can.manage && p.kind !== "SINGLE" ? (
                     <button type="button" className={btn} disabled={busy} onClick={() => void act(`/dispatch/packages/${p.id}`, { method: "PATCH", body: { action: "REOPEN" } }, `${p.code} reopened.`)}>
@@ -566,7 +642,7 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
             <ul className="max-h-96 space-y-1 overflow-y-auto px-4 py-3 text-xs" id="work-scans">
               {w.scans.map((s, i) => (
                 <li key={i} className={s.result === "OK" ? "text-verdigris-100" : s.result === "DUPLICATE" ? "text-amber-300" : "text-rose-300"}>
-                  <span className="text-verdigris-200/50">{fmtDateTime(s.at)}</span> · {s.step.toLowerCase()} · <span className="font-mono">{s.code}</span>
+                  <span className="text-verdigris-200/50">{fmtDateTime(s.at)}</span> · {s.step.toLowerCase()} · <span className="font-mono">{s.code.split("\n")[0]}</span>
                   {s.message ? ` — ${s.message}` : ""}
                   {s.by ? <span className="text-verdigris-200/50"> · {s.by}</span> : null}
                 </li>
