@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useToast } from "@/components/Toast";
 import { Card, StatusBadge } from "@/components/admin/ui";
 import { api } from "@/lib/api/client";
+import { HANDLING_LABEL, PACKING_LABEL } from "@/lib/delivery/labels";
 import type { NoteDetail } from "@/lib/delivery/ops";
 import { fmtDateTime, fmtDay } from "@/lib/format/datetime";
 
@@ -88,9 +89,15 @@ export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
               <span className="font-mono text-2xl font-semibold text-verdigris-50" id="dn-no">{note.dnNo}</span>
               <span id="dn-status"><StatusBadge value={note.status === "PENDING" ? "PENDING_APPROVAL" : note.status} /></span>
               {h.priority === "URGENT" ? <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-xs text-amber-200">Urgent</span> : null}
+              {h.handling !== "NORMAL" ? (
+                <span className="rounded-full border border-rose-400/50 px-2 py-0.5 text-xs font-semibold text-rose-200" id="dn-handling">
+                  {HANDLING_LABEL[h.handling]}
+                </span>
+              ) : null}
             </p>
             <p className="mt-1 text-sm text-verdigris-200/65">
-              {fmtDay(note.dnDate)} · Order {note.orderNo} · {note.warehouseName} · by {note.createdByName}
+              {fmtDay(note.dnDate)} · Order {note.orderNo}
+              {h.orderDate ? ` of ${fmtDay(h.orderDate)}` : ""} · {note.warehouseName} ({note.warehouseCode}) · by {note.createdByName}
             </p>
             {note.status === "APPROVED" && note.approvalKind ? (
               <p className="mt-2 text-sm text-emerald-300" id="dn-approved-by">
@@ -155,26 +162,49 @@ export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
         <Card className="p-5">
           <p className={label}>Buyer (bill to)</p>
           <p className="text-base font-semibold text-verdigris-50">{h.buyerName}</p>
-          <div className="mt-1 space-y-0.5 text-sm text-verdigris-100">
+          <div className="mt-1 space-y-0.5 text-sm text-verdigris-100" id="dn-buyer-block">
             {h.buyerMobile ? <p>{h.buyerMobile}</p> : null}
             {h.buyerAddress ? <p className="whitespace-pre-line">{h.buyerAddress}</p> : null}
+            <p>{[h.buyerCity, h.buyerState].filter(Boolean).join(", ") || "—"}{h.buyerPincode ? ` – ${h.buyerPincode}` : ""}</p>
             {h.buyerGstin ? <p>GSTIN {h.buyerGstin}</p> : null}
-            {h.destination ? <p>Destination: {h.destination}</p> : null}
           </div>
         </Card>
         <Card className="p-5">
           <p className={label}>Dispatch</p>
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
-            <dt className="text-verdigris-200/60">Transport</dt><dd className="text-verdigris-50">{h.transportName ?? "—"}</dd>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm" id="dn-dispatch">
+            <dt className="text-verdigris-200/60">Order date</dt><dd className="text-verdigris-50">{h.orderDate ? fmtDay(h.orderDate) : "—"}</dd>
+            <dt className="text-verdigris-200/60">Transporter</dt>
+            <dd className="text-verdigris-50">
+              {h.transportName ?? "—"}
+              {h.transporterMobile ? ` · ${h.transporterMobile}` : ""}
+              {h.transporterGstin ? ` · ${h.transporterGstin}` : ""}
+            </dd>
             <dt className="text-verdigris-200/60">Payment</dt><dd className="text-verdigris-50">{h.paymentMode ?? "—"}</dd>
             <dt className="text-verdigris-200/60">Billing</dt>
             <dd className="text-verdigris-50">{h.billing === "WITH_BILL" ? `With bill${h.billAmount ? ` · ₹${n(h.billAmount)}` : ""}` : h.billing === "WITHOUT_BILL" ? "Without bill" : "—"}</dd>
             <dt className="text-verdigris-200/60">Packing</dt>
-            <dd className="text-verdigris-50">{h.packing === "BUNDLE" ? `${h.bundles ?? ""} bundle${h.bundles === 1 ? "" : "s"}` : h.packing === "LOOSE" ? "Loose" : "Cartons"}</dd>
-            {h.instructions ? (<><dt className="text-verdigris-200/60">Instructions</dt><dd className="whitespace-pre-line text-verdigris-50">{h.instructions}</dd></>) : null}
+            <dd className="text-verdigris-50">
+              {h.packing === "BUNDLE"
+                ? `${h.bundles ?? ""} bundle${h.bundles === 1 ? "" : "s"}`
+                : h.packing === "OTHER"
+                  ? `Other — ${h.packingOther ?? ""}`
+                  : PACKING_LABEL[h.packing]}
+            </dd>
+            <dt className="text-verdigris-200/60">Priority</dt><dd className="text-verdigris-50">{h.priority === "URGENT" ? "Urgent" : "Normal"}</dd>
+            <dt className="text-verdigris-200/60">Handling</dt><dd className="text-verdigris-50">{HANDLING_LABEL[h.handling]}</dd>
           </dl>
         </Card>
       </div>
+
+      {h.instructions || h.deliveryInstructions || h.remarks ? (
+        <Card className="p-5">
+          <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_minmax(0,1fr)]" id="dn-instructions-block">
+            {h.instructions ? (<><dt className="text-verdigris-200/60">Special packing</dt><dd className="whitespace-pre-line text-verdigris-50">{h.instructions}</dd></>) : null}
+            {h.deliveryInstructions ? (<><dt className="text-verdigris-200/60">Delivery</dt><dd className="whitespace-pre-line text-verdigris-50">{h.deliveryInstructions}</dd></>) : null}
+            {h.remarks ? (<><dt className="text-verdigris-200/60">Remarks</dt><dd className="whitespace-pre-line text-verdigris-50">{h.remarks}</dd></>) : null}
+          </dl>
+        </Card>
+      ) : null}
 
       <Card className="overflow-hidden">
         <table className="w-full text-sm" id="dn-lines">
@@ -183,6 +213,7 @@ export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
               <th className="px-4 py-3 font-medium">#</th>
               <th className="px-4 py-3 font-medium">Item</th>
               <th className="px-4 py-3 text-right font-medium">Per carton</th>
+              <th className="px-4 py-3 text-right font-medium">Ordered</th>
               <th className="px-4 py-3 text-right font-medium">Cartons</th>
               <th className="px-4 py-3 text-right font-medium">Total pieces</th>
             </tr>
@@ -196,6 +227,7 @@ export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
                   {l.description}
                 </td>
                 <td className="px-4 py-2.5 text-right font-mono text-verdigris-100">{n(l.piecesPerCarton)} {l.unitCode ?? "pcs"}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-verdigris-100">{n(l.orderPieces)}</td>
                 <td className="px-4 py-2.5 text-right font-mono text-verdigris-50">{n(l.cartons)}</td>
                 <td className="px-4 py-2.5 text-right font-mono text-verdigris-50">{n(l.pieces)}</td>
               </tr>
@@ -204,6 +236,7 @@ export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
               <td className="px-4 py-3" colSpan={3}>
                 <span className="text-verdigris-100">Total</span>
               </td>
+              <td className="px-4 py-3 text-right font-mono text-verdigris-100">{n(note.lineItems.reduce((s, l) => s + l.orderPieces, 0))}</td>
               <td className="px-4 py-3 text-right font-mono text-verdigris-50" id="dn-total-cartons">{n(totalCartons)}</td>
               <td className="px-4 py-3 text-right font-mono text-verdigris-50">{n(totalPieces)}</td>
             </tr>

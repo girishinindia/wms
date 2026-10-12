@@ -10,7 +10,7 @@ import { api } from "@/lib/api/client";
 import type { Client, Header, NoteDetail, StockRow } from "@/lib/delivery/ops";
 
 import HeaderFields, { label } from "./HeaderFields";
-import StockPicker, { lineKey } from "./StockPicker";
+import StockPicker, { lineKey, type Chosen } from "./StockPicker";
 
 const n = (v: number) => v.toLocaleString("en-IN");
 
@@ -28,11 +28,12 @@ export default function DeliveryNoteEdit({ note, isImporter }: { note: NoteDetai
   const [stock, setStock] = useState<StockRow[]>([]);
   const [busy, setBusy] = useState(false);
   const original = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const l of note.lineItems) m[lineKey(note.warehouseId, l.key)] = l.cartons;
+    const m: Chosen = {};
+    for (const l of note.lineItems) m[lineKey(note.warehouseId, l.key)] = { cartons: l.cartons, orderPieces: l.orderPieces };
     return m;
   }, [note]);
-  const [chosen, setChosen] = useState<Record<string, number>>(original);
+  const originalCartons = useMemo(() => Object.fromEntries(Object.entries(original).map(([k, v]) => [k, v.cartons])), [original]);
+  const [chosen, setChosen] = useState<Chosen>(original);
 
   useEffect(() => {
     void (async () => {
@@ -55,26 +56,35 @@ export default function DeliveryNoteEdit({ note, isImporter }: { note: NoteDetai
   }, [note, toast]);
 
   const pickClient = async (c: Client) => {
-    const address = [c.address, [c.city, c.pincode].filter(Boolean).join(" - ")].filter((s) => s && s.trim()).join("\n");
-    const next = { clientId: c.id, buyerName: c.name, buyerMobile: c.mobile, buyerAddress: address || null, buyerGstin: c.gstin };
+    const next = {
+      clientId: c.id,
+      buyerName: c.name,
+      buyerMobile: c.mobile,
+      buyerAddress: c.address,
+      buyerCity: c.city,
+      buyerCityId: c.cityId,
+      buyerState: c.state,
+      buyerPincode: c.pincode,
+      buyerGstin: c.gstin,
+    };
     setHeader((h) => ({ ...h, ...next }));
     setPatch((p) => ({ ...p, ...next }));
   };
 
-  const lines = Object.entries(chosen).filter(([, v]) => v > 0);
+  const lines = Object.entries(chosen).filter(([, v]) => v.cartons > 0);
   const totals = lines.reduce(
     (t, [k, v]) => {
       const row = stock.find((s) => lineKey(s.warehouseId, s.key) === k);
-      return { cartons: t.cartons + v, pieces: t.pieces + v * (row?.piecesPerCarton ?? 0) };
+      return { cartons: t.cartons + v.cartons, pieces: t.pieces + v.cartons * (row?.piecesPerCarton ?? 0), ordered: t.ordered + v.orderPieces };
     },
-    { cartons: 0, pieces: 0 },
+    { cartons: 0, pieces: 0, ordered: 0 },
   );
 
   const save = async () => {
     setBusy(true);
     const body = {
       ...patch,
-      lines: lines.map(([k, v]) => ({ key: k.slice(k.indexOf("|") + 1), cartons: v })),
+      lines: lines.map(([k, v]) => ({ key: k.slice(k.indexOf("|") + 1), cartons: v.cartons, orderPieces: v.orderPieces })),
     };
     const r = await api<{ note: NoteDetail }>(`/delivery-notes/${note.id}`, { method: "PUT", body });
     setBusy(false);
@@ -111,17 +121,20 @@ export default function DeliveryNoteEdit({ note, isImporter }: { note: NoteDetai
         <StockPicker
           stock={stock}
           chosen={chosen}
-          extra={original}
-          onSet={async (row, cartons) => {
+          extra={originalCartons}
+          onSet={async (row, cartons, orderPieces) => {
             const k = lineKey(row.warehouseId, row.key);
-            const can = row.available + (original[k] ?? 0);
+            const can = row.available + (originalCartons[k] ?? 0);
             if (cartons > can) return { ok: false, message: `Only ${can} free` };
-            setChosen((c) => ({ ...c, [k]: cartons }));
+            if (orderPieces !== null && orderPieces > can * row.piecesPerCarton) {
+              return { ok: false, message: `Only ${can} cartons (${can * row.piecesPerCarton} pcs) free` };
+            }
+            setChosen((c) => ({ ...c, [k]: { cartons, orderPieces: orderPieces ?? cartons * row.piecesPerCarton } }));
             return { ok: true };
           }}
         />
         <p className="mt-3 text-sm text-verdigris-100" id="dn-edit-total">
-          {lines.length} item{lines.length === 1 ? "" : "s"} · {n(totals.cartons)} cartons · {n(totals.pieces)} pieces
+          {lines.length} item{lines.length === 1 ? "" : "s"} · ordered {n(totals.ordered)} pcs · {n(totals.cartons)} cartons · {n(totals.pieces)} pieces
         </p>
       </Card>
       <div className="flex justify-end gap-2">

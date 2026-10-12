@@ -5,6 +5,8 @@ import QRCode from "qrcode";
 
 import type { NoteDetail } from "@/lib/delivery/ops";
 
+import { HANDLING_LABEL, PACKING_LABEL } from "./labels";
+
 /**
  * The delivery note as a PDF — laid out like the importer's own Tally
  * delivery notes (A5, the same boxes and columns): "DELIVERY NOTE", the
@@ -138,6 +140,7 @@ export async function deliveryNotePdf(n: NoteDetail): Promise<Uint8Array> {
   const rows = n.lineItems.map((l, i) => ({
     sl: String(i + 1),
     desc: wrap(l.itemCode && !l.description.toLowerCase().includes(l.itemCode.toLowerCase()) ? `${l.itemCode} ${l.description}` : l.description, f.bold, 8, cGdn - cDesc - 6),
+    ordered: `Ordered: ${fmt(l.orderPieces)} ${l.unitCode ? titleUnit(l.unitCode) : "Pcs"}`,
     gdn: n.warehouseName.toUpperCase(),
     per: `${fmt(l.piecesPerCarton)} ${l.unitCode ? titleUnit(l.unitCode) : "Pcs"}`,
     alt: `${fmt(l.pieces)} ${l.unitCode ? titleUnit(l.unitCode) : "Pcs"}`,
@@ -146,19 +149,33 @@ export async function deliveryNotePdf(n: NoteDetail): Promise<Uint8Array> {
   const totalPieces = n.lineItems.reduce((s, l) => s + l.pieces, 0);
   const totalCartons = n.lineItems.reduce((s, l) => s + l.cartons, 0);
 
+  // Instructions and remarks print under the table on the last page.
+  const notesText = [
+    n.header.instructions ? `Special packing: ${n.header.instructions}` : "",
+    n.header.deliveryInstructions ? `Delivery: ${n.header.deliveryInstructions}` : "",
+    n.header.remarks ? `Remarks: ${n.header.remarks}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const notes = notesText ? wrap(notesText, f.reg, 6.5, R - L - 8).slice(0, 8) : [];
+  const footerH = 120 + notes.length * 8;
+
   // Paginate the item rows: header block on the first page only, the
-  // table (with its head) on every page, the total and footer on the last.
+  // table (with its head) on every page, the total, notes and footer on
+  // the last. Each row is its description lines plus the "Ordered" line.
   const lineH = 10;
+  const headH = 20;
+  const top0 = H - 26;
+  const rowH = (r: (typeof rows)[number]) => (Math.max(1, r.desc.length) + 1) * lineH;
+  const room = (first: boolean, last: boolean) =>
+    (first ? top0 - 230 : top0) - headH - 10 - (M + 16 + (last ? footerH + 24 : 14));
   const pages: (typeof rows)[] = [];
   {
     let current: typeof rows = [];
     let used = 0;
-    const firstCap = 230; // points of row space on page 1
-    const nextCap = 430;
     for (const r of rows) {
-      const h = Math.max(1, r.desc.length) * lineH;
-      const cap = pages.length === 0 ? firstCap : nextCap;
-      if (used + h > cap && current.length) {
+      const h = rowH(r);
+      if (used + h > room(pages.length === 0, false) && current.length) {
         pages.push(current);
         current = [];
         used = 0;
@@ -167,6 +184,21 @@ export async function deliveryNotePdf(n: NoteDetail): Promise<Uint8Array> {
       used += h;
     }
     pages.push(current);
+    // The last page also carries the totals and footer: move rows on if they do not fit.
+    for (;;) {
+      const lastRows = pages[pages.length - 1]!;
+      const cap = room(pages.length === 1, true);
+      let total = lastRows.reduce((t, r) => t + rowH(r), 0);
+      if (total <= cap || lastRows.length === 0) break;
+      const moved: typeof rows = [];
+      while (total > cap && lastRows.length > 1) {
+        const r = lastRows.pop()!;
+        moved.unshift(r);
+        total -= rowH(r);
+      }
+      if (!moved.length) break;
+      pages.push(moved);
+    }
   }
 
   pages.forEach((pageRows, pi) => {
@@ -175,8 +207,15 @@ export async function deliveryNotePdf(n: NoteDetail): Promise<Uint8Array> {
     center(page, "DELIVERY NOTE", W / 2, H - 20, 11, f.bold);
     if (pages.length > 1) right(page, `Page ${pi + 1} of ${pages.length}`, R, H - 20, 7, f.reg, GREY);
 
-    const top = H - 26;
+    const top = top0;
     let tableTop: number;
+    // Fragile / handle with care: boxed, top left, on every page.
+    if (n.header.handling && n.header.handling !== "NORMAL") {
+      const tag = HANDLING_LABEL[n.header.handling]!.toUpperCase();
+      const tw = f.bold.widthOfTextAtSize(tag, 8.5);
+      page.drawRectangle({ x: L, y: H - 23, width: tw + 10, height: 13, borderColor: INK, borderWidth: 1 });
+      text(page, tag, L + 5, H - 19.5, 8.5, f.bold);
+    }
 
     if (pi === 0) {
       // ── Header block ──
@@ -205,17 +244,23 @@ export async function deliveryNotePdf(n: NoteDetail): Promise<Uint8Array> {
         text(page, ln, L + 4, y, 9, f.bold);
         y -= 10;
       }
+      const place = [n.header.buyerCity, n.header.buyerState].filter(Boolean).join(", ");
       const buyerLines = [
-        n.header.buyerMobile ? `Mob: ${n.header.buyerMobile}` : "",
         n.header.buyerAddress ?? "",
+        [place, n.header.buyerPincode].filter(Boolean).join(" - "),
+        n.header.buyerMobile ? `Mob: ${n.header.buyerMobile}` : "",
         n.header.buyerGstin ? `GSTIN: ${n.header.buyerGstin}` : "",
-        n.header.transportName ? `Transport: ${n.header.transportName}` : "",
-        packingLine(n),
+        " ",
+        n.header.transportName
+          ? `Transporter: ${n.header.transportName}${n.header.transporterMobile ? ` (${n.header.transporterMobile})` : ""}`
+          : "",
+        n.header.transporterGstin ? `Transporter GSTIN/ID: ${n.header.transporterGstin}` : "",
+        `Packing: ${packingLine(n)}`,
         billingLine(n),
-        n.header.priority === "URGENT" ? "URGENT" : "",
-        n.header.instructions ?? "",
+        n.header.priority === "URGENT" ? "Priority: URGENT" : "",
+        n.header.handling && n.header.handling !== "NORMAL" ? `Handling: ${HANDLING_LABEL[n.header.handling]}` : "",
       ]
-        .filter((s) => s && s.trim())
+        .filter((s) => s === " " || (s && s.trim()))
         .join("\n");
       for (const ln of wrap(buyerLines, f.reg, 7, split - L - 8)) {
         if (y < bottom + 5) break;
@@ -224,13 +269,18 @@ export async function deliveryNotePdf(n: NoteDetail): Promise<Uint8Array> {
       }
 
       // References (right): label / value cells as the samples have them.
+      const orderDay = dnDate(n.header.orderDate ?? n.dnDate);
       const rowsR: { h: number; left: [string, string]; right: [string, string] | null }[] = [
         { h: 30, left: ["Delivery Note No.", n.dnNo], right: ["Dated", dnDate(n.dnDate)] },
-        { h: 22, left: ["", ""], right: ["Mode/Terms of Payment", n.header.paymentMode ?? ""] },
-        { h: 26, left: ["Reference No. & Date.", `${n.orderNo} dt. ${dnDate(n.dnDate)}`], right: ["Other References", `Agent: ${n.createdByName}`] },
-        { h: 30, left: ["Buyer's Order No.", n.orderNo], right: ["Dated", dnDate(n.dnDate)] },
-        { h: 26, left: ["Dispatch Doc No.", ""], right: ["Status", n.statusLabel] },
-        { h: 30, left: ["Dispatched through", n.header.transportName ?? ""], right: ["Destination", n.header.destination ?? ""] },
+        { h: 22, left: ["Order Date", orderDay], right: ["Mode/Terms of Payment", n.header.paymentMode ?? ""] },
+        { h: 26, left: ["Reference No. & Date.", `${n.orderNo} dt. ${orderDay}`], right: ["Other References", `Agent: ${n.createdByName}`] },
+        { h: 30, left: ["Buyer's Order No.", n.orderNo], right: ["Dated", orderDay] },
+        { h: 26, left: ["Transporter Mob.", n.header.transporterMobile ?? ""], right: ["Status", n.statusLabel] },
+        {
+          h: 30,
+          left: ["Dispatched through", n.header.transportName ?? ""],
+          right: ["Destination", n.header.destination ?? [n.header.buyerCity, n.header.buyerPincode].filter(Boolean).join(" - ")],
+        },
         { h: 0, left: ["Terms of Delivery", termsLine(n)], right: null },
       ];
       let ry = top;
@@ -270,9 +320,7 @@ export async function deliveryNotePdf(n: NoteDetail): Promise<Uint8Array> {
     }
 
     // ── Item table ──
-    const footerH = last ? 120 : 0;
-    const tableBottom = M + 16 + footerH;
-    const headH = 20;
+    const tableBottom = M + 16 + (last ? footerH : 0);
     page.drawRectangle({ x: L, y: tableBottom, width: R - L, height: tableTop - tableBottom, borderColor: INK, borderWidth: LINE });
     hline(page, L, R, tableTop - headH);
     for (const x of [cDesc, cGdn, cPer, cAlt, cQty]) vline(page, x, tableTop, last ? tableBottom + 0 : tableBottom);
@@ -290,11 +338,12 @@ export async function deliveryNotePdf(n: NoteDetail): Promise<Uint8Array> {
     for (const r of pageRows) {
       text(page, r.sl, cSl + 4, y, 8, f.reg);
       r.desc.forEach((ln, i) => text(page, ln, cDesc + 3, y - i * lineH, 8, f.bold));
+      text(page, fit(r.ordered, f.reg, 6.5, cGdn - cDesc - 6), cDesc + 3, y - r.desc.length * lineH + 1, 6.5, f.reg, GREY);
       text(page, fit(r.gdn, f.reg, 6.5, cPer - cGdn - 4), cGdn + 3, y, 6.5, f.reg);
       right(page, r.per, cAlt - 3, y, 7.5, f.reg);
       right(page, r.alt, cQty - 3, y, 7.5, f.bold);
       right(page, r.qty, R - 3, y, 7.5, f.bold);
-      y -= Math.max(1, r.desc.length) * lineH;
+      y -= rowH(r);
     }
 
     if (!last) right(page, "Continued on next page", R - 3, tableBottom + 4, 6.5, f.ital, GREY);
@@ -310,6 +359,7 @@ export async function deliveryNotePdf(n: NoteDetail): Promise<Uint8Array> {
       // Footer
       const fTop = tableBottom;
       right(page, "E. & O.E", R - 2, fTop - 9, 6.5, f.ital);
+      notes.forEach((ln, i) => text(page, ln, L + 4, fTop - 9 - i * 8, 6.5, f.reg));
       const sigTop = M + 70;
       page.drawRectangle({ x: L, y: M + 16, width: R - L, height: sigTop - (M + 16), borderColor: INK, borderWidth: LINE });
       vline(page, (L + R) / 2 + 20, sigTop, M + 16);
@@ -320,7 +370,7 @@ export async function deliveryNotePdf(n: NoteDetail): Promise<Uint8Array> {
       const approval = approvalLine(n);
       if (approval) {
         for (const [i, ln] of wrap(approval, f.reg, 6, (R - L) - 8).slice(0, 2).entries()) {
-          text(page, ln, L + 4, fTop - 9 - i * 7 - 8, 6, f.reg, GREY);
+          text(page, ln, L + 4, fTop - 9 - notes.length * 8 - i * 7 - 8, 6, f.reg, GREY);
         }
       }
     }
@@ -361,8 +411,8 @@ function titleUnit(u: string): string {
 function packingLine(n: NoteDetail): string {
   const p = n.header.packing;
   if (p === "BUNDLE") return n.header.bundles ? `${n.header.bundles} Bundle${n.header.bundles === 1 ? "" : "s"}` : "Bundle";
-  if (p === "LOOSE") return "Loose";
-  return "";
+  if (p === "OTHER") return n.header.packingOther ? `Other - ${n.header.packingOther}` : "Other";
+  return PACKING_LABEL[p] ?? p;
 }
 
 function billingLine(n: NoteDetail): string {
@@ -374,7 +424,12 @@ function billingLine(n: NoteDetail): string {
 }
 
 function termsLine(n: NoteDetail): string {
-  return [billingLine(n), packingLine(n) || (n.header.packing === "CARTON" ? "Cartons" : ""), n.header.priority === "URGENT" ? "Urgent" : ""]
+  return [
+    billingLine(n),
+    packingLine(n),
+    n.header.priority === "URGENT" ? "Urgent" : "",
+    n.header.handling && n.header.handling !== "NORMAL" ? HANDLING_LABEL[n.header.handling] : "",
+  ]
     .filter(Boolean)
     .join(" · ");
 }

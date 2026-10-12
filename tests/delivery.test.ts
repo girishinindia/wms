@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 
-import { fyOf, type NoteDetail } from "@/lib/delivery/ops";
+import { fyOf, headerProblem, type Header, type NoteDetail } from "@/lib/delivery/ops";
 import { deliveryNotePdf } from "@/lib/delivery/pdf";
 import { editNoteSchema, holdLineSchema, seriesSchema } from "@/lib/validation/api-delivery";
 
@@ -61,6 +61,9 @@ const note = (lines: number, status: NoteDetail["status"] = "PENDING"): NoteDeta
       buyerAddress: "Ambika commercial complex, raiya road, Rajkot\n360007", buyerGstin: "24ABCDE1234F1Z5",
       destination: "Rajkot", transportName: "Gujrat transport", paymentMode: "Account", billing: "WITH_BILL",
       billAmount: 19380, priority: "URGENT", packing: "BUNDLE", bundles: 2, instructions: "Fragile — glass items ₹ inside",
+      orderDate: "2026-10-10", buyerCity: "Rajkot", buyerState: "Gujarat", buyerPincode: "360007",
+      transporterMobile: "9898989898", transporterGstin: "TR-77", handling: "FRAGILE", packingOther: null,
+      deliveryInstructions: "Call before delivery", remarks: "Payment on delivery",
     },
     importer: { name: "Acme Imports", address: "Unit 4, Andheri East", gstin: null, mobile: "9800000010" },
     warehouseCode: "WH-0099", approvedByName: status === "APPROVED" ? "Importer Owner" : null,
@@ -68,11 +71,49 @@ const note = (lines: number, status: NoteDetail["status"] = "PENDING"): NoteDeta
     confirmNote: null, rejectedByName: null, rejectedAt: null, rejectReason: null, version: 1, editedAt: null,
     lineItems: Array.from({ length: lines }, (_, i) => ({
       key: `i${i}:12`, itemCode: `ITM-${1000 + i}`, description: `Kitchen tissue roll, 2 ply, long name number ${i + 1}`,
-      piecesPerCarton: 12, unitCode: "PCS", cartons: 2, pieces: 24,
+      piecesPerCarton: 12, unitCode: "PCS", cartons: 2, pieces: 24, orderPieces: 20,
     })),
     events: [{ action: "SUBMITTED", by: "Ravi Agent", at: "2026-10-11 21:10:09+00", remarks: null }],
     can: { approve: false, reject: false, confirmNeeded: false, edit: false },
   }) as unknown as NoteDetail;
+
+const good: Header = {
+  orderDate: "2026-10-10", clientId: 1, buyerName: "True Enterprise", buyerMobile: "8866864545", buyerAddress: "Raiya road",
+  buyerCity: "Rajkot", buyerState: "Gujarat", buyerCityId: null, buyerPincode: "360007", buyerGstin: null, destination: null,
+  transporterId: null, transportName: "Gujarat Transport", transporterMobile: "9898989898", transporterGstin: null,
+  paymentMode: "UPI", billing: "WITHOUT_BILL", billAmount: null, priority: "NORMAL", packing: "CARTON", packingOther: null,
+  bundles: null, handling: "NORMAL", instructions: null, deliveryInstructions: null, remarks: null,
+};
+
+describe("required fields of a delivery note", () => {
+  const today = "2026-10-12";
+  it("a complete note passes", () => {
+    expect(headerProblem(good, today)).toBeNull();
+  });
+  it("names every missing required field", () => {
+    const empty = { ...good, orderDate: null, buyerCity: null, buyerState: null, buyerPincode: null, transporterMobile: null, paymentMode: null, billing: null };
+    expect(Object.keys(headerProblem(empty, today) ?? {}).sort()).toEqual(
+      ["billing", "buyerCity", "buyerPincode", "buyerState", "orderDate", "paymentMode", "transporterMobile"].sort(),
+    );
+  });
+  it("an order date cannot be in the future", () => {
+    expect(headerProblem({ ...good, orderDate: "2026-10-13" }, today)?.orderDate).toMatch(/future/);
+  });
+  it("mobiles are 10 digits, the PIN 6", () => {
+    const p = headerProblem({ ...good, buyerMobile: "12345", transporterMobile: "98989", buyerPincode: "36000" }, today)!;
+    expect(p.buyerMobile).toMatch(/10-digit/);
+    expect(p.transporterMobile).toMatch(/10-digit/);
+    expect(p.buyerPincode).toMatch(/6 digits/);
+    expect(headerProblem({ ...good, buyerMobile: "+91 88668 64545" }, today)).toBeNull();
+  });
+  it("with bill needs the amount; bundles need a count; other packing says what", () => {
+    expect(headerProblem({ ...good, billing: "WITH_BILL" }, today)?.billAmount).toBeTruthy();
+    expect(headerProblem({ ...good, billing: "WITH_BILL", billAmount: 19380 }, today)).toBeNull();
+    expect(headerProblem({ ...good, packing: "BUNDLE" }, today)?.bundles).toBeTruthy();
+    expect(headerProblem({ ...good, packing: "OTHER" }, today)?.packingOther).toBeTruthy();
+    expect(headerProblem({ ...good, packing: "PACKAGE" }, today)).toBeNull();
+  });
+});
 
 describe("delivery note PDF", () => {
   it("is an A5 PDF", async () => {

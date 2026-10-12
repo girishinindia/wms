@@ -10,7 +10,7 @@ import { api } from "@/lib/api/client";
 import type { Client, Draft, Header, NoteSummary, StockRow } from "@/lib/delivery/ops";
 
 import HeaderFields, { label } from "./HeaderFields";
-import StockPicker, { lineKey } from "./StockPicker";
+import StockPicker, { lineKey, type Chosen } from "./StockPicker";
 
 const n = (v: number) => v.toLocaleString("en-IN");
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -114,17 +114,34 @@ export default function DeliveryNoteForm() {
     setDraft(r.data.draft);
     setHeader(r.data.draft.header);
     setErrors((e) => {
-      const { buyerName: _a, buyerMobile: _b, buyerAddress: _c, ...rest } = e;
-      void _a; void _b; void _c;
+      const rest = { ...e };
+      for (const k of ["buyerName", "buyerMobile", "buyerAddress", "buyerCity", "buyerState", "buyerPincode", "buyerGstin"]) delete rest[k];
       return rest;
     });
   };
 
-  const hold = async (row: StockRow, cartons: number) => {
+  // Free counts change as other agents hold and let go: look again every
+  // 20 seconds, and when the window comes back into view.
+  useEffect(() => {
+    if (!draft || draft.status !== "DRAFT") return;
+    const again = () => {
+      if (document.visibilityState === "visible") void loadStock(draft.id);
+    };
+    const t = setInterval(again, 20_000);
+    window.addEventListener("focus", again);
+    document.addEventListener("visibilitychange", again);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("focus", again);
+      document.removeEventListener("visibilitychange", again);
+    };
+  }, [draft?.id, draft?.status, loadStock]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const hold = async (row: StockRow, cartons: number, orderPieces: number | null) => {
     if (!draft) return { ok: false, message: "Not ready" };
     const r = await api<{ draft: Draft; ok: boolean; message?: string }>(`/delivery/draft/${draft.id}/lines`, {
       method: "PUT",
-      body: { warehouseId: row.warehouseId, key: row.key, cartons },
+      body: { warehouseId: row.warehouseId, key: row.key, cartons, orderPieces },
     });
     if (!r.ok) return { ok: false, message: r.error.message };
     take({ ...r.data.draft, header: header ?? r.data.draft.header });
@@ -133,18 +150,19 @@ export default function DeliveryNoteForm() {
   };
 
   const chosen = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const l of draft?.lines ?? []) m[lineKey(l.warehouseId, l.key)] = l.cartons;
+    const m: Chosen = {};
+    for (const l of draft?.lines ?? []) m[lineKey(l.warehouseId, l.key)] = { cartons: l.cartons, orderPieces: l.orderPieces };
     return m;
   }, [draft?.lines]);
 
   const byWarehouse = useMemo(() => {
-    const m = new Map<string, { items: number; cartons: number; pieces: number }>();
+    const m = new Map<string, { items: number; cartons: number; pieces: number; ordered: number }>();
     for (const l of draft?.lines ?? []) {
-      const x = m.get(l.warehouseName) ?? { items: 0, cartons: 0, pieces: 0 };
+      const x = m.get(l.warehouseName) ?? { items: 0, cartons: 0, pieces: 0, ordered: 0 };
       x.items += 1;
       x.cartons += l.cartons;
       x.pieces += l.cartons * l.piecesPerCarton;
+      x.ordered += l.orderPieces;
       m.set(l.warehouseName, x);
     }
     return [...m.entries()];
@@ -259,7 +277,7 @@ export default function DeliveryNoteForm() {
                   Delivery note {i + 1} · <b className="text-verdigris-50">{w}</b>
                 </span>
                 <span className="font-mono">
-                  {x.items} item{x.items === 1 ? "" : "s"} · {n(x.cartons)} ctn · {n(x.pieces)} pcs
+                  {x.items} item{x.items === 1 ? "" : "s"} · ordered {n(x.ordered)} pcs · {n(x.cartons)} ctn · {n(x.pieces)} pcs
                 </span>
               </li>
             ))}

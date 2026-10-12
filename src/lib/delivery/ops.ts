@@ -10,6 +10,10 @@ import { normalizeMobile } from "@/lib/normalize";
 import { announce } from "@/lib/notify/announce";
 import { isAgentOnly } from "@/lib/sales-agents/scope";
 
+import { HANDLING, PACKING } from "./labels";
+
+export { HANDLING, HANDLING_LABEL, PACKING, PACKING_LABEL } from "./labels";
+
 /**
  * Delivery notes (DN / DO): a sales agent — or the importer — sends the
  * importer's goods to a buyer.
@@ -209,8 +213,31 @@ export type Client = {
   address: string | null;
   gstin: string | null;
   city: string | null;
+  cityId: number | null;
+  state: string | null;
   pincode: string | null;
 };
+
+const CLIENT_SELECT = sql`
+  select c.id, c.name, c.contact_mobile::text as mobile, c.address, c.gstin::text as gstin, c.city_id, ci.name as city,
+         st.name as state, c.pincode::text as pincode
+    from wms.importer_client c
+    left join wms.city ci on ci.id = c.city_id
+    left join wms.state st on st.id = ci.state_id`;
+
+function clientOf(r: Record<string, unknown>): Client {
+  return {
+    id: Number(r.id),
+    name: String(r.name),
+    mobile: (r.mobile as string | null)?.trim() ?? null,
+    address: (r.address as string | null) ?? null,
+    gstin: (r.gstin as string | null)?.trim() ?? null,
+    city: (r.city as string | null) ?? null,
+    cityId: num(r.city_id),
+    state: (r.state as string | null) ?? null,
+    pincode: (r.pincode as string | null)?.trim() ?? null,
+  };
+}
 
 /** The importer's clients. An agent with clients assigned sees those; with none assigned, all. */
 export async function listClients(actor: Actor, q: string): Promise<Client[]> {
@@ -230,25 +257,23 @@ export async function listClients(actor: Actor, q: string): Promise<Client[]> {
   }
   const like = `%${q.trim().toLowerCase()}%`;
   const rows = await db.execute<Record<string, unknown>>(sql`
-    select c.id, c.name, c.contact_mobile::text as mobile, c.address, c.gstin::text as gstin, ci.name as city, c.pincode::text as pincode
-      from wms.importer_client c left join wms.city ci on ci.id = c.city_id
+    ${CLIENT_SELECT}
      where c.importer_id = ${importerId} and c.deleted_at is null and c.status = 'ACTIVE' and ${narrow}
        and (${q.trim() === ""} or lower(c.name) like ${like} or c.contact_mobile::text like ${like})
      order by c.name
      limit 50
   `);
-  return rows.map((r) => ({
-    id: Number(r.id),
-    name: String(r.name),
-    mobile: (r.mobile as string | null)?.trim() ?? null,
-    address: (r.address as string | null) ?? null,
-    gstin: (r.gstin as string | null)?.trim() ?? null,
-    city: (r.city as string | null) ?? null,
-    pincode: (r.pincode as string | null)?.trim() ?? null,
-  }));
+  return rows.map(clientOf);
 }
 
-export type ClientInput = { name: string; mobile: string; address?: string | null; gstin?: string | null; pincode?: string | null };
+export type ClientInput = {
+  name: string;
+  mobile: string;
+  address?: string | null;
+  gstin?: string | null;
+  pincode?: string | null;
+  cityId?: number | null;
+};
 
 export async function createClient(actor: Actor, input: ClientInput, meta: Meta): Promise<Client> {
   const importerId = creatorImporter(actor);
@@ -266,14 +291,22 @@ export async function createClient(actor: Actor, input: ClientInput, meta: Meta)
   if (pincode && !/^[1-9][0-9]{5}$/.test(pincode)) {
     throw new InwardError("VALIDATION_FAILED", "Pincode is 6 digits", { pincode: "Pincode is 6 digits" });
   }
+  let cityId: number | null = null;
+  if (input.cityId) {
+    const city = await getDb().execute<{ id: number }>(sql`
+      select id from wms.city where id = ${input.cityId} and deleted_at is null and is_active
+    `);
+    if (!city[0]) throw new InwardError("VALIDATION_FAILED", "Choose the city from the list", { cityId: "Choose the city from the list" });
+    cityId = Number(city[0].id);
+  }
   const dup = await getDb().execute<{ id: number }>(sql`
     select id from wms.importer_client
      where importer_id = ${importerId} and deleted_at is null and contact_mobile = ${mobile} and lower(name) = lower(${name})
   `);
   if (dup[0]) throw new InwardError("CONFLICT", `${name} is already a client`);
   const rows = await getDb().execute<{ id: number }>(sql`
-    insert into wms.importer_client (importer_id, name, contact_mobile, address, gstin, pincode, created_by, updated_by)
-    values (${importerId}, ${name}, ${mobile}, ${clean(input.address, 600)}, ${gstin}, ${pincode},
+    insert into wms.importer_client (importer_id, name, contact_mobile, address, gstin, city_id, pincode, created_by, updated_by)
+    values (${importerId}, ${name}, ${mobile}, ${clean(input.address, 600)}, ${gstin}, ${cityId}, ${pincode},
             ${actor.session.userId}, ${actor.session.userId})
     returning id
   `);
@@ -287,27 +320,115 @@ export async function createClient(actor: Actor, input: ClientInput, meta: Meta)
     after: { importerId, name, mobile },
     ...auditBase(actor, meta),
   });
-  return { id, name, mobile, address: clean(input.address, 600), gstin, city: null, pincode };
+  const saved = await getDb().execute<Record<string, unknown>>(sql`${CLIENT_SELECT} where c.id = ${id}`);
+  return clientOf(saved[0]!);
+}
+
+// ── Transporters (the master list), to pick on a note ─────────────
+
+export type TransporterPick = { id: number; code: string; name: string; mobile: string | null; gstin: string | null };
+
+export async function listTransporters(actor: Actor, q: string): Promise<TransporterPick[]> {
+  creatorImporter(actor);
+  const like = `%${q.trim().toLowerCase()}%`;
+  const rows = await getDb().execute<Record<string, unknown>>(sql`
+    select t.id, t.code, t.name, t.contact_mobile::text as mobile, t.gstin::text as gstin
+      from wms.transporter t
+     where t.deleted_at is null and t.status = 'ACTIVE' and not coalesce(t.blacklisted, false)
+       and (${q.trim() === ""} or lower(t.name) like ${like} or lower(coalesce(t.code, '')) like ${like}
+            or coalesce(t.contact_mobile::text, '') like ${like})
+     order by t.name
+     limit 30
+  `);
+  return rows.map((r) => ({
+    id: Number(r.id),
+    code: String(r.code ?? ""),
+    name: String(r.name),
+    mobile: (r.mobile as string | null)?.trim() ?? null,
+    gstin: (r.gstin as string | null)?.trim() ?? null,
+  }));
 }
 
 // ── The draft ─────────────────────────────────────────────────────
 
+
 export type Header = {
+  /** The day the customer gave the order (yyyy-mm-dd). */
+  orderDate: string | null;
   clientId: number | null;
   buyerName: string | null;
   buyerMobile: string | null;
   buyerAddress: string | null;
+  buyerCity: string | null;
+  buyerState: string | null;
+  buyerCityId: number | null;
+  buyerPincode: string | null;
   buyerGstin: string | null;
   destination: string | null;
+  transporterId: number | null;
   transportName: string | null;
+  transporterMobile: string | null;
+  transporterGstin: string | null;
   paymentMode: string | null;
   billing: "WITH_BILL" | "WITHOUT_BILL" | null;
   billAmount: number | null;
   priority: "NORMAL" | "URGENT";
-  packing: "CARTON" | "BUNDLE" | "LOOSE";
+  packing: (typeof PACKING)[number];
+  packingOther: string | null;
   bundles: number | null;
+  handling: (typeof HANDLING)[number];
+  /** Special packing instructions. */
   instructions: string | null;
+  deliveryInstructions: string | null;
+  remarks: string | null;
 };
+
+/** Every header field once: its column and how it is stored. The draft,
+ *  the note, the copy on "start again" and the save all read this list. */
+type Field = { key: keyof Header; col: string; kind: "text" | "num" | "date" | "enum"; max?: number; upper?: boolean; def?: string };
+const FIELDS: Field[] = [
+  { key: "orderDate", col: "order_date", kind: "date" },
+  { key: "clientId", col: "client_id", kind: "num" },
+  { key: "buyerName", col: "buyer_name", kind: "text", max: 120 },
+  { key: "buyerMobile", col: "buyer_mobile", kind: "text", max: 20 },
+  { key: "buyerAddress", col: "buyer_address", kind: "text", max: 600 },
+  { key: "buyerCity", col: "buyer_city", kind: "text", max: 80 },
+  { key: "buyerState", col: "buyer_state", kind: "text", max: 80 },
+  { key: "buyerCityId", col: "buyer_city_id", kind: "num" },
+  { key: "buyerPincode", col: "buyer_pincode", kind: "text", max: 6 },
+  { key: "buyerGstin", col: "buyer_gstin", kind: "text", max: 15, upper: true },
+  { key: "destination", col: "destination", kind: "text", max: 120 },
+  { key: "transporterId", col: "transporter_id", kind: "num" },
+  { key: "transportName", col: "transport_name", kind: "text", max: 120 },
+  { key: "transporterMobile", col: "transporter_mobile", kind: "text", max: 20 },
+  { key: "transporterGstin", col: "transporter_gstin", kind: "text", max: 20, upper: true },
+  { key: "paymentMode", col: "payment_mode", kind: "text", max: 40 },
+  { key: "billing", col: "billing", kind: "enum" },
+  { key: "billAmount", col: "bill_amount", kind: "num" },
+  { key: "priority", col: "priority", kind: "enum", def: "NORMAL" },
+  { key: "packing", col: "packing", kind: "enum", def: "CARTON" },
+  { key: "packingOther", col: "packing_other", kind: "text", max: 80 },
+  { key: "bundles", col: "bundles", kind: "num" },
+  { key: "handling", col: "handling", kind: "enum", def: "NORMAL" },
+  { key: "instructions", col: "instructions", kind: "text", max: 1000 },
+  { key: "deliveryInstructions", col: "delivery_instructions", kind: "text", max: 1000 },
+  { key: "remarks", col: "remarks", kind: "text", max: 1000 },
+];
+
+const HEADER_COLUMNS = sql.raw(
+  FIELDS.map((f) => (f.kind === "date" ? `o.${f.col}::text as ${f.col}_text` : `o.${f.col}`)).join(", "),
+);
+
+function headerOf(r: Record<string, unknown>): Header {
+  const h: Record<string, unknown> = {};
+  for (const f of FIELDS) {
+    const v = f.kind === "date" ? r[`${f.col}_text`] : r[f.col];
+    if (f.kind === "num") h[f.key] = num(v);
+    else if (f.def) h[f.key] = (v as string | null) ?? f.def;
+    else h[f.key] = typeof v === "string" ? v.trim() || null : null;
+  }
+  return h as Header;
+}
 
 export type DraftLine = {
   warehouseId: number;
@@ -318,6 +439,8 @@ export type DraftLine = {
   piecesPerCarton: number;
   unitCode: string | null;
   cartons: number;
+  /** Pieces the customer ordered. */
+  orderPieces: number;
 };
 
 export type Draft = {
@@ -330,28 +453,6 @@ export type Draft = {
   header: Header;
   lines: DraftLine[];
 };
-
-const HEADER_COLUMNS = sql`o.client_id, o.buyer_name, o.buyer_mobile, o.buyer_address, o.buyer_gstin, o.destination,
-  o.transport_name, o.payment_mode, o.billing, o.bill_amount, o.priority, o.packing, o.bundles, o.instructions`;
-
-function headerOf(r: Record<string, unknown>): Header {
-  return {
-    clientId: num(r.client_id),
-    buyerName: (r.buyer_name as string | null) ?? null,
-    buyerMobile: (r.buyer_mobile as string | null) ?? null,
-    buyerAddress: (r.buyer_address as string | null) ?? null,
-    buyerGstin: (r.buyer_gstin as string | null) ?? null,
-    destination: (r.destination as string | null) ?? null,
-    transportName: (r.transport_name as string | null) ?? null,
-    paymentMode: (r.payment_mode as string | null) ?? null,
-    billing: (r.billing as Header["billing"]) ?? null,
-    billAmount: num(r.bill_amount),
-    priority: ((r.priority as string) ?? "NORMAL") as Header["priority"],
-    packing: ((r.packing as string) ?? "CARTON") as Header["packing"],
-    bundles: num(r.bundles),
-    instructions: (r.instructions as string | null) ?? null,
-  };
-}
 
 async function loadDraft(id: number): Promise<Draft | null> {
   const db = getDb();
@@ -373,7 +474,7 @@ async function loadDraft(id: number): Promise<Draft | null> {
   }
   const lines = await db.execute<Record<string, unknown>>(sql`
     select l.warehouse_id, w.name as warehouse_name, l.stock_key, l.item_code, l.description, l.pieces_per_carton,
-           l.unit_code, l.cartons
+           l.unit_code, l.cartons, l.order_pieces
       from wms.delivery_line l join wms.warehouse w on w.id = l.warehouse_id
      where l.order_id = ${id} and l.delivery_note_id is null
      order by w.name, l.id
@@ -393,6 +494,7 @@ async function loadDraft(id: number): Promise<Draft | null> {
       piecesPerCarton: Number(l.pieces_per_carton),
       unitCode: (l.unit_code as string | null) ?? null,
       cartons: Number(l.cartons),
+      orderPieces: num(l.order_pieces) ?? Number(l.cartons) * Number(l.pieces_per_carton),
     })),
   };
 }
@@ -429,13 +531,21 @@ export async function startDraft(actor: Actor, copyFrom: number | null): Promise
     update wms.delivery_order set status = 'CANCELLED', updated_at = now()
      where created_by = ${actor.session.userId} and status = 'DRAFT'
   `);
+  const cols = sql.raw(FIELDS.map((f) => f.col).join(", "));
+  const { today } = fyOf();
+  const copied = sql.join(
+    FIELDS.map((f) =>
+      f.key === "orderDate"
+        ? sql`coalesce(o.order_date, ${today}::date)`
+        : f.def
+          ? sql`coalesce(o.${sql.raw(f.col)}, ${f.def})`
+          : sql`o.${sql.raw(f.col)}`,
+    ),
+    sql`, `,
+  );
   const rows = await db.execute<{ id: number }>(sql`
-    insert into wms.delivery_order (importer_id, created_by, client_id, buyer_name, buyer_mobile, buyer_address, buyer_gstin,
-                                    destination, transport_name, payment_mode, billing, bill_amount, priority, packing,
-                                    bundles, instructions)
-    select ${importerId}, ${actor.session.userId}, o.client_id, o.buyer_name, o.buyer_mobile, o.buyer_address, o.buyer_gstin,
-           o.destination, o.transport_name, o.payment_mode, o.billing, o.bill_amount, coalesce(o.priority, 'NORMAL'),
-           coalesce(o.packing, 'CARTON'), o.bundles, o.instructions
+    insert into wms.delivery_order (importer_id, created_by, ${cols})
+    select ${importerId}, ${actor.session.userId}, ${copied}
       from (select 1) one
       left join wms.delivery_order o
         on o.id = ${copyFrom} and o.created_by = ${actor.session.userId} and o.importer_id = ${importerId}
@@ -444,59 +554,61 @@ export async function startDraft(actor: Actor, copyFrom: number | null): Promise
   return (await loadDraft(Number(rows[0]!.id)))!;
 }
 
-export type HeaderInput = Partial<{
-  clientId: number | null;
-  buyerName: string | null;
-  buyerMobile: string | null;
-  buyerAddress: string | null;
-  buyerGstin: string | null;
-  destination: string | null;
-  transportName: string | null;
-  paymentMode: string | null;
-  billing: "WITH_BILL" | "WITHOUT_BILL" | null;
-  billAmount: number | null;
-  priority: "NORMAL" | "URGENT";
-  packing: "CARTON" | "BUNDLE" | "LOOSE";
-  bundles: number | null;
-  instructions: string | null;
-}>;
+export type HeaderInput = Partial<Header>;
 
-/** The column assignments for the header fields that were sent. */
+/** The column assignments for the header fields that were sent. Picking a
+ *  client or a transporter fills their details; anything typed with it wins. */
 async function headerSets(importerId: number, input: HeaderInput): Promise<SQL[]> {
   const sets: SQL[] = [];
-  if (input.clientId !== undefined) {
-    if (input.clientId === null) {
-      sets.push(sql`client_id = null`);
+  const given = (k: keyof Header) => input[k] !== undefined;
+  if (input.clientId !== undefined && input.clientId !== null) {
+    const c = await getDb().execute<Record<string, unknown>>(sql`
+      ${CLIENT_SELECT} where c.id = ${input.clientId} and c.importer_id = ${importerId} and c.deleted_at is null
+    `);
+    if (!c[0]) throw new InwardError("VALIDATION_FAILED", "Choose one of your clients", { clientId: "Choose one of your clients" });
+    const row = clientOf(c[0]);
+    const fill: Partial<Header> = {
+      buyerName: row.name,
+      buyerMobile: row.mobile,
+      buyerAddress: row.address,
+      buyerCity: row.city,
+      buyerState: row.state,
+      buyerCityId: row.cityId,
+      buyerPincode: row.pincode,
+      buyerGstin: row.gstin,
+    };
+    for (const [k, v] of Object.entries(fill)) if (!given(k as keyof Header)) (input as Record<string, unknown>)[k] = v;
+  }
+  if (input.transporterId !== undefined && input.transporterId !== null) {
+    const t = await getDb().execute<Record<string, unknown>>(sql`
+      select t.name, t.contact_mobile::text as mobile, t.gstin::text as gstin
+        from wms.transporter t where t.id = ${input.transporterId} and t.deleted_at is null and t.status = 'ACTIVE'
+    `);
+    if (!t[0]) {
+      throw new InwardError("VALIDATION_FAILED", "Choose a transporter from the list", { transportName: "Choose a transporter from the list" });
+    }
+    const fill: Partial<Header> = {
+      transportName: String(t[0].name),
+      transporterMobile: (t[0].mobile as string | null)?.trim() ?? null,
+      transporterGstin: (t[0].gstin as string | null)?.trim() ?? null,
+    };
+    for (const [k, v] of Object.entries(fill)) if (!given(k as keyof Header)) (input as Record<string, unknown>)[k] = v;
+  }
+  for (const f of FIELDS) {
+    const v = input[f.key];
+    if (v === undefined) continue;
+    const col = sql.raw(f.col);
+    if (f.kind === "text") {
+      const t = clean(v, f.max ?? 500);
+      sets.push(sql`${col} = ${f.upper && t ? t.toUpperCase() : t}`);
+    } else if (f.kind === "date") {
+      sets.push(sql`${col} = ${v === null ? null : String(v)}::date`);
+    } else if (f.def) {
+      sets.push(sql`${col} = ${v ?? f.def}`);
     } else {
-      const c = await getDb().execute<Record<string, unknown>>(sql`
-        select c.id, c.name, c.contact_mobile::text as mobile, c.address, c.gstin::text as gstin, ci.name as city, c.pincode::text as pincode
-          from wms.importer_client c left join wms.city ci on ci.id = c.city_id
-         where c.id = ${input.clientId} and c.importer_id = ${importerId} and c.deleted_at is null
-      `);
-      const row = c[0];
-      if (!row) throw new InwardError("VALIDATION_FAILED", "Choose one of your clients", { clientId: "Choose one of your clients" });
-      // Picking a client fills the buyer block; anything typed after can still change it.
-      const address = [row.address, [row.city, row.pincode].filter(Boolean).join(" - ")].filter((s) => s && String(s).trim()).join("\n");
-      sets.push(sql`client_id = ${Number(row.id)}`);
-      if (input.buyerName === undefined) sets.push(sql`buyer_name = ${String(row.name)}`);
-      if (input.buyerMobile === undefined) sets.push(sql`buyer_mobile = ${(row.mobile as string | null)?.trim() ?? null}`);
-      if (input.buyerAddress === undefined) sets.push(sql`buyer_address = ${address || null}`);
-      if (input.buyerGstin === undefined) sets.push(sql`buyer_gstin = ${(row.gstin as string | null)?.trim() ?? null}`);
+      sets.push(sql`${col} = ${v as string | number | null}`);
     }
   }
-  if (input.buyerName !== undefined) sets.push(sql`buyer_name = ${clean(input.buyerName, 120)}`);
-  if (input.buyerMobile !== undefined) sets.push(sql`buyer_mobile = ${clean(input.buyerMobile, 40)}`);
-  if (input.buyerAddress !== undefined) sets.push(sql`buyer_address = ${clean(input.buyerAddress, 600)}`);
-  if (input.buyerGstin !== undefined) sets.push(sql`buyer_gstin = ${clean(input.buyerGstin, 15)?.toUpperCase() ?? null}`);
-  if (input.destination !== undefined) sets.push(sql`destination = ${clean(input.destination, 120)}`);
-  if (input.transportName !== undefined) sets.push(sql`transport_name = ${clean(input.transportName, 120)}`);
-  if (input.paymentMode !== undefined) sets.push(sql`payment_mode = ${clean(input.paymentMode, 40)}`);
-  if (input.billing !== undefined) sets.push(sql`billing = ${input.billing}`);
-  if (input.billAmount !== undefined) sets.push(sql`bill_amount = ${input.billAmount}`);
-  if (input.priority !== undefined) sets.push(sql`priority = ${input.priority}`);
-  if (input.packing !== undefined) sets.push(sql`packing = ${input.packing}`);
-  if (input.bundles !== undefined) sets.push(sql`bundles = ${input.bundles}`);
-  if (input.instructions !== undefined) sets.push(sql`instructions = ${clean(input.instructions, 1000)}`);
   return sets;
 }
 
@@ -516,7 +628,7 @@ export async function saveDraftHeader(actor: Actor, id: number, input: HeaderInp
 export async function holdLine(
   actor: Actor,
   id: number,
-  input: { warehouseId: number; key: string; cartons: number },
+  input: { warehouseId: number; key: string; cartons: number; orderPieces?: number | null },
 ): Promise<{ draft: Draft; ok: boolean; message?: string; available?: number }> {
   const draft = await ownDraft(actor, id);
   if (draft.status !== "DRAFT") {
@@ -526,19 +638,27 @@ export async function holdLine(
   if (!Number.isFinite(cartons) || cartons < 0 || cartons > 100000) {
     throw new InwardError("VALIDATION_FAILED", "Enter the number of cartons");
   }
+  const pieces = input.orderPieces == null ? null : Math.floor(input.orderPieces);
+  if (pieces !== null && (!Number.isFinite(pieces) || pieces < 1)) {
+    throw new InwardError("VALIDATION_FAILED", "Enter the pieces ordered");
+  }
   const rows = await getDb().execute<{ r: { ok: boolean; reason?: string; free?: number } }>(sql`
-    select wms.dn_hold(${id}, ${input.warehouseId}, ${input.key}, ${cartons}, ${HOLD_SECONDS}) as r
+    select wms.dn_hold(${id}, ${input.warehouseId}, ${input.key}, ${cartons}, ${HOLD_SECONDS}, ${cartons === 0 ? null : pieces}::int) as r
   `);
   const r = rows[0]!.r;
   const fresh = (await loadDraft(id))!;
   if (r.ok) return { draft: fresh, ok: true };
   if (r.reason === "EXPIRED") return { draft: fresh, ok: false, message: "Time ran out — the cartons were put back. Start again." };
   const free = Number(r.free ?? 0);
+  const ppc = Number(input.key.split(":")[1] ?? 0);
   return {
     draft: fresh,
     ok: false,
     available: free,
-    message: free === 0 ? "No cartons of this item are free right now" : `Only ${free} carton${free === 1 ? "" : "s"} free right now`,
+    message:
+      free === 0
+        ? "No cartons of this item are free right now"
+        : `Only ${free} carton${free === 1 ? "" : "s"}${ppc ? ` (${free * ppc} pcs)` : ""} free right now`,
   };
 }
 
@@ -558,14 +678,31 @@ async function trusted(actor: Actor, importerId: number): Promise<boolean> {
   return Boolean(rows[0]?.auto_approve);
 }
 
-function headerProblem(h: Header): Record<string, string> | null {
+const MOBILE = /^[6-9][0-9]{9}$/;
+const GSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+
+/** What is missing or wrong in a header — the same rules for a new note and a change. */
+export function headerProblem(h: Header, today: string = fyOf().today): Record<string, string> | null {
   const f: Record<string, string> = {};
+  if (!h.orderDate || !/^\d{4}-\d{2}-\d{2}$/.test(h.orderDate)) f.orderDate = "Enter the order date";
+  else if (h.orderDate > today) f.orderDate = "The order date cannot be in the future";
   if (!h.buyerName?.trim()) f.buyerName = "Choose or enter the buyer";
   if (!h.buyerMobile?.trim()) f.buyerMobile = "Enter the buyer's mobile";
+  else if (!MOBILE.test(normalizeMobile(h.buyerMobile))) f.buyerMobile = "Enter a 10-digit mobile number";
   if (!h.buyerAddress?.trim()) f.buyerAddress = "Enter the delivery address";
-  if (!h.transportName?.trim()) f.transportName = "Enter the transport";
+  if (!h.buyerCity?.trim()) f.buyerCity = "Enter the city";
+  if (!h.buyerState?.trim()) f.buyerState = "Choose the state";
+  if (!h.buyerPincode?.trim()) f.buyerPincode = "Enter the PIN code";
+  else if (!/^[1-9][0-9]{5}$/.test(h.buyerPincode.trim())) f.buyerPincode = "PIN code is 6 digits";
+  if (h.buyerGstin && !GSTIN.test(h.buyerGstin.trim().toUpperCase())) f.buyerGstin = "That GSTIN does not look right";
+  if (!h.transportName?.trim()) f.transportName = "Enter the transporter";
+  if (!h.transporterMobile?.trim()) f.transporterMobile = "Enter the transporter's mobile";
+  else if (!MOBILE.test(normalizeMobile(h.transporterMobile))) f.transporterMobile = "Enter a 10-digit mobile number";
   if (!h.paymentMode?.trim()) f.paymentMode = "Choose the payment mode";
   if (!h.billing) f.billing = "With bill or without bill?";
+  else if (h.billing === "WITH_BILL" && !(Number(h.billAmount) > 0)) f.billAmount = "Enter the bill amount";
+  if (h.packing === "BUNDLE" && !(Number(h.bundles) > 0)) f.bundles = "Enter the number of bundles";
+  if (h.packing === "OTHER" && !h.packingOther?.trim()) f.packingOther = "Say how it is packed";
   return Object.keys(f).length ? f : null;
 }
 
@@ -723,6 +860,8 @@ export type NoteLine = {
   unitCode: string | null;
   cartons: number;
   pieces: number;
+  /** Pieces the customer ordered (pieces sent are cartons × per carton). */
+  orderPieces: number;
 };
 
 export type NoteEvent = { action: string; by: string | null; at: string; remarks: string | null };
@@ -748,7 +887,7 @@ export type NoteDetail = NoteSummary & {
 
 async function rawNote(id: number) {
   const rows = await getDb().execute<Record<string, unknown>>(sql`
-    select n.*, n.dn_date::text as dn_date_text, n.approved_at::text as approved_at_text, n.rejected_at::text as rejected_at_text,
+    select n.*, n.order_date::text as order_date_text, n.dn_date::text as dn_date_text, n.approved_at::text as approved_at_text, n.rejected_at::text as rejected_at_text,
            n.edited_at::text as edited_at_text, n.created_at::text as created_at_text
       from wms.delivery_note n where n.id = ${id}
   `);
@@ -795,7 +934,7 @@ export async function getNote(scope: DnScope, actor: Actor, id: number): Promise
   `);
   const x = extra[0]!;
   const lines = await db.execute<Record<string, unknown>>(sql`
-    select stock_key, item_code, description, pieces_per_carton, unit_code, cartons
+    select stock_key, item_code, description, pieces_per_carton, unit_code, cartons, order_pieces
       from wms.delivery_line where delivery_note_id = ${id} order by id
   `);
   const events = await db.execute<Record<string, unknown>>(sql`
@@ -840,6 +979,7 @@ export async function getNote(scope: DnScope, actor: Actor, id: number): Promise
       unitCode: (l.unit_code as string | null) ?? null,
       cartons: Number(l.cartons),
       pieces: Number(l.cartons) * Number(l.pieces_per_carton),
+      orderPieces: num(l.order_pieces) ?? Number(l.cartons) * Number(l.pieces_per_carton),
     })),
     events: events.map((e) => ({
       action: String(e.action),
@@ -956,7 +1096,7 @@ export async function rejectNote(
   return after;
 }
 
-export type EditInput = HeaderInput & { lines: { key: string; cartons: number }[] };
+export type EditInput = HeaderInput & { lines: { key: string; cartons: number; orderPieces?: number | null }[] };
 
 /** Change a pending or approved note. The agent's change needs approval
  *  again (a trusted agent's is approved again); the importer's is approval. */
@@ -970,14 +1110,17 @@ export async function editNote(scope: DnScope, actor: Actor, id: number, input: 
         : "Only the sales agent who made it, or the importer, can change it.",
     );
   }
-  const lines = input.lines.filter((l) => l.cartons > 0).map((l) => ({ key: l.key, cartons: Math.floor(l.cartons) }));
+  const lines = input.lines
+    .filter((l) => l.cartons > 0)
+    .map((l) => ({ key: l.key, cartons: Math.floor(l.cartons), orderPieces: l.orderPieces ? Math.floor(l.orderPieces) : null }));
   if (lines.length === 0) throw new InwardError("VALIDATION_FAILED", "Keep at least one item");
-  // The header as it will be — checked before anything is saved.
+  // The header as it will be — checked before anything is saved. Picking a
+  // client or transporter fills `input` with their details first.
+  const sets = await headerSets(before.importerId, input);
   const merged: Header = { ...before.header };
   for (const [k, v] of Object.entries(input)) {
-    if (k !== "lines" && k !== "clientId" && v !== undefined) (merged as Record<string, unknown>)[k] = v;
+    if (k !== "lines" && v !== undefined) (merged as Record<string, unknown>)[k] = v;
   }
-  if (input.clientId) merged.buyerName = merged.buyerName || "client";
   const problem = headerProblem(merged);
   if (problem) throw new InwardError("VALIDATION_FAILED", Object.values(problem)[0]!, problem);
   const db = getDb();
@@ -1001,7 +1144,6 @@ export async function editNote(scope: DnScope, actor: Actor, id: number, input: 
   const auto = !owner && (await trusted(actor, importerId));
   const status = owner || auto ? "APPROVED" : "PENDING";
   const kind = owner ? "IMPORTER_EDIT" : auto ? "AUTO" : null;
-  const sets = await headerSets(importerId, input);
   await db.execute(sql`
     update wms.delivery_note
        set ${sets.length ? sql`${sql.join(sets, sql`, `)},` : sql``}
