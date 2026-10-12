@@ -4,6 +4,7 @@ import DeliveryNoteDetail from "@/components/admin/delivery/DeliveryNoteDetail";
 import { Denied } from "@/components/admin/ui";
 import { pageGuard } from "@/lib/auth/guard";
 import { dnScope, getNote } from "@/lib/delivery/ops";
+import { canSeeWork } from "@/lib/dispatch/ops";
 import { InwardError } from "@/lib/inward/ops";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export default async function DeliveryNotePage({ params }: { params: Promise<{ i
       <Link href="/admin/delivery-notes" className="mb-4 inline-block text-sm text-verdigris-200/65 hover:text-patina">
         ← Delivery notes
       </Link>
-      <DeliveryNoteDetail note={note} />
+      <DeliveryNoteDetail note={note} workLink={canSeeWork(guard.actor)} />
     </>
   );
 }

@@ -2,7 +2,7 @@ import StoreStation from "@/components/admin/StoreStation";
 import { Denied, PageHeader } from "@/components/admin/ui";
 import { pageGuard } from "@/lib/auth/guard";
 import { layout, storageWarehouses } from "@/lib/storage/locations";
-import { recentStores, waitingToStore } from "@/lib/storage/store";
+import { putBackList, recentStores, waitingToStore } from "@/lib/storage/store";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +20,18 @@ export default async function StoragePage({
   const warehouses = await storageWarehouses(guard.actor);
   const wanted = Number((await searchParams).warehouse);
   const pick = warehouses.find((w) => w.id === wanted) ?? (warehouses.length === 1 ? warehouses[0] : undefined);
-  const [initial, waiting, recent] = pick
-    ? await Promise.all([layout(guard.actor, pick.id), waitingToStore(guard.actor, pick.id), recentStores(guard.actor, pick.id)])
-    : [null, [], []];
+  const [initial, waiting, recent, putBack] = pick
+    ? await Promise.all([
+        layout(guard.actor, pick.id),
+        waitingToStore(guard.actor, pick.id),
+        recentStores(guard.actor, pick.id),
+        putBackList(guard.actor, pick.id),
+      ])
+    : [null, [], [], []];
   return (
     <>
       <PageHeader title="Store cartons" subtitle="Scan the gala's QR, then each carton. The gala stays chosen until you scan another." />
-      <StoreStation warehouses={warehouses} initial={initial} initialWaiting={waiting} initialRecent={recent} />
+      <StoreStation warehouses={warehouses} initial={initial} initialWaiting={waiting} initialRecent={recent} initialPutBack={putBack} />
     </>
   );
 }

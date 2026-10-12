@@ -109,6 +109,18 @@ const STATUS_TONE: Record<string, string> = {
   APPROVED: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
   PENDING_APPROVAL: "border-amber-400/35 bg-amber-500/10 text-amber-200",
   TRUSTED: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
+  // Pick & pack (delivery note work).
+  ASSIGNED: "border-verdigris-300/35 bg-verdigris-500/15 text-verdigris-100",
+  PARTIALLY_PICKED: "border-patina/40 bg-patina/10 text-patina",
+  PICKED: "border-patina/40 bg-patina/10 text-patina",
+  PACKAGING_IN_PROGRESS: "border-patina/40 bg-patina/10 text-patina",
+  PARTIALLY_PACKAGED: "border-patina/40 bg-patina/10 text-patina",
+  PACKAGED: "border-verdigris-300/35 bg-verdigris-500/15 text-verdigris-100",
+  VERIFICATION_PENDING: "border-verdigris-300/35 bg-verdigris-500/15 text-verdigris-100",
+  READY_FOR_DISPATCH: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
+  RETURNING: "border-rose-400/35 bg-rose-500/10 text-rose-200",
+  ON_HOLD: "border-amber-400/50 bg-amber-500/15 text-amber-100",
+  OPEN: "border-amber-400/35 bg-amber-500/10 text-amber-200",
 };
 
 /** Status pills. Unknown values fall back to neutral rather than throwing —

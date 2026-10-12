@@ -266,6 +266,8 @@ describe("admin navigation: grouping", () => {
       "Inward requests",
       // Goods going out to a buyer: the agent's note, the importer's approval.
       "Delivery notes",
+      // The warehouse side of the same note: pick, pack, verify.
+      "Pick & pack",
       // Stickers and scanning, right under the requests they belong to.
       "QR codes",
       // Cartons into galas, and the floors and galas themselves.

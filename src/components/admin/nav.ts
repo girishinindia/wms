@@ -382,6 +382,19 @@ export const ADMIN_NAV: AdminNavNode[] = [
     icon: "truck",
   },
   /**
+   * Pick & pack — the warehouse side of a delivery note: assign staff,
+   * pick cartons by scan, pack them into packages with their own QR,
+   * verify, ready for dispatch. Keyed on `package.read` WITHOUT `own`:
+   * the importer and the agent hold it at OWN (to see their packages on
+   * the note), but this screen is the warehouse's.
+   */
+  {
+    href: "/admin/dispatch",
+    label: "Pick & pack",
+    permission: "package.read",
+    icon: "stack",
+  },
+  /**
    * QR codes — carton numbers, stickers and scanning, reached without
    * opening the request first. Keyed on `inward.goods.update`, which only
    * the super admin (ALL), warehouse admin and inward manager (WAREHOUSE)

@@ -12,6 +12,7 @@ const CHIPS = [
   { value: "PENDING", label: "Pending approval" },
   { value: "APPROVED", label: "Approved" },
   { value: "REJECTED", label: "Rejected" },
+  { value: "CANCELLED", label: "Cancelled" },
 ] as const;
 
 const n = (v: number) => v.toLocaleString("en-IN");
@@ -40,7 +41,7 @@ export default function DeliveryNotesTable({
     });
   }, [notes, q]);
   const counts = useMemo(() => {
-    const c: Record<string, number> = { ALL: searched.length, PENDING: 0, APPROVED: 0, REJECTED: 0 };
+    const c: Record<string, number> = { ALL: searched.length, PENDING: 0, APPROVED: 0, REJECTED: 0, CANCELLED: 0 };
     for (const r of searched) c[r.status] = (c[r.status] ?? 0) + 1;
     return c;
   }, [searched]);

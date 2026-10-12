@@ -7,7 +7,7 @@ import { api } from "@/lib/api/client";
 import { fmtTime } from "@/lib/format/datetime";
 import { galaFromScan } from "@/lib/storage/location-format";
 import type { GalaRow, Layout, StoreWarehouse } from "@/lib/storage/locations";
-import type { StoreResult, WaitingRow } from "@/lib/storage/store";
+import type { PutBackRow, StoreResult, WaitingRow } from "@/lib/storage/store";
 import { useToast } from "@/components/Toast";
 import { Card } from "@/components/admin/ui";
 
@@ -35,11 +35,13 @@ export default function StoreStation({
   initial,
   initialWaiting,
   initialRecent,
+  initialPutBack = [],
 }: {
   warehouses: StoreWarehouse[];
   initial: Layout | null;
   initialWaiting: WaitingRow[];
   initialRecent: Recent[];
+  initialPutBack?: PutBackRow[];
 }) {
   const toast = useToast();
   const [l, setL] = useState<Layout | null>(initial);
@@ -48,6 +50,7 @@ export default function StoreStation({
   const [last, setLast] = useState<Seen | { result: "GALA" | "ERROR"; message: string; at: number } | null>(null);
   const [seen, setSeen] = useState<Seen[]>([]);
   const [waiting, setWaiting] = useState(initialWaiting);
+  const [putBack, setPutBack] = useState(initialPutBack);
   const [recent] = useState(initialRecent);
   const [pending, setPending] = useState(0);
   const [offline, setOffline] = useState(false);
@@ -65,8 +68,11 @@ export default function StoreStation({
   useEffect(() => keepScanFocus(box), []);
 
   const loadWaiting = useCallback(async (warehouseId: number) => {
-    const r = await api<{ waiting: WaitingRow[] }>(`/storage/warehouses/${warehouseId}/waiting`, { method: "GET" });
-    if (r.ok) setWaiting(r.data.waiting);
+    const r = await api<{ waiting: WaitingRow[]; putBack?: PutBackRow[] }>(`/storage/warehouses/${warehouseId}/waiting`, { method: "GET" });
+    if (r.ok) {
+      setWaiting(r.data.waiting);
+      setPutBack(r.data.putBack ?? []);
+    }
   }, []);
 
   const open = useCallback(
@@ -248,14 +254,18 @@ export default function StoreStation({
     : last.result === "GALA"
       ? "✓ Gala chosen"
       : last.result === "STORED"
-        ? `✓ Stored in ${(last as Seen).gala}`
+        ? (last as Seen).restored
+          ? `✓ Put back in ${(last as Seen).gala}`
+          : `✓ Stored in ${(last as Seen).gala}`
         : last.result === "MOVED"
           ? `✓ Moved to ${(last as Seen).gala}`
           : last.result === "ALREADY_HERE"
             ? "! Already stored — not counted again"
             : last.result === "MOVE_CONFIRM"
               ? "In another gala"
-              : "✕ Not stored";
+              : last.result === "IN_PACKING"
+                ? "✕ In the packing area"
+                : "✕ Not stored";
   const lastSeen = last && "code" in last ? (last as Seen) : null;
 
   return (
@@ -411,6 +421,28 @@ export default function StoreStation({
             </p>
           ) : null}
         </Card>
+        {putBack.length > 0 ? (
+          <Card className="p-5">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-amber-300">Put back to storage</p>
+            <p className="mb-2 text-xs text-verdigris-200/55">
+              Picked for a delivery note that was rejected or cancelled. Scan any gala, then these cartons.
+            </p>
+            <ul className="space-y-2 text-sm" id="store-putback">
+              {putBack.map((p) => (
+                <li key={p.noteId}>
+                  <Link href={`/admin/dispatch/${p.noteId}`} className="flex justify-between gap-2 hover:text-patina">
+                    <span className="font-mono text-verdigris-50">{p.dnNo}</span>
+                    <span className="text-amber-300">{fmt(p.cartons)} to put back</span>
+                  </Link>
+                  <p className="text-xs text-verdigris-200/55">
+                    {p.importer} · {p.status === "CANCELLED" ? "cancelled" : "rejected"}
+                  </p>
+                  <p className="break-words font-mono text-[11px] text-verdigris-200/45">{p.cartonNos.slice(0, 12).join(", ")}{p.cartons > 12 ? " …" : ""}</p>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : null}
         <Card className="p-5">
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-verdigris-300">Waiting to be stored</p>
           {waiting.length === 0 ? (

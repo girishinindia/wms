@@ -29,6 +29,7 @@ const ACTION: Record<string, string> = {
   CONFIRMED_APPROVED: "Approved on the importer's word",
   REJECTED: "Rejected",
   EDITED: "Changed",
+  CANCELLED: "Cancelled",
 };
 const METHODS = [
   ["PHONE", "Phone call"],
@@ -38,9 +39,9 @@ const METHODS = [
   ["OTHER", "Other"],
 ] as const;
 
-type Decide = { kind: "approve" | "reject" };
+type Decide = { kind: "approve" | "reject" | "cancel" };
 
-export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
+export default function DeliveryNoteDetail({ note, workLink = false }: { note: NoteDetail; workLink?: boolean }) {
   const router = useRouter();
   const toast = useToast();
   const [deciding, setDeciding] = useState<Decide | null>(null);
@@ -55,8 +56,8 @@ export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
   const decide = async () => {
     if (!deciding) return;
     const f: Record<string, string> = {};
-    if (deciding.kind === "reject" && !reason.trim()) f.reason = "Say why it is rejected";
-    if (note.can.confirmNeeded) {
+    if (deciding.kind !== "approve" && !reason.trim()) f.reason = deciding.kind === "cancel" ? "Say why it is cancelled" : "Say why it is rejected";
+    if (note.can.confirmNeeded && deciding.kind !== "cancel") {
       if (!method) f.method = "How did you confirm with the importer?";
       if (!person.trim()) f.person = "Who at the importer said yes?";
     }
@@ -64,14 +65,19 @@ export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
     setBusy(true);
     const confirm = note.can.confirmNeeded ? { method, person, note: cnote || null } : null;
     const r = await api<{ note: NoteDetail }>(`/delivery-notes/${note.id}/${deciding.kind}`, {
-      body: deciding.kind === "reject" ? { reason, confirm } : { confirm },
+      body: deciding.kind === "cancel" ? { reason } : deciding.kind === "reject" ? { reason, confirm } : { confirm },
     });
     setBusy(false);
     if (!r.ok) {
       if (r.error.fields) setErrors(r.error.fields);
       return toast.error(r.error.message);
     }
-    toast.success(deciding.kind === "approve" ? `${note.dnNo} approved.` : `${note.dnNo} rejected — its cartons are free again.`);
+    const back = r.data.note.work?.returning ?? 0;
+    toast.success(
+      deciding.kind === "approve"
+        ? `${note.dnNo} approved.`
+        : `${note.dnNo} ${deciding.kind === "cancel" ? "cancelled" : "rejected"} — its cartons are free again${back ? `; ${back} picked carton${back === 1 ? "" : "s"} go back to storage` : ""}.`,
+    );
     setDeciding(null);
     router.refresh();
   };
@@ -112,6 +118,12 @@ export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
                 Rejected by {note.rejectedByName}: {note.rejectReason}. This note is closed — make a new one if needed.
               </p>
             ) : null}
+            {note.status === "CANCELLED" ? (
+              <p className="mt-2 text-sm text-rose-300" id="dn-cancelled">
+                Cancelled by {note.cancelledByName}
+                {note.cancelledAt ? ` · ${fmtDateTime(note.cancelledAt)}` : ""}: {note.cancelReason}. This note is closed — make a new one if needed.
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
             <a
@@ -139,6 +151,11 @@ export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
                 Edit
               </Link>
             ) : null}
+            {note.can.cancel ? (
+              <button type="button" id="dn-cancel" onClick={() => { setErrors({}); setReason(""); setDeciding({ kind: "cancel" }); }} className="rounded-xl border border-rose-400/40 px-4 py-2 text-sm text-rose-200 hover:bg-rose-500/10">
+                Cancel note
+              </button>
+            ) : null}
             {note.can.reject ? (
               <button type="button" id="dn-reject" onClick={() => { setErrors({}); setDeciding({ kind: "reject" }); }} className="rounded-xl border border-rose-400/40 px-4 py-2 text-sm text-rose-200 hover:bg-rose-500/10">
                 Reject
@@ -156,7 +173,40 @@ export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
             Waiting for {note.importerName} to approve. Its cartons are kept aside meanwhile.
           </p>
         ) : null}
+        {note.itemsLocked && note.can.edit ? (
+          <p className="mt-3 rounded-lg border border-verdigris-300/20 bg-ink-900/40 p-3 text-sm text-verdigris-100" id="dn-locked">
+            The warehouse has started picking — the items are fixed now. Buyer and transport details can still change.
+          </p>
+        ) : null}
       </Card>
+
+      {note.work && (note.work.workStatus !== "NEW" || note.work.onHold || note.status === "APPROVED") ? (
+        <div id="dn-work"><Card className="p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className={label}>In the warehouse</p>
+              <p className="flex flex-wrap items-center gap-2 text-sm text-verdigris-50">
+                <span id="dn-work-status"><StatusBadge value={note.work.onHold ? "ON_HOLD" : note.work.workStatus} /></span>
+                <span className="text-verdigris-200/70">
+                  {n(note.work.picked)} of {n(note.work.required)} cartons picked · {n(note.work.packed)} packed · {n(note.work.packages)} package
+                  {note.work.packages === 1 ? "" : "s"}
+                  {note.work.returning ? ` · ${n(note.work.returning)} to put back` : ""}
+                </span>
+              </p>
+            </div>
+            {workLink ? (
+              <Link href={`/admin/dispatch/${note.id}`} id="dn-work-open" className="rounded-xl border border-verdigris-300/20 px-4 py-2 text-sm text-verdigris-100 hover:border-verdigris-300/45">
+                Open pick &amp; pack
+              </Link>
+            ) : null}
+          </div>
+          {note.work.required > 0 ? (
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-ink-900/60">
+              <div className="h-full bg-patina/70" style={{ width: `${Math.min(100, Math.round((note.work.packed / note.work.required) * 100))}%` }} />
+            </div>
+          ) : null}
+        </Card></div>
+      ) : null}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card className="p-5">
@@ -261,23 +311,25 @@ export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
       {deciding ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
           <button type="button" aria-label="Cancel" onClick={() => setDeciding(null)} className="absolute inset-0 bg-ink-900/70" />
-          <div role="alertdialog" aria-modal="true" aria-label={deciding.kind === "approve" ? "Approve" : "Reject"} className={`relative w-full max-w-md rounded-2xl border bg-ink-850 p-6 card-shadow ${deciding.kind === "approve" ? "border-emerald-400/30" : "border-rose-400/30"}`}>
+          <div role="alertdialog" aria-modal="true" aria-label={deciding.kind === "approve" ? "Approve" : deciding.kind === "cancel" ? "Cancel note" : "Reject"} className={`relative w-full max-w-md rounded-2xl border bg-ink-850 p-6 card-shadow ${deciding.kind === "approve" ? "border-emerald-400/30" : "border-rose-400/30"}`}>
             <h2 className="text-base font-semibold text-verdigris-50">
-              {deciding.kind === "approve" ? `Approve ${note.dnNo}?` : `Reject ${note.dnNo}?`}
+              {deciding.kind === "approve" ? `Approve ${note.dnNo}?` : deciding.kind === "cancel" ? `Cancel ${note.dnNo}?` : `Reject ${note.dnNo}?`}
             </h2>
             <p className="mt-2 text-sm text-verdigris-200/75">
               {deciding.kind === "approve"
                 ? `${n(totalCartons)} cartons to ${h.buyerName} from ${note.warehouseName}.`
-                : "Rejecting is final: its cartons go back to stock and the sales agent must make a new note."}
+                : deciding.kind === "cancel"
+                  ? `Cancelling is final: its cartons go back to stock${note.work?.picked ? `, and the ${n(note.work.picked)} picked carton${note.work.picked === 1 ? "" : "s"} must be put back into storage` : ""}.`
+                  : `Rejecting is final: its cartons go back to stock${note.work?.picked ? `, and the ${n(note.work.picked)} picked carton${note.work.picked === 1 ? "" : "s"} must be put back into storage` : ""}. The sales agent must make a new note.`}
             </p>
-            {deciding.kind === "reject" ? (
+            {deciding.kind !== "approve" ? (
               <div className="mt-3">
                 <label className={label} htmlFor="dn-reason">Reason</label>
                 <textarea id="dn-reason" rows={2} value={reason} onChange={(e) => { setReason(e.target.value); setErrors((x) => ({ ...x, reason: "" })); }} className={`${input} ${errors.reason ? "border-rose-500" : "border-verdigris-300/15"}`} placeholder="Buyer cancelled, wrong quantity…" />
                 <FieldError id="dn-reason-err" text={errors.reason} />
               </div>
             ) : null}
-            {note.can.confirmNeeded ? (
+            {note.can.confirmNeeded && deciding.kind !== "cancel" ? (
               <div className="mt-4 space-y-3 rounded-xl border border-amber-400/30 bg-amber-500/5 p-3">
                 <p className="text-sm text-amber-100">
                   Only {note.importerName} decides on delivery notes. Ask them first, then record how and who.
@@ -302,9 +354,9 @@ export default function DeliveryNoteDetail({ note }: { note: NoteDetail }) {
               </div>
             ) : null}
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setDeciding(null)} disabled={busy} className="rounded-lg border border-verdigris-300/20 px-4 py-2 text-sm text-verdigris-100">Cancel</button>
+              <button type="button" onClick={() => setDeciding(null)} disabled={busy} className="rounded-lg border border-verdigris-300/20 px-4 py-2 text-sm text-verdigris-100">{deciding.kind === "cancel" ? "Keep it" : "Cancel"}</button>
               <button type="button" id="dn-decide" onClick={() => void decide()} disabled={busy} className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${deciding.kind === "approve" ? "bg-emerald-500/85 hover:bg-emerald-500" : "bg-rose-500/85 hover:bg-rose-500"}`}>
-                {busy ? "Working…" : deciding.kind === "approve" ? "Approve" : "Reject"}
+                {busy ? "Working…" : deciding.kind === "approve" ? "Approve" : deciding.kind === "cancel" ? "Cancel note" : "Reject"}
               </button>
             </div>
           </div>

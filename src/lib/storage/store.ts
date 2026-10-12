@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import type { Actor } from "@/lib/auth/guard";
+import { afterStep } from "@/lib/dispatch/ops";
 import { alreadyText, cartonNoFromScan, scanWhen } from "@/lib/inward/carton-format";
 import { InwardError, type Meta } from "@/lib/inward/ops";
 import { mayUse } from "@/lib/storage/locations";
@@ -12,6 +13,11 @@ import { mayUse } from "@/lib/storage/locations";
  * Storing cartons: scan a gala, then carton after carton. The gala stays
  * chosen until it is changed. A carton already in another gala is not
  * moved silently — the answer is MOVE_CONFIRM and the person decides.
+ *
+ * A carton picked for a delivery note that was then rejected or cancelled
+ * waits on the put-back shelf: scanning it into any gala puts it back
+ * (RESTORED — a re-storage, not a new inward). A carton in the packing
+ * area for a live note is refused.
  *
  * Super admin, warehouse admin and storage manager: storage.goods.update.
  */
@@ -33,6 +39,7 @@ export type StoreResultKind =
   | "NOT_RECEIVED"
   | "ON_HOLD"
   | "OTHER_WAREHOUSE"
+  | "IN_PACKING"
   | "UNKNOWN";
 
 export type StoreResult = {
@@ -41,6 +48,8 @@ export type StoreResult = {
   cartonNo: string | null;
   result: StoreResultKind;
   message: string;
+  /** A put-back carton of a rejected / cancelled delivery note (result is STORED). */
+  restored?: { dnNo: string } | null;
   carton?: {
     id: number;
     inwardCode: string;
@@ -101,7 +110,7 @@ export async function storeCartons(
           code,
           cartonNo: seen[0].carton_no,
           result: seen[0].action === "MOVED" ? "MOVED" : "STORED",
-          message: `${seen[0].action === "MOVED" ? "Moved to" : "Stored in"} ${gala.code}`,
+          message: `${seen[0].action === "MOVED" ? "Moved to" : seen[0].action === "RESTORED" ? "Put back in" : "Stored in"} ${gala.code}`,
         });
         continue;
       }
@@ -126,8 +135,12 @@ export async function storeCartons(
       pieces_per_carton: number;
       unit_code: string | null;
       hold_reason: string | null;
+      area: string | null;
+      dn_id: number | null;
+      dn_no: string | null;
+      dn_status: string | null;
     }>(sql`
-      select c.id, c.status, c.gala_id, g.code as gala_code, c.stored_at::text,
+      select c.id, c.status, c.gala_id, g.code as gala_code, c.stored_at::text, c.area, c.dn_id, d.dn_no, d.status as dn_status,
              trim(u.first_name || ' ' || coalesce(u.last_name, '')) as stored_by_name,
              r.warehouse_id, r.code as inward_code, i.company_name as importer,
              li.item_code, li.description, li.pieces_per_carton, li.unit_code, c.hold_reason
@@ -137,6 +150,7 @@ export async function storeCartons(
         join wms.inward_request_item li on li.id = c.inward_request_item_id
         left join wms.warehouse_gala g on g.id = c.gala_id
         left join wms.users u on u.id = c.stored_by
+        left join wms.delivery_note d on d.id = c.dn_id
        where c.carton_no = ${cartonNo}
     `);
     const c = rows[0];
@@ -170,6 +184,42 @@ export async function storeCartons(
     }
     if (c.status !== "RECEIVED") {
       results.push({ clientScanId, code, cartonNo, result: "NOT_RECEIVED", carton, message: "Not received at the dock yet — scan it in first" });
+      continue;
+    }
+    if (c.area === "PACKING") {
+      results.push({
+        clientScanId, code, cartonNo, result: "IN_PACKING", carton,
+        message: `Picked for delivery note ${c.dn_no ?? ""} — it is in the packing area, not for storage`,
+      });
+      continue;
+    }
+    if (c.area === "RETURN") {
+      // Put back from a rejected / cancelled delivery note: any gala will do.
+      const back = await db.execute<{ id: number }>(sql`
+        with back as (
+          update wms.inward_carton
+             set gala_id = ${gala.id}, stored_at = now(), stored_by = ${by}, area = null, dn_id = null, dn_line_id = null,
+                 package_id = null, picked_at = null, picked_by = null, pick_from_gala_id = null, arrived_at = null, arrived_by = null,
+                 updated_at = now()
+           where id = ${carton.id} and area = 'RETURN'
+          returning id
+        )
+        insert into wms.carton_movement (carton_id, from_gala_id, to_gala_id, action, via, client_scan_id, device, moved_by, from_area, delivery_note_id)
+        select id, null, ${gala.id}, 'RESTORED', ${via}, ${clientScanId},
+               ${s.device?.slice(0, 120) ?? meta.userAgent?.slice(0, 120) ?? null}, ${by}, 'RETURN', ${c.dn_id}
+          from back
+        on conflict (client_scan_id) do nothing
+        returning id
+      `);
+      if (!back[0]) {
+        results.push({ clientScanId, code, cartonNo, result: "ALREADY_HERE", carton, message: "Someone else just put this carton back — scan it again" });
+        continue;
+      }
+      if (c.dn_id) await afterStep(Number(c.dn_id), "RETURNING", actor, meta);
+      results.push({
+        clientScanId, code, cartonNo, carton, result: "STORED", restored: { dnNo: c.dn_no ?? "" },
+        message: `Put back in ${gala.code} (from ${c.dn_no ?? "a delivery note"})`,
+      });
       continue;
     }
     if (where && where.galaId === Number(gala.id)) {
@@ -242,14 +292,14 @@ export async function waitingToStore(actor: Actor, warehouseId: number): Promise
   if (!mayUse(actor, "storage.goods.update", warehouseId)) throw new InwardError("NOT_FOUND", "No such warehouse");
   const rows = await getDb().execute<{ id: number; code: string; importer: string; received: string; stored: string }>(sql`
     select r.id, r.code, i.company_name as importer,
-           count(c.id) filter (where c.status = 'RECEIVED')::text as received,
-           count(c.id) filter (where c.status = 'RECEIVED' and c.gala_id is not null)::text as stored
+           count(c.id) filter (where c.status = 'RECEIVED' and c.area is null)::text as received,
+           count(c.id) filter (where c.status = 'RECEIVED' and c.area is null and c.gala_id is not null)::text as stored
       from wms.inward_request r
       join wms.importer i on i.id = r.importer_id
       join wms.inward_carton c on c.inward_request_id = r.id
      where r.warehouse_id = ${warehouseId} and r.deleted_at is null
      group by r.id, i.company_name
-    having count(c.id) filter (where c.status = 'RECEIVED' and c.gala_id is null) > 0
+    having count(c.id) filter (where c.status = 'RECEIVED' and c.area is null and c.gala_id is null) > 0
      order by r.id
      limit 100
   `);
@@ -258,6 +308,26 @@ export async function waitingToStore(actor: Actor, warehouseId: number): Promise
     const stored = Number(r.stored);
     return { id: Number(r.id), code: r.code, importer: r.importer, received, stored, waiting: received - stored };
   });
+}
+
+export type PutBackRow = { noteId: number; dnNo: string; status: string; importer: string; cartons: number; cartonNos: string[] };
+
+/** Picked cartons of rejected / cancelled delivery notes, waiting to go back into a gala. */
+export async function putBackList(actor: Actor, warehouseId: number): Promise<PutBackRow[]> {
+  if (!mayUse(actor, "storage.goods.update", warehouseId)) throw new InwardError("NOT_FOUND", "No such warehouse");
+  const rows = await getDb().execute<{ id: number; dn_no: string; status: string; importer: string; cartons: number; nos: string[] }>(sql`
+    select d.id, d.dn_no, d.status, i.company_name as importer, count(c.id)::int as cartons,
+           (array_agg(c.carton_no order by c.carton_no))[1:60] as nos
+      from wms.inward_carton c
+      join wms.delivery_note d on d.id = c.dn_id
+      join wms.importer i on i.id = d.importer_id
+     where c.area = 'RETURN' and d.warehouse_id = ${warehouseId}
+     group by d.id, i.company_name
+     order by d.id
+  `);
+  return rows.map((r) => ({
+    noteId: Number(r.id), dnNo: r.dn_no, status: r.status, importer: r.importer, cartons: Number(r.cartons), cartonNos: (r.nos ?? []).map(String),
+  }));
 }
 
 export type GalaContents = {

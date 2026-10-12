@@ -5,6 +5,7 @@ import { sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { auditQuietly } from "@/lib/audit";
 import { grantFor, importerIdOf, type Actor, type Grant } from "@/lib/auth/guard";
+import { afterStep, pickingStarted, progressOf, releaseNote } from "@/lib/dispatch/ops";
 import { InwardError, type Meta } from "@/lib/inward/ops";
 import { normalizeMobile } from "@/lib/normalize";
 import { announce } from "@/lib/notify/announce";
@@ -71,6 +72,7 @@ export const STATUS_LABEL: Record<string, string> = {
   PENDING: "Pending approval",
   APPROVED: "Approved",
   REJECTED: "Rejected",
+  CANCELLED: "Cancelled",
 };
 export const KIND_LABEL: Record<string, string> = {
   IMPORTER: "Approved by the importer",
@@ -764,7 +766,7 @@ export type NoteSummary = {
   dnNo: string;
   dnDate: string;
   orderNo: string;
-  status: "PENDING" | "APPROVED" | "REJECTED";
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
   statusLabel: string;
   approvalKind: string | null;
   importerId: number;
@@ -832,7 +834,7 @@ export async function listNotes(
   filter: { status?: string | null; q?: string | null; warehouseId?: number | null } = {},
 ): Promise<NoteSummary[]> {
   const parts: SQL[] = [dnWhere(scope)];
-  if (filter.status && ["PENDING", "APPROVED", "REJECTED"].includes(filter.status)) parts.push(sql`n.status = ${filter.status}`);
+  if (filter.status && ["PENDING", "APPROVED", "REJECTED", "CANCELLED"].includes(filter.status)) parts.push(sql`n.status = ${filter.status}`);
   if (filter.warehouseId) parts.push(sql`n.warehouse_id = ${filter.warehouseId}`);
   const q = filter.q?.trim().toLowerCase();
   if (q) {
@@ -878,16 +880,23 @@ export type NoteDetail = NoteSummary & {
   rejectedByName: string | null;
   rejectedAt: string | null;
   rejectReason: string | null;
+  cancelledByName: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  /** The warehouse's work on it (picking, packing). */
+  work: { workStatus: string; onHold: boolean; workLabel: string; required: number; picked: number; packed: number; packages: number; returning: number } | null;
+  /** Items are locked once the first carton is picked. */
+  itemsLocked: boolean;
   version: number;
   editedAt: string | null;
   lineItems: NoteLine[];
   events: NoteEvent[];
-  can: { approve: boolean; reject: boolean; confirmNeeded: boolean; edit: boolean };
+  can: { approve: boolean; reject: boolean; confirmNeeded: boolean; edit: boolean; cancel: boolean };
 };
 
 async function rawNote(id: number) {
   const rows = await getDb().execute<Record<string, unknown>>(sql`
-    select n.*, n.order_date::text as order_date_text, n.dn_date::text as dn_date_text, n.approved_at::text as approved_at_text, n.rejected_at::text as rejected_at_text,
+    select n.*, n.order_date::text as order_date_text, n.dn_date::text as dn_date_text, n.approved_at::text as approved_at_text, n.rejected_at::text as rejected_at_text, n.cancelled_at::text as cancelled_at_text,
            n.edited_at::text as edited_at_text, n.created_at::text as created_at_text
       from wms.delivery_note n where n.id = ${id}
   `);
@@ -907,8 +916,11 @@ function rights(actor: Actor, n: { importer_id: number; warehouse_id: number; st
   const canDecide = n.status === "PENDING" && (owner || admin);
   const updateGrant = grantFor(actor, "dispatch.order.update");
   const creator = isAgentOnly(actor) && Number(n.created_by) === actor.session.userId && importerIdOf(actor) === importerId;
-  const edit = !!updateGrant && n.status !== "REJECTED" && (owner || creator);
-  return { approve: canDecide, reject: canDecide, confirmNeeded: canDecide && !owner, edit, owner, admin, creator };
+  const live = n.status === "PENDING" || n.status === "APPROVED";
+  const edit = !!updateGrant && live && (owner || creator);
+  // The importer, or a super admin, can call a note off — picked cartons go back to storage.
+  const cancel = live && (owner || approveGrant?.scope === "ALL");
+  return { approve: canDecide, reject: canDecide, confirmNeeded: canDecide && !owner, edit, cancel, owner, admin, creator };
 }
 
 export async function getNote(scope: DnScope, actor: Actor, id: number): Promise<NoteDetail> {
@@ -923,13 +935,15 @@ export async function getNote(scope: DnScope, actor: Actor, id: number): Promise
     select i.company_name, i.address, i.gstin::text as gstin, i.contact_mobile::text as mobile, ci.name as city, i.pincode::text as pincode,
            w.code as warehouse_code,
            trim(ua.first_name || ' ' || coalesce(ua.last_name, '')) as approved_by_name,
-           trim(ur.first_name || ' ' || coalesce(ur.last_name, '')) as rejected_by_name
+           trim(ur.first_name || ' ' || coalesce(ur.last_name, '')) as rejected_by_name,
+           trim(uc.first_name || ' ' || coalesce(uc.last_name, '')) as cancelled_by_name
       from wms.delivery_note n
       join wms.importer i on i.id = n.importer_id
       left join wms.city ci on ci.id = i.city_id
       join wms.warehouse w on w.id = n.warehouse_id
       left join wms.users ua on ua.id = n.approved_by
       left join wms.users ur on ur.id = n.rejected_by
+      left join wms.users uc on uc.id = n.cancelled_by
      where n.id = ${id}
   `);
   const x = extra[0]!;
@@ -969,6 +983,11 @@ export async function getNote(scope: DnScope, actor: Actor, id: number): Promise
     rejectedByName: (x.rejected_by_name as string | null) || null,
     rejectedAt: (r.rejected_at_text as string | null) ?? null,
     rejectReason: (r.reject_reason as string | null) ?? null,
+    cancelledByName: (x.cancelled_by_name as string | null) || null,
+    cancelledAt: (r.cancelled_at_text as string | null) ?? null,
+    cancelReason: (r.cancel_reason as string | null) ?? null,
+    work: await progressOf(id),
+    itemsLocked: await pickingStarted(id),
     version: Number(r.version),
     editedAt: (r.edited_at_text as string | null) ?? null,
     lineItems: lines.map((l) => ({
@@ -987,7 +1006,7 @@ export async function getNote(scope: DnScope, actor: Actor, id: number): Promise
       at: String(e.at),
       remarks: (e.remarks as string | null) ?? null,
     })),
-    can: { approve: can.approve, reject: can.reject, confirmNeeded: can.confirmNeeded, edit: can.edit },
+    can: { approve: can.approve, reject: can.reject, confirmNeeded: can.confirmNeeded, edit: can.edit, cancel: can.cancel },
   };
 }
 
@@ -1014,7 +1033,7 @@ export async function approveNote(
 ): Promise<NoteDetail> {
   const before = await getNote(scope, actor, id);
   if (before.status !== "PENDING") {
-    throw new InwardError("CONFLICT", before.status === "REJECTED" ? "A rejected delivery note cannot be approved" : "This delivery note is already approved");
+    throw new InwardError("CONFLICT", before.status === "APPROVED" ? "This delivery note is already approved" : `A ${before.status.toLowerCase()} delivery note cannot be approved`);
   }
   if (!before.can.approve) throw new InwardError("FORBIDDEN", "Only the importer approves delivery notes.");
   const c = before.can.confirmNeeded ? confirmationOf(confirm) : null;
@@ -1045,9 +1064,10 @@ export async function approveNote(
     after: { status: "APPROVED", approvalKind: kind, confirmMethod: c?.method ?? null, confirmPerson: c?.person ?? null },
     ...auditBase(actor, meta),
   });
-  const after = await getNote(scope, actor, id);
-  await tell("delivery.approved", after, actor, meta, { how: c ? `${KIND_LABEL.CONFIRMED} (${c.person})` : KIND_LABEL.IMPORTER! });
-  return after;
+  await tell("delivery.approved", await summaryOf(id), actor, meta, { how: c ? `${KIND_LABEL.CONFIRMED} (${c.person})` : KIND_LABEL.IMPORTER! });
+  // Packed and verified while it waited? It is ready for dispatch now.
+  await afterStep(id, before.work?.workStatus ?? "NEW", actor, meta);
+  return getNote(scope, actor, id);
 }
 
 export async function rejectNote(
@@ -1060,7 +1080,10 @@ export async function rejectNote(
 ): Promise<NoteDetail> {
   const before = await getNote(scope, actor, id);
   if (before.status !== "PENDING") {
-    throw new InwardError("CONFLICT", before.status === "REJECTED" ? "This delivery note is already rejected" : "An approved delivery note cannot be rejected");
+    throw new InwardError(
+      "CONFLICT",
+      before.status === "APPROVED" ? "An approved delivery note cannot be rejected — cancel it instead" : `This delivery note is already ${before.status.toLowerCase()}`,
+    );
   }
   if (!before.can.reject) throw new InwardError("FORBIDDEN", "Only the importer rejects delivery notes.");
   const why = clean(reason, 500);
@@ -1091,9 +1114,49 @@ export async function rejectNote(
     reason: why,
     ...auditBase(actor, meta),
   });
-  const after = await getNote(scope, actor, id);
-  await tell("delivery.rejected", after, actor, meta, { reason: why });
-  return after;
+  await tell("delivery.rejected", await summaryOf(id), actor, meta, { reason: why });
+  // Anything already picked goes back to storage (a new place is fine).
+  await releaseNote(actor, id, `Rejected: ${why}`, meta);
+  return getNote(scope, actor, id);
+}
+
+/** Call a pending or approved note off (the importer, or a super admin).
+ *  Its cartons are free again; picked ones go back to storage. */
+export async function cancelNote(scope: DnScope, actor: Actor, id: number, reason: string, meta: Meta): Promise<NoteDetail> {
+  const before = await getNote(scope, actor, id);
+  if (before.status !== "PENDING" && before.status !== "APPROVED") {
+    throw new InwardError("CONFLICT", `This delivery note is already ${before.status.toLowerCase()}`);
+  }
+  if (!before.can.cancel) throw new InwardError("FORBIDDEN", "Only the importer or a super admin cancels a delivery note.");
+  const why = clean(reason, 500);
+  if (!why) throw new InwardError("VALIDATION_FAILED", "Say why it is cancelled", { reason: "Say why it is cancelled" });
+  const done = await getDb().execute<{ id: number }>(sql`
+    update wms.delivery_note
+       set status = 'CANCELLED', cancelled_by = ${actor.session.userId}, cancelled_at = now(), cancel_reason = ${why},
+           on_hold = false, updated_at = now()
+     where id = ${id} and status in ('PENDING','APPROVED')
+    returning id
+  `);
+  if (!done[0]) throw new InwardError("CONFLICT", "Someone else changed this delivery note a moment ago");
+  await getDb().execute(sql`
+    insert into wms.delivery_note_event (delivery_note_id, action, by_user, remarks) values (${id}, 'CANCELLED', ${actor.session.userId}, ${why})
+  `);
+  await auditQuietly({
+    action: "delivery.note.cancelled",
+    operation: "UPDATE",
+    entityType: "delivery_note",
+    entityId: String(id),
+    entityLabel: before.dnNo,
+    before: { status: before.status, work: before.work?.workStatus ?? null },
+    after: { status: "CANCELLED", reason: why },
+    reason: why,
+    ...auditBase(actor, meta),
+  });
+  const back = await releaseNote(actor, id, `Cancelled: ${why}`, meta);
+  await tell("delivery.cancelled", await summaryOf(id), actor, meta, {
+    reason: back > 0 ? `${why} — ${back} picked carton${back === 1 ? "" : "s"} go back to storage` : why,
+  });
+  return getNote(scope, actor, id);
 }
 
 export type EditInput = HeaderInput & { lines: { key: string; cartons: number; orderPieces?: number | null }[] };
@@ -1104,9 +1167,9 @@ export async function editNote(scope: DnScope, actor: Actor, id: number, input: 
   const before = await getNote(scope, actor, id);
   if (!before.can.edit) {
     throw new InwardError(
-      before.status === "REJECTED" ? "CONFLICT" : "FORBIDDEN",
-      before.status === "REJECTED"
-        ? "A rejected delivery note cannot be changed. Make a new one."
+      before.status === "REJECTED" || before.status === "CANCELLED" ? "CONFLICT" : "FORBIDDEN",
+      before.status === "REJECTED" || before.status === "CANCELLED"
+        ? `A ${before.status.toLowerCase()} delivery note cannot be changed. Make a new one.`
         : "Only the sales agent who made it, or the importer, can change it.",
     );
   }
@@ -1114,6 +1177,18 @@ export async function editNote(scope: DnScope, actor: Actor, id: number, input: 
     .filter((l) => l.cartons > 0)
     .map((l) => ({ key: l.key, cartons: Math.floor(l.cartons), orderPieces: l.orderPieces ? Math.floor(l.orderPieces) : null }));
   if (lines.length === 0) throw new InwardError("VALIDATION_FAILED", "Keep at least one item");
+  // Once the warehouse has picked a carton the items are fixed; buyer and transport can still change.
+  const locked = before.itemsLocked;
+  if (locked) {
+    const was = new Map(before.lineItems.map((l) => [l.key, l.cartons]));
+    const same = lines.length === was.size && lines.every((l) => was.get(l.key) === l.cartons);
+    if (!same) {
+      throw new InwardError(
+        "CONFLICT",
+        "The warehouse has started picking — the items cannot change now. You can still change the buyer and transport details, or cancel the note.",
+      );
+    }
+  }
   // The header as it will be — checked before anything is saved. Picking a
   // client or transporter fills `input` with their details first.
   const sets = await headerSets(before.importerId, input);
@@ -1124,9 +1199,11 @@ export async function editNote(scope: DnScope, actor: Actor, id: number, input: 
   const problem = headerProblem(merged);
   if (problem) throw new InwardError("VALIDATION_FAILED", Object.values(problem)[0]!, problem);
   const db = getDb();
-  const res = await db.execute<{ r: { ok: boolean; short?: { key: string; free: number }[] } }>(sql`
-    select wms.dn_save_lines(${id}, ${JSON.stringify(lines)}::jsonb) as r
-  `);
+  const res = locked
+    ? [{ r: { ok: true } as { ok: boolean; short?: { key: string; free: number }[] } }]
+    : await db.execute<{ r: { ok: boolean; short?: { key: string; free: number }[] } }>(sql`
+        select wms.dn_save_lines(${id}, ${JSON.stringify(lines)}::jsonb) as r
+      `);
   const r = res[0]!.r;
   if (!r.ok) {
     const fields: Record<string, string> = {};
@@ -1174,7 +1251,9 @@ export async function editNote(scope: DnScope, actor: Actor, id: number, input: 
     by: who(actor),
     status: status === "APPROVED" ? "approved" : "waiting for approval",
   });
-  return after0;
+  // Needs approval again → not ready for dispatch until it has it.
+  await afterStep(id, before.work?.workStatus ?? "NEW", actor, meta);
+  return getNote(scope, actor, id);
 }
 
 // ── Numbering ─────────────────────────────────────────────────────
