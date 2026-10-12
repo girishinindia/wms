@@ -10,6 +10,7 @@ import { Card, ConfirmDialog } from "@/components/admin/ui";
 
 import { GALA_LABEL_SIZES, printGalaLabels, type GalaLabelSize } from "./carton-print";
 import { fmt } from "./InwardTable";
+import FindStock from "./storage/FindStock";
 
 /**
  * Floors and galas of a warehouse: add the next floor, add N galas to a
@@ -25,6 +26,15 @@ const secondary =
   "rounded-xl border border-verdigris-300/20 px-3 py-2 text-sm text-verdigris-100 hover:border-verdigris-300/45 disabled:opacity-50";
 const SIZE_KEY = "wms.galaLabelSize";
 const WH_KEY = "wms.storageWarehouse";
+const SHOW_KEY = "wms.galaShow";
+
+type Show = "ALL" | "FULL" | "EMPTY" | "OFF";
+const SHOWS: { id: Show; label: string }[] = [
+  { id: "ALL", label: "All galas" },
+  { id: "FULL", label: "With cartons" },
+  { id: "EMPTY", label: "Empty" },
+  { id: "OFF", label: "Switched off" },
+];
 
 export default function LocationsScreen({
   warehouses,
@@ -48,12 +58,20 @@ export default function LocationsScreen({
     /** Shown under the box once Save was tried. */
     error?: string;
   } | null>(null);
+  const [show, setShow] = useState<Show>("ALL");
+  const [byCount, setByCount] = useState(false);
   const [deleting, setDeleting] = useState<{ kind: "floor" | "gala"; id: number; code: string; galas: number; used: boolean } | null>(null);
 
   useEffect(() => {
     try {
       const s = window.localStorage.getItem(SIZE_KEY);
       if (s === "a4" || s === "t100x75") setSize(s);
+      const v = window.localStorage.getItem(SHOW_KEY);
+      if (v) {
+        const [a, b] = v.split("|");
+        if (SHOWS.some((x) => x.id === a)) setShow(a as Show);
+        setByCount(b === "1");
+      }
     } catch {
       /* not remembered */
     }
@@ -159,6 +177,19 @@ export default function LocationsScreen({
   }
 
   const allGalas = l ? l.floors.flatMap((f) => f.galas.filter((g) => g.isActive)) : [];
+  const keepShow = (a: Show, b: boolean) => {
+    setShow(a);
+    setByCount(b);
+    try {
+      window.localStorage.setItem(SHOW_KEY, `${a}|${b ? "1" : "0"}`);
+    } catch {
+      /* not remembered */
+    }
+  };
+  const visible = (gs: GalaRow[]) =>
+    gs
+      .filter((g) => (show === "FULL" ? g.cartons > 0 : show === "EMPTY" ? g.isActive && g.cartons === 0 : show === "OFF" ? !g.isActive : true))
+      .sort((a, b) => (byCount ? b.cartons - a.cartons || a.galaNo - b.galaNo : a.galaNo - b.galaNo));
 
   return (
     <div className="space-y-5">
@@ -228,6 +259,43 @@ export default function LocationsScreen({
             ))}
           </div>
         ) : null}
+        {l ? (
+          <div className="mt-4 space-y-3">
+            <FindStock warehouseId={l.warehouse.id} />
+            <div className="flex flex-wrap items-center gap-2 text-sm" id="loc-nav">
+              <Link href={`/admin/locations/cartons?warehouse=${l.warehouse.id}`} id="loc-all-cartons" className={secondary}>
+                All stored cartons →
+              </Link>
+              {l.floors.map((f) => (
+                <a key={f.id} href={`#floor-${f.code}`} className="rounded-lg px-2 py-1 text-verdigris-200/70 hover:text-patina">
+                  {f.name}
+                </a>
+              ))}
+              <span className="ml-auto flex flex-wrap items-center gap-1.5">
+                {SHOWS.map((x) => (
+                  <button
+                    key={x.id}
+                    type="button"
+                    id={`loc-show-${x.id.toLowerCase()}`}
+                    onClick={() => keepShow(x.id, byCount)}
+                    className={`rounded-full border px-3 py-1 text-xs ${show === x.id ? "border-patina bg-patina/15 text-patina" : "border-verdigris-300/15 text-verdigris-200/70"}`}
+                  >
+                    {x.label}
+                  </button>
+                ))}
+                <select
+                  id="loc-sort"
+                  value={byCount ? "COUNT" : "NO"}
+                  onChange={(e) => keepShow(show, e.target.value === "COUNT")}
+                  className="rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-2 py-1 text-xs text-verdigris-50"
+                >
+                  <option value="NO">Gala number</option>
+                  <option value="COUNT">Most cartons first</option>
+                </select>
+              </span>
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       {l && l.floors.length === 0 ? (
@@ -245,6 +313,11 @@ export default function LocationsScreen({
               {f.galas.length} gala{f.galas.length === 1 ? "" : "s"} · {fmt(f.cartons)} carton{f.cartons === 1 ? "" : "s"}
             </span>
             {!f.isActive ? <span className="text-xs text-rose-300">switched off</span> : null}
+            {f.cartons > 0 ? (
+              <Link href={`/admin/locations/floors/${f.id}`} id={`floor-${f.code}-cartons`} className="text-xs text-verdigris-300 hover:text-patina">
+                All cartons on this floor →
+              </Link>
+            ) : null}
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <button type="button" className={secondary} disabled={f.galas.length === 0} onClick={() => void print(f.galas.filter((g) => g.isActive), f)}>
                 Print labels
@@ -312,9 +385,11 @@ export default function LocationsScreen({
           </div>
           {f.galas.length === 0 ? (
             <p className="mt-3 text-sm text-verdigris-200/55">No galas on this floor yet.</p>
+          ) : visible(f.galas).length === 0 ? (
+            <p className="mt-3 text-sm text-verdigris-200/55">No gala on this floor matches “{SHOWS.find((x) => x.id === show)?.label}”.</p>
           ) : (
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-              {f.galas.map((g) => (
+              {visible(f.galas).map((g) => (
                 <div
                   key={g.id}
                   id={`gala-${g.code}`}

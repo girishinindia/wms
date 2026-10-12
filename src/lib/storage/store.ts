@@ -7,6 +7,7 @@ import type { Actor } from "@/lib/auth/guard";
 import { afterStep } from "@/lib/dispatch/ops";
 import { alreadyText, cartonNoFromScan, scanWhen } from "@/lib/inward/carton-format";
 import { InwardError, type Meta } from "@/lib/inward/ops";
+import { storedCartons, type CartonPlace as StockPlace, type StoredCarton } from "@/lib/storage/cartons";
 import { mayUse } from "@/lib/storage/locations";
 
 /**
@@ -333,58 +334,28 @@ export async function putBackList(actor: Actor, warehouseId: number): Promise<Pu
 export type GalaContents = {
   gala: { id: number; code: string; name: string; floor: string; warehouse: string; warehouseId: number; isActive: boolean };
   cartons: number;
-  items: { itemCode: string | null; description: string; importer: string; unitCode: string | null; cartons: number; pieces: number }[];
-  list: { cartonNo: string; inwardId: number; inwardCode: string; itemCode: string | null; description: string; storedAt: string | null; by: string | null }[];
+  items: { itemCode: string | null; description: string; importer: string; unitCode: string | null; cartons: number; pieces: number; kg: number }[];
+  /** Newest first. Each carton says what it is: item, importer, pieces per carton, kg. */
+  list: (Omit<StoredCarton, "storedAt"> & { storedAt: string | null })[];
+  /** The way around: breadcrumb floors and galas, previous / next gala. */
+  place: StockPlace;
+  truncated: boolean;
 };
 
 /** What is in a gala: by item, and the cartons themselves (newest first). */
 export async function galaContents(actor: Actor, galaId: number): Promise<GalaContents> {
-  const db = getDb();
-  const head = await db.execute<{
-    id: number; code: string; name: string; floor: string; warehouse: string; warehouse_id: number; is_active: boolean;
-  }>(sql`
-    select g.id, g.code, g.name, f.name as floor, w.name as warehouse, g.warehouse_id, (g.is_active and f.is_active) as is_active
-      from wms.warehouse_gala g join wms.warehouse_floor f on f.id = g.floor_id join wms.warehouse w on w.id = g.warehouse_id
-     where g.id = ${galaId} and g.deleted_at is null and f.deleted_at is null
-  `);
-  const g = head[0];
-  if (!g || !mayUse(actor, "storage.goods.update", Number(g.warehouse_id))) throw new InwardError("NOT_FOUND", "No such gala");
-  const items = await db.execute<{ item_code: string | null; description: string; importer: string; unit_code: string | null; cartons: string; pieces: string }>(sql`
-    select li.item_code, li.description, i.company_name as importer, li.unit_code,
-           count(*)::text as cartons, sum(li.pieces_per_carton)::text as pieces
-      from wms.inward_carton c
-      join wms.inward_request_item li on li.id = c.inward_request_item_id
-      join wms.inward_request r on r.id = c.inward_request_id
-      join wms.importer i on i.id = r.importer_id
-     where c.gala_id = ${galaId}
-     group by li.item_code, li.description, i.company_name, li.unit_code
-     order by i.company_name, li.item_code nulls last, li.description
-  `);
-  const list = await db.execute<{ carton_no: string; inward_id: number; inward_code: string; item_code: string | null; description: string; stored_at: string | null; by: string | null }>(sql`
-    select c.carton_no, r.id as inward_id, r.code as inward_code, li.item_code, li.description, c.stored_at::text,
-           trim(u.first_name || ' ' || coalesce(u.last_name, '')) as by
-      from wms.inward_carton c
-      join wms.inward_request r on r.id = c.inward_request_id
-      join wms.inward_request_item li on li.id = c.inward_request_item_id
-      left join wms.users u on u.id = c.stored_by
-     where c.gala_id = ${galaId}
-     order by c.stored_at desc nulls last, c.carton_no
-     limit 500
-  `);
+  const r = await storedCartons(actor, { galaId });
+  const g = r.place.gala!;
   return {
     gala: {
-      id: Number(g.id), code: g.code, name: g.name, floor: g.floor, warehouse: g.warehouse,
-      warehouseId: Number(g.warehouse_id), isActive: Boolean(g.is_active),
+      id: g.id, code: g.code, name: g.name, floor: r.place.floor!.name, warehouse: r.place.warehouse.name,
+      warehouseId: r.place.warehouse.id, isActive: g.isActive,
     },
-    cartons: items.reduce((n, r) => n + Number(r.cartons), 0),
-    items: items.map((r) => ({
-      itemCode: r.item_code, description: r.description, importer: r.importer, unitCode: r.unit_code,
-      cartons: Number(r.cartons), pieces: Number(r.pieces),
-    })),
-    list: list.map((r) => ({
-      cartonNo: r.carton_no, inwardId: Number(r.inward_id), inwardCode: r.inward_code, itemCode: r.item_code,
-      description: r.description, storedAt: r.stored_at, by: r.by,
-    })),
+    cartons: r.total,
+    items: r.items,
+    list: r.cartons,
+    place: r.place,
+    truncated: r.truncated,
   };
 }
 
