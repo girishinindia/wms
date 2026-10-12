@@ -154,7 +154,10 @@ export async function workQueue(actor: Actor, filter: { view?: string | null; q?
   const q = filter.q?.trim().toLowerCase();
   if (q) {
     const like = `%${q}%`;
-    parts.push(sql`(lower(n.dn_no) like ${like} or lower(n.buyer_name) like ${like} or lower(i.company_name) like ${like})`);
+    // A carton number finds the note it was picked for.
+    parts.push(sql`(lower(n.dn_no) like ${like} or lower(n.buyer_name) like ${like} or lower(i.company_name) like ${like}
+                    or lower(coalesce(n.buyer_city, '')) like ${like}
+                    or exists (select 1 from wms.inward_carton c where c.dn_id = n.id and lower(c.carton_no) like ${like}))`);
   }
   const rows = await getDb().execute<Record<string, unknown>>(sql`
     ${WORK_SELECT}

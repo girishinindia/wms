@@ -51,6 +51,15 @@ export default function StoreStation({
   const [seen, setSeen] = useState<Seen[]>([]);
   const [waiting, setWaiting] = useState(initialWaiting);
   const [putBack, setPutBack] = useState(initialPutBack);
+  const [waitQ, setWaitQ] = useState("");
+  const [waitSort, setWaitSort] = useState<"MOST" | "OLDEST" | "IMPORTER">("MOST");
+  const waitingShown = useMemo(() => {
+    const t = waitQ.trim().toLowerCase();
+    const list = waiting.filter((w) => !t || `${w.code} ${w.importer}`.toLowerCase().includes(t));
+    return list.sort((a, b) =>
+      waitSort === "MOST" ? b.waiting - a.waiting || a.id - b.id : waitSort === "OLDEST" ? a.id - b.id : a.importer.localeCompare(b.importer) || a.id - b.id,
+    );
+  }, [waiting, waitQ, waitSort]);
   const [recent] = useState(initialRecent);
   const [pending, setPending] = useState(0);
   const [offline, setOffline] = useState(false);
@@ -445,11 +454,33 @@ export default function StoreStation({
         ) : null}
         <Card className="p-5">
           <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-verdigris-300">Waiting to be stored</p>
+          {waiting.length > 3 ? (
+            <div className="mb-2 flex gap-1.5">
+              <input
+                id="store-waiting-search"
+                value={waitQ}
+                onChange={(e) => setWaitQ(e.target.value)}
+                placeholder="Inward or importer…"
+                className="min-w-0 flex-1 rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-2 py-1.5 text-xs text-verdigris-50"
+              />
+              <select
+                id="store-waiting-sort"
+                aria-label="Sort"
+                value={waitSort}
+                onChange={(e) => setWaitSort(e.target.value as "MOST" | "OLDEST" | "IMPORTER")}
+                className="rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-1.5 py-1.5 text-xs text-verdigris-50"
+              >
+                <option value="MOST">Most waiting</option>
+                <option value="OLDEST">Oldest inward</option>
+                <option value="IMPORTER">Importer</option>
+              </select>
+            </div>
+          ) : null}
           {waiting.length === 0 ? (
             <p className="text-sm text-verdigris-200/55">Every received carton is in a gala.</p>
           ) : (
             <ul className="space-y-2 text-sm" id="store-waiting">
-              {waiting.map((w) => (
+              {waitingShown.map((w) => (
                 <li key={w.id}>
                   <Link href={`/admin/inward/${w.id}`} className="flex justify-between gap-2 hover:text-patina">
                     <span className="font-mono text-verdigris-50">{w.code}</span>

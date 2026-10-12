@@ -782,13 +782,15 @@ export type NoteSummary = {
   createdBy: number;
   createdByName: string;
   createdAt: string;
+  /** The warehouse's step (NEW … READY_FOR_DISPATCH); ON_HOLD while on hold. */
+  workStatus: string;
 };
 
 const SUMMARY = sql`
   select n.id, n.dn_no, n.dn_date::text as dn_date, n.order_no, n.status, n.approval_kind, n.importer_id,
          i.company_name as importer_name, n.warehouse_id, w.name as warehouse_name, n.buyer_name, n.destination,
          n.priority, n.created_by, trim(u.first_name || ' ' || coalesce(u.last_name, '')) as created_by_name,
-         n.created_at::text as created_at,
+         n.created_at::text as created_at, n.work_status, n.on_hold,
          coalesce((select sum(l.cartons) from wms.delivery_line l where l.delivery_note_id = n.id), 0)::int as cartons,
          coalesce((select sum(l.cartons * l.pieces_per_carton) from wms.delivery_line l where l.delivery_note_id = n.id), 0)::int as pieces,
          (select count(*) from wms.delivery_line l where l.delivery_note_id = n.id)::int as line_count
@@ -820,6 +822,7 @@ function summary(r: Record<string, unknown>): NoteSummary {
     createdBy: Number(r.created_by),
     createdByName: String(r.created_by_name),
     createdAt: String(r.created_at),
+    workStatus: r.on_hold ? "ON_HOLD" : String(r.work_status ?? "NEW"),
   };
 }
 

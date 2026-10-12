@@ -65,6 +65,10 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
   const [dialog, setDialog] = useState<null | "assign" | "hold" | { close: WorkPackage } | { cancel: WorkPackage }>(null);
   const [busy, setBusy] = useState(false);
   const [size, setSize] = useState<PackageLabelSize>("t100x75");
+  const [lineQ, setLineQ] = useState("");
+  const [todoOnly, setTodoOnly] = useState(false);
+  const [pkgShow, setPkgShow] = useState("");
+  const [cartonQ, setCartonQ] = useState("");
   const queue = useRef<Pending[]>([]);
   const sending = useRef(false);
   const box = useRef<HTMLInputElement>(null);
@@ -439,6 +443,21 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between px-4 pt-4">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-verdigris-300">Pick list — where the cartons are</p>
+          <span className="ml-auto mr-2 flex flex-wrap items-center gap-2">
+            {w.lines.length > 3 ? (
+              <input
+                id="work-line-search"
+                value={lineQ}
+                onChange={(e) => setLineQ(e.target.value)}
+                placeholder="Find an item…"
+                className="w-44 rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-2.5 py-1.5 text-xs text-verdigris-50"
+              />
+            ) : null}
+            <label className="flex items-center gap-1 text-xs text-verdigris-200/75">
+              <input type="checkbox" id="work-line-todo" checked={todoOnly} onChange={(e) => setTodoOnly(e.target.checked)} />
+              Still to pick
+            </label>
+          </span>
           <button type="button" id="work-print-picklist" className={btn} onClick={() => void printPickList(w)}>
             Print pick list
           </button>
@@ -455,7 +474,9 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
               </tr>
             </thead>
             <tbody>
-              {w.lines.map((l) => {
+              {w.lines
+                .filter((l) => (!todoOnly || l.picked < l.required) && (!lineQ.trim() || `${l.itemCode ?? ""} ${l.description}`.toLowerCase().includes(lineQ.trim().toLowerCase())))
+                .map((l) => {
                 const done = l.picked >= l.required;
                 return (
                   <tr key={l.id} className="border-b border-verdigris-300/5 align-top">
@@ -524,6 +545,21 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
                 </option>
               ))}
             </select>
+            {w.packageList.length > 2 ? (
+              <select
+                id="work-pkg-show"
+                aria-label="Show packages"
+                value={pkgShow}
+                onChange={(e) => setPkgShow(e.target.value)}
+                className="rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-2 py-1.5 text-xs text-verdigris-50"
+              >
+                <option value="">All packages</option>
+                <option value="OPEN">Open</option>
+                <option value="CLOSED">Closed — to verify</option>
+                <option value="VERIFIED">Verified</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+            ) : null}
             <button
               type="button"
               id="work-print-labels"
@@ -549,7 +585,7 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
           <p className="mt-2 text-sm text-verdigris-200/55">No package yet. In step 3, open a package and scan the cartons into it.</p>
         ) : (
           <ul className="mt-3 grid gap-3 md:grid-cols-2" id="work-packages">
-            {w.packageList.map((p) => (
+            {w.packageList.filter((p) => !pkgShow || p.status === pkgShow).map((p) => (
               <li
                 key={p.id}
                 className={`rounded-xl border p-3 ${p.status === "CANCELLED" ? "border-verdigris-300/10 opacity-60" : p.id === active?.id ? "border-patina/60" : "border-verdigris-300/15"}`}
@@ -604,14 +640,27 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
       {/* Picked cartons and the scan history */}
       <div className="grid gap-5 lg:grid-cols-2">
         <Card className="overflow-hidden">
-          <p className="px-4 pt-4 text-xs font-semibold uppercase tracking-[0.12em] text-verdigris-300">Picked cartons</p>
+          <div className="flex items-center justify-between gap-2 px-4 pt-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-verdigris-300">Picked cartons</p>
+            {w.cartons.length > 5 ? (
+              <input
+                id="work-carton-search"
+                value={cartonQ}
+                onChange={(e) => setCartonQ(e.target.value)}
+                placeholder="Carton or package…"
+                className="w-40 rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-2.5 py-1.5 text-xs text-verdigris-50"
+              />
+            ) : null}
+          </div>
           {w.cartons.length === 0 ? (
             <p className="px-4 py-4 text-sm text-verdigris-200/55">None yet.</p>
           ) : (
             <div className="max-h-96 overflow-y-auto">
               <table className="w-full text-xs" id="work-cartons">
                 <tbody>
-                  {w.cartons.map((c) => (
+                  {w.cartons
+                    .filter((c) => !cartonQ.trim() || `${c.cartonNo} ${c.packageCode ?? ""} ${c.fromGala ?? ""}`.toLowerCase().includes(cartonQ.trim().toLowerCase()))
+                    .map((c) => (
                     <tr key={c.id} className="border-b border-verdigris-300/5">
                       <td className="px-4 py-2 font-mono text-verdigris-50">{c.cartonNo}</td>
                       <td className="px-2 py-2 text-verdigris-200/70">{c.fromGala ?? "dock"}</td>
