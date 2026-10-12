@@ -638,11 +638,22 @@ export async function scan(actor: Actor, id: number, step: "PICK" | "ARRIVE" | "
   const client = input.clientScanId?.slice(0, 80) ?? null;
   const device = input.device?.slice(0, 120) ?? meta.userAgent?.slice(0, 120) ?? null;
   const target = step === "VERIFY" ? await packageIdOf(code) : await cartonIdOf(code);
+  // A carton on the put-back shelf of a rejected / cancelled note may be
+  // picked for this one: remember that note, it may now be fully cleared.
+  const shelf =
+    step === "PICK" && target
+      ? (await getDb().execute<{ dn_id: number; work_status: string }>(sql`
+          select c.dn_id, d.work_status from wms.inward_carton c join wms.delivery_note d on d.id = c.dn_id
+           where c.id = ${target} and c.area = 'RETURN' and c.dn_id <> ${id}
+        `))[0]
+      : undefined;
   const fn = step === "PICK" ? sql`wms.dn_pick` : step === "ARRIVE" ? sql`wms.dn_arrive` : sql`wms.dn_verify`;
   const r = (await getDb().execute<{ r: { result: ScanAnswer["result"]; message: string } }>(sql`
     select ${fn}(${id}, ${target}::bigint, ${code}, ${actor.session.userId}, ${via}, ${client}, ${device}) as r
   `))[0]!.r;
   const workStatus = await afterStep(id, String(n.work_status), actor, meta);
+  // Its last returned carton just left the shelf: the old note is done — tell the admins.
+  if (shelf && r.result === "OK") await afterStep(Number(shelf.dn_id), String(shelf.work_status), actor, meta);
   return { result: r.result, message: r.message, workStatus };
 }
 
