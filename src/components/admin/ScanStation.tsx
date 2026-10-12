@@ -10,7 +10,7 @@ import { Card, ConfirmDialog } from "@/components/admin/ui";
 import { fmtTime } from "@/lib/format/datetime";
 
 import { fmt } from "./InwardTable";
-import { beep, uid, keepScanFocus } from "./scan-kit";
+import { beep, uid, keepScanFocus, sendHoldPhoto } from "./scan-kit";
 
 /**
  * The scan station. One box, always focused. A handheld or USB scanner
@@ -39,6 +39,7 @@ export default function ScanStation({ initial }: { initial: CartonOverview }) {
   const [waiting, setWaiting] = useState(0);
   const [offline, setOffline] = useState(false);
   const [hold, setHold] = useState<{ cartonId: number; cartonNo: string } | null>(null);
+  const [photo, setPhoto] = useState<File | null>(null);
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -129,10 +130,18 @@ export default function ScanStation({ initial }: { initial: CartonOverview }) {
     setBusy(false);
     if (!r.ok) return toast.error(r.error.message);
     setO(r.data);
-    toast.success(`${hold.cartonNo} on hold — the warehouse admin is told.`);
+    let photoError: string | null = null;
+    if (photo) {
+      setBusy(true);
+      photoError = await sendHoldPhoto(id, hold.cartonId, photo);
+      setBusy(false);
+    }
+    if (photoError) toast.error(`${hold.cartonNo} is on hold, but the photo was not saved: ${photoError} Add it from the QR codes page.`);
+    else toast.success(`${hold.cartonNo} on hold${photo ? " with its photo" : ""} — the warehouse admin is told.`);
     setHold(null);
     setReason("");
     setNote("");
+    setPhoto(null);
   };
 
   const finish = async (confirm: boolean) => {
@@ -284,7 +293,10 @@ export default function ScanStation({ initial }: { initial: CartonOverview }) {
           message="Choose what is wrong. The warehouse admin and super admin are told."
           confirmLabel="Hold carton"
           tone="warn"
-          onCancel={() => setHold(null)}
+          onCancel={() => {
+            setHold(null);
+            setPhoto(null);
+          }}
           onConfirm={doHold}
         >
           <div className="mt-4 flex flex-wrap gap-1.5">
@@ -305,6 +317,18 @@ export default function ScanStation({ initial }: { initial: CartonOverview }) {
             placeholder="Note (optional)"
             className="mt-3 w-full rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50"
           />
+          <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-verdigris-300/25 px-3 py-2 text-sm text-verdigris-100 hover:border-verdigris-300/50">
+            <input
+              id="hold-photo"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="sr-only"
+              onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+            />
+            <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg>
+            {photo ? <span className="truncate">Photo: {photo.name}</span> : <span>Add a photo of the damage (optional)</span>}
+          </label>
           {!reason ? <p className="mt-1 text-xs text-rose-300">Choose a reason</p> : null}
         </ConfirmDialog>
       ) : null}

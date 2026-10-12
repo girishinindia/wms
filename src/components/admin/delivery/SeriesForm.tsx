@@ -18,6 +18,11 @@ export default function SeriesForm({ initial }: { initial: Series }) {
   const [busy, setBusy] = useState(false);
   const sample = `${s.prefix}/${initial.fy}/${s.nextNo || "…"}`;
   const orderSample = `${s.orderPrefix || "E"}/${initial.fy}/${s.nextOrderNo || "…"}`;
+  const lastNo = initial.lastNo;
+  const lastOrderNo = initial.lastOrderNo;
+  // Typed numbers already used (with any prefix) — said before saving, and refused by the server.
+  const noUsed = lastNo !== null && /^\d+$/.test(s.nextNo) && Number(s.nextNo) <= lastNo.no;
+  const orderUsed = lastOrderNo !== null && /^\d+$/.test(s.nextOrderNo) && Number(s.nextOrderNo) <= lastOrderNo.no;
 
   const save = async () => {
     const f: Record<string, string> = {};
@@ -66,6 +71,20 @@ export default function SeriesForm({ initial }: { initial: Series }) {
         Next delivery note: <b className="font-mono text-verdigris-50" id="series-sample">{sample}</b>
         <br />
         Next order: <b className="font-mono text-verdigris-50">{orderSample}</b>
+        {lastNo || lastOrderNo ? (
+          <p className="mt-2 text-xs text-verdigris-200/70" id="series-last">
+            Last used: {lastNo ? <b className="font-mono">{lastNo.label}</b> : "no note yet"}
+            {" · "}
+            {lastOrderNo ? <b className="font-mono">{lastOrderNo.label}</b> : "no order yet"}
+          </p>
+        ) : null}
+        {noUsed || orderUsed ? (
+          <p className="mt-2 rounded-lg border border-amber-400/40 bg-amber-500/10 p-2 text-xs text-amber-100" id="series-used" role="alert">
+            {noUsed ? `Note number ${s.nextNo} is already used — enter ${lastNo!.no + 1} or more. ` : ""}
+            {orderUsed ? `Order number ${s.nextOrderNo} is already used — enter ${lastOrderNo!.no + 1} or more. ` : ""}
+            Until this is saved, new notes simply take the next free numbers.
+          </p>
+        ) : null}
         <p className="mt-2 text-xs text-verdigris-200/55">Numbers start again at 1 on 1 April with the new financial year — set them again then if your series continues.</p>
       </div>
       <div className="flex justify-end">

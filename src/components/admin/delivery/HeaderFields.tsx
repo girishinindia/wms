@@ -89,7 +89,7 @@ export default function HeaderFields({
   const [results, setResults] = useState<Client[]>([]);
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [nc, setNc] = useState({ name: "", mobile: "", address: "", city: "", pincode: "", gstin: "" });
+  const [nc, setNc] = useState({ name: "", mobile: "", address: "", stateId: "", cityId: "", pincode: "", gstin: "" });
   const [ncErr, setNcErr] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [tOpen, setTOpen] = useState(false);
@@ -129,12 +129,18 @@ export default function HeaderFields({
 
   const addClient = async () => {
     setSaving(true);
-    const city = cityByName(nc.city);
-    if (nc.city.trim() && !city) {
+    // State first, then a city of that state — both from the master list the super admin keeps.
+    if (!nc.stateId) {
       setSaving(false);
-      setNcErr({ cityId: "Choose the city from the list" });
+      setNcErr({ stateId: "Choose the state" });
       return;
     }
+    if (!nc.cityId) {
+      setSaving(false);
+      setNcErr({ cityId: "Choose the city" });
+      return;
+    }
+    const city = (geo?.cities ?? []).find((c) => String(c.id) === nc.cityId) ?? null;
     const r = await api<{ client: Client }>("/delivery/clients", {
       body: { name: nc.name, mobile: nc.mobile, address: nc.address, pincode: nc.pincode, gstin: nc.gstin, cityId: city?.id ?? null },
     });
@@ -144,7 +150,7 @@ export default function HeaderFields({
       return;
     }
     setAdding(false);
-    setNc({ name: "", mobile: "", address: "", city: "", pincode: "", gstin: "" });
+    setNc({ name: "", mobile: "", address: "", stateId: "", cityId: "", pincode: "", gstin: "" });
     setNcErr({});
     onPickClient(r.data.client);
   };
@@ -268,8 +274,52 @@ export default function HeaderFields({
                 <textarea id="nc-address" rows={2} className={`${input} ${ok}`} placeholder="Delivery address (street, area)" value={nc.address} onChange={(e) => setNc({ ...nc, address: e.target.value })} />
               </div>
               <div>
-                <input id="nc-city" list="dn-cities" className={`${input} ${ncErr.cityId ? bad : ok}`} placeholder="City" value={nc.city} onChange={(e) => setNc({ ...nc, city: e.target.value })} />
+                <select
+                  id="nc-state"
+                  aria-label="State"
+                  className={`${input} ${ncErr.stateId ? bad : ok}`}
+                  value={nc.stateId}
+                  onChange={(e) => {
+                    setNc({ ...nc, stateId: e.target.value, cityId: "" });
+                    setNcErr((x) => ({ ...x, stateId: "", cityId: "" }));
+                  }}
+                >
+                  <option value="">State…</option>
+                  {(geo?.states ?? []).map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {st.name}
+                    </option>
+                  ))}
+                </select>
+                <FieldError id="nc-state-err" text={ncErr.stateId} />
+              </div>
+              <div>
+                <select
+                  id="nc-city"
+                  aria-label="City"
+                  disabled={!nc.stateId}
+                  className={`${input} ${ncErr.cityId ? bad : ok} disabled:opacity-60`}
+                  value={nc.cityId}
+                  onChange={(e) => {
+                    setNc({ ...nc, cityId: e.target.value });
+                    setNcErr((x) => ({ ...x, cityId: "" }));
+                  }}
+                >
+                  <option value="">{nc.stateId ? "City…" : "Choose the state first"}</option>
+                  {(geo?.cities ?? [])
+                    .filter((c) => String(c.stateId) === nc.stateId)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                </select>
                 <FieldError id="nc-city-err" text={ncErr.cityId} />
+                {nc.stateId && !(geo?.cities ?? []).some((c) => String(c.stateId) === nc.stateId) ? (
+                  <p className="mt-1 text-xs text-amber-200" id="nc-city-none">No city of this state is in the list yet — ask the super admin to add it.</p>
+                ) : nc.stateId ? (
+                  <p className="mt-1 text-[11px] text-verdigris-200/50">City not in the list? The super admin adds it under Master → Cities.</p>
+                ) : null}
               </div>
               <div>
                 <input id="nc-pincode" inputMode="numeric" maxLength={6} className={`${input} ${ncErr.pincode ? bad : ok}`} placeholder="PIN code" value={nc.pincode} onChange={(e) => setNc({ ...nc, pincode: e.target.value.replace(/\D/g, "") })} />

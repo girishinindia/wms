@@ -1,3 +1,4 @@
+import BackButton from "@/components/admin/BackButton";
 import QrCodesScreen from "@/components/admin/QrCodesScreen";
 import { Denied, PageHeader } from "@/components/admin/ui";
 import { pageGuard } from "@/lib/auth/guard";
@@ -35,6 +36,7 @@ export default async function QrCodesPage({
       <PageHeader
         title="QR codes"
         subtitle="Pick the inward, then number its cartons, print the stickers and scan them in."
+        leading={<BackButton fallback={picked === null ? "/admin/inward" : `/admin/inward/${picked}`} />}
       />
       <QrCodesScreen
         initial={requests}

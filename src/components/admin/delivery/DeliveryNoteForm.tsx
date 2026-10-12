@@ -51,6 +51,10 @@ export default function DeliveryNoteForm() {
       take(r.data.draft);
       setErrors({});
       void loadStock(r.data.draft.id);
+      // Opened again after the time ran out (page closed or reloaded): say why the items are gone.
+      if (copyFrom === null && r.data.draft.keptFromExpired) {
+        toast.info("Time ran out on your last note — its cartons went back. Buyer and transport are kept; add the items again.");
+      }
     },
     [take, loadStock, toast],
   );

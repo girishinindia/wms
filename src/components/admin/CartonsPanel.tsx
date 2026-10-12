@@ -12,6 +12,7 @@ import { fitNumbers, printMarkerList, printStickers, qrSvg, STICKER_MM, STICKER_
 import { fmtTime } from "@/lib/format/datetime";
 
 import { fmt } from "./InwardTable";
+import { sendHoldPhoto } from "./scan-kit";
 
 /**
  * The warehouse side's carton work on one inward request: generate the
@@ -85,6 +86,16 @@ export default function CartonsPanel({
     }
     setO(r.data.overview);
     toast.success(r.data.made ? `${fmt(r.data.made)} carton numbers made.` : "Every carton already has a number.");
+  };
+
+  const addPhoto = async (h: Hold, file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    const problem = await sendHoldPhoto(requestId, h.id, file);
+    setBusy(false);
+    if (problem) return toast.error(problem);
+    toast.success(`Photo saved for ${h.cartonNo}.`);
+    await load();
   };
 
   const release = async (h: Hold) => {
@@ -273,9 +284,22 @@ export default function CartonsPanel({
             {holds.map((h) => (
               <li key={h.id} className="flex items-center gap-3 p-3 text-sm">
                 {h.photoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <a href={h.photoUrl} target="_blank" rel="noreferrer"><img src={h.photoUrl} alt="" className="h-10 w-10 rounded-md object-cover" loading="lazy" decoding="async" /></a>
-                ) : null}
+                  <a href={h.photoUrl} target="_blank" rel="noreferrer" title="Open the photo" className="shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={h.photoUrl} alt={`Photo of ${h.cartonNo}`} className="h-14 w-14 rounded-md object-cover" loading="lazy" decoding="async" />
+                  </a>
+                ) : o.can.work ? (
+                  <label
+                    className="flex h-14 w-14 shrink-0 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-verdigris-300/30 text-[0.65rem] leading-tight text-verdigris-200/70 hover:border-patina hover:text-patina"
+                    title="Add a photo of the damage"
+                  >
+                    <input type="file" accept="image/*" capture="environment" className="sr-only" disabled={busy} onChange={(e) => void addPhoto(h, e.target.files?.[0])} data-hold-photo={h.cartonNo} />
+                    <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg>
+                    Add photo
+                  </label>
+                ) : (
+                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md border border-verdigris-300/10 text-[0.65rem] text-verdigris-200/40">No photo</span>
+                )}
                 <div className="min-w-0 flex-1">
                   <p className="font-mono text-verdigris-50">{h.cartonNo}</p>
                   <p className="text-xs text-verdigris-200/60">
@@ -341,6 +365,9 @@ export default function CartonsPanel({
 
 // ── Print dialog ──────────────────────────────────────────────────
 
+/** "INR-000014-0161" → "0161" (the item's numbers, short). */
+const tail = (no: string | null) => (no ? no.slice(no.lastIndexOf("-") + 1) : "—");
+
 type What = "pending" | "all" | "line" | "range" | "label_pending" | "one";
 
 function PrintDialog({
@@ -365,6 +392,9 @@ function PrintDialog({
   const [from, setFrom] = useState("1");
   const [to, setTo] = useState("");
   const [one, setOne] = useState("");
+  // One item: its own carton numbers, all of them or a part (e.g. reprint 0163 to 0165).
+  const [lineFrom, setLineFrom] = useState("");
+  const [lineTo, setLineTo] = useState("");
   const [size, setSize] = useState<StickerSize>(() => {
     try {
       return (localStorage.getItem("wms.stickerSize") as StickerSize) || "t100x50";
@@ -408,6 +438,28 @@ function PrintDialog({
     return null;
   }, [what, labels, from, to]);
 
+  /** The chosen item's own cartons, by number. */
+  const lineLabels = useMemo(() => (labels ?? []).filter((l) => l.lineId === lineId).sort((a, b) => a.seq - b.seq), [labels, lineId]);
+  useEffect(() => {
+    setLineFrom(lineLabels[0] ? String(lineLabels[0].seq) : "");
+    setLineTo(lineLabels.length ? String(lineLabels[lineLabels.length - 1]!.seq) : "");
+  }, [lineLabels]);
+
+  /** Inside one item, the part must stay within its own numbers and run small to big. */
+  const lineProblem = useMemo(() => {
+    if (what !== "line" || !lineLabels.length) return null;
+    const lo = lineLabels[0]!.seq;
+    const hi = lineLabels[lineLabels.length - 1]!.seq;
+    const a = Number(lineFrom);
+    const b = Number(lineTo);
+    if (!lineFrom) return { field: "from", text: "Enter the first carton number." };
+    if (!lineTo) return { field: "to", text: "Enter the last carton number." };
+    if (a < lo || a > hi) return { field: "from", text: `This item's cartons are ${lo} to ${hi}.` };
+    if (b < lo || b > hi) return { field: "to", text: `This item's cartons are ${lo} to ${hi}.` };
+    if (a > b) return { field: "to", text: `The last carton (${b}) must be bigger than the first (${a}).` };
+    return null;
+  }, [what, lineLabels, lineFrom, lineTo]);
+
   const chosen = useMemo(() => {
     if (!labels) return [];
     switch (what) {
@@ -415,8 +467,12 @@ function PrintDialog({
         return labels.filter((l) => l.printCount === 0);
       case "label_pending":
         return labels.filter((l) => l.labelPending);
-      case "line":
-        return labels.filter((l) => l.lineId === lineId);
+      case "line": {
+        if (lineProblem) return [];
+        const a = Number(lineFrom);
+        const b = Number(lineTo);
+        return lineLabels.filter((l) => l.seq >= a && l.seq <= b);
+      }
       case "range": {
         if (rangeProblem) return [];
         const a = Number(from);
@@ -431,7 +487,7 @@ function PrintDialog({
       default:
         return labels;
     }
-  }, [labels, what, lineId, from, to, one, rangeProblem]);
+  }, [labels, what, from, to, one, rangeProblem, lineLabels, lineFrom, lineTo, lineProblem]);
 
   useEffect(() => {
     const first = chosen[0];
@@ -494,13 +550,51 @@ function PrintDialog({
                   ) : null}
                 </div>
                 {what === "line" ? (
-                  <select value={lineId ?? ""} onChange={(e) => setLineId(Number(e.target.value))} className="mt-2 w-full rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50">
-                    {lines.filter((l) => l.generated).map((l) => (
-                      <option key={l.lineId} value={l.lineId}>
-                        {[l.itemCode, l.description].filter(Boolean).join(" · ")} — {l.generated} cartons
-                      </option>
-                    ))}
-                  </select>
+                  <div className="mt-2">
+                    <select
+                      id="print-line"
+                      value={lineId ?? ""}
+                      onChange={(e) => setLineId(Number(e.target.value))}
+                      className="w-full rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-3 py-2 text-sm text-verdigris-50"
+                    >
+                      {lines.filter((l) => l.generated).map((l) => (
+                        <option key={l.lineId} value={l.lineId}>
+                          {tail(l.from)} → {tail(l.to)} · {[l.itemCode, l.description].filter(Boolean).join(" · ")} ({l.generated})
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-2 flex items-center gap-2 text-sm text-verdigris-200/70">
+                      Carton
+                      <input
+                        id="print-line-from"
+                        aria-label="First carton of this item"
+                        aria-invalid={lineProblem?.field === "from"}
+                        value={lineFrom}
+                        onChange={(e) => setLineFrom(e.target.value.replace(/\D/g, ""))}
+                        inputMode="numeric"
+                        className={`w-20 rounded-lg border bg-ink-900/60 px-2 py-1.5 text-verdigris-50 ${lineProblem?.field === "from" ? "border-rose-400/70" : "border-verdigris-300/15"}`}
+                      />
+                      to
+                      <input
+                        id="print-line-to"
+                        aria-label="Last carton of this item"
+                        aria-invalid={lineProblem?.field === "to"}
+                        value={lineTo}
+                        onChange={(e) => setLineTo(e.target.value.replace(/\D/g, ""))}
+                        inputMode="numeric"
+                        className={`w-20 rounded-lg border bg-ink-900/60 px-2 py-1.5 text-verdigris-50 ${lineProblem?.field === "to" ? "border-rose-400/70" : "border-verdigris-300/15"}`}
+                      />
+                    </div>
+                    {lineProblem ? (
+                      <p role="alert" id="print-line-error" className="mt-1 text-xs text-rose-300">{lineProblem.text}</p>
+                    ) : chosen.length ? (
+                      <p className="mt-1 text-xs text-verdigris-100" id="print-line-count">
+                        Prints {fmt(chosen.length)} sticker{chosen.length === 1 ? "" : "s"}: <span className="font-mono">{chosen[0]!.cartonNo}</span>
+                        {chosen.length > 1 ? <> to <span className="font-mono">{chosen[chosen.length - 1]!.cartonNo}</span></> : null}
+                        {chosen.length === lineLabels.length ? " — all of this item" : ` — ${fmt(chosen.length)} of this item's ${fmt(lineLabels.length)}`}
+                      </p>
+                    ) : null}
+                  </div>
                 ) : null}
                 {what === "range" ? (
                   <div className="mt-2">
@@ -569,7 +663,7 @@ function PrintDialog({
               {first ? (
                 <StickerPreview label={first} qr={preview} size={size} />
               ) : (
-                <p className="rounded-lg border border-dashed border-verdigris-300/20 p-6 text-center text-sm text-verdigris-200/50">{rangeProblem ? "Fix the carton range first." : "Nothing matches."}</p>
+                <p className="rounded-lg border border-dashed border-verdigris-300/20 p-6 text-center text-sm text-verdigris-200/50">{rangeProblem || lineProblem ? "Fix the carton range first." : "Nothing matches."}</p>
               )}
               {first ? (
                 <details className="mt-2 text-[11px] text-verdigris-200/55">

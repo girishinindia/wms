@@ -66,3 +66,38 @@ export function keepScanFocus(box: { current: HTMLInputElement | null }, paused:
     window.removeEventListener("change", changed);
   };
 }
+
+/** A phone photo is often 5–10 MB: shrink it to a JPEG of at most 1600 px before sending (the server keeps 3 MB). */
+export async function shrinkPhoto(file: File, edge = 1600): Promise<Blob> {
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, edge / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * k);
+    canvas.height = Math.round(bmp.height * k);
+    canvas.getContext("2d")!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close();
+    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/jpeg", 0.85));
+    return blob ?? file;
+  } catch {
+    return file;
+  }
+}
+
+/** The photo of a carton on hold. Returns an error message, or null when it was saved. */
+export async function sendHoldPhoto(requestId: number, cartonId: number, file: File): Promise<string | null> {
+  const body = await shrinkPhoto(file);
+  try {
+    const r = await fetch(`/api/v1/inward-requests/${requestId}/cartons/${cartonId}/photo`, {
+      method: "POST",
+      body,
+      headers: { "content-type": body.type || "application/octet-stream" },
+      credentials: "same-origin",
+    });
+    if (r.ok) return null;
+    const j = (await r.json().catch(() => ({}))) as { error?: { message?: string } };
+    return j.error?.message ?? "The photo could not be saved. Try again.";
+  } catch {
+    return "Could not reach the server. Check your connection.";
+  }
+}
