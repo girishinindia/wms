@@ -105,6 +105,13 @@ export const ScanIcon = (p: P) => (
   </svg>
 );
 
+export const ReportIcon = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M7 3.5h7.5L19 8v12.5H7z" />
+    <path d="M14.5 3.5V8H19M10 12.5h6M10 15.5h6M10 18.5h3.5" />
+  </svg>
+);
+
 export const ChartIcon = (p: P) => (
   <svg {...base} {...p}>
     <path d="M6.5 19V11M12 19V5.5M17.5 19v-5.5" />

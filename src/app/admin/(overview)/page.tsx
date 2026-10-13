@@ -11,6 +11,11 @@ import { inwardTiles, scopeFor } from "@/lib/inward/ops";
 import { listSalesAgents } from "@/lib/sales-agents/ops";
 import { isAgentOnly } from "@/lib/sales-agents/scope";
 import { sql } from "drizzle-orm";
+import Dashboard from "@/components/admin/insights/Dashboard";
+import type { Actor } from "@/lib/auth/guard";
+import { dashboardsFor, loadDashboard } from "@/lib/insights/dashboards";
+import { filtersFrom } from "@/lib/insights/lens";
+import type { DashboardId } from "@/lib/insights/types";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +41,31 @@ type Counts = {
   warehouses: number;
 };
 
-export default async function AdminDashboard() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+function paramsOf(raw: Record<string, string | string[] | undefined>): URLSearchParams {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(raw)) if (typeof v === "string") p.set(k, v);
+  return p;
+}
+
+/** The dashboards this person may open (staff, importer or agent), or null when there are none. */
+async function Insights({ actor, params, only }: { actor: Actor; params: URLSearchParams; only?: DashboardId }) {
+  const tabs = dashboardsFor(actor).filter((d) => (only ? d.id === only : d.id !== "importer" && d.id !== "agent"));
+  if (!tabs.length) return null;
+  const wanted = params.get("d");
+  const id = (tabs.find((t) => t.id === wanted) ?? tabs[0]!).id;
+  try {
+    const initial = await loadDashboard(actor, id, filtersFrom(params));
+    return <Dashboard tabs={tabs} initial={initial} />;
+  } catch (error) {
+    console.error("[dashboard] load", { id, error: String(error) });
+    return null;
+  }
+}
+
+export default async function AdminDashboard({ searchParams }: { searchParams: SearchParams }) {
+  const params = paramsOf(await searchParams);
   const actor = await currentActor();
   const canReadImporters = actor?.permissions.some(
     (p) => p.permission === "importer.read" && p.scope !== "OWN",
@@ -53,11 +82,12 @@ export default async function AdminDashboard() {
      * them their employer's whole KYC record, GSTIN and PAN included,
      * on the first screen after signing in.
      */
-    if (isAgentOnly(actor!)) return <AgentDashboard userId={actor!.session.userId} />;
+    if (isAgentOnly(actor!)) return <AgentDashboard userId={actor!.session.userId} insights={<Insights actor={actor!} params={params} only="agent" />} />;
     return (
       <ImporterDashboard
         importerId={gate.importerId}
         canEdit={actor!.permissions.some((p) => p.permission === "importer.update")}
+        insights={<Insights actor={actor!} params={params} only="importer" />}
       />
     );
   }
@@ -89,6 +119,25 @@ export default async function AdminDashboard() {
          limit 8
       `)
     : [];
+
+  const insights = actor && dashboardsFor(actor).some((d) => d.id !== "importer" && d.id !== "agent") ? await Insights({ actor, params }) : null;
+  if (insights) {
+    return (
+      <>
+        <PageHeader title="Dashboard" subtitle="How the warehouse is doing — tap a number or a chart for the details." />
+        {canReadImporters && (counts?.cities ?? 0) === 0 ? (
+          <Card className="mb-4 border-rose-400/25 bg-rose-500/[0.07] p-5">
+            <p className="text-sm text-rose-100">No cities have been added yet.</p>
+            <p className="mt-1.5 text-xs text-rose-200/70">An importer cannot be approved until its address has a city, and warehouses need one too.</p>
+            <Link href="/admin/master/cities" className="mt-4 inline-block rounded-xl bg-verdigris-400 px-4 py-2 text-sm font-semibold text-ink-900 hover:bg-patina">
+              Add cities
+            </Link>
+          </Card>
+        ) : null}
+        {insights}
+      </>
+    );
+  }
 
   return (
     <>
@@ -188,7 +237,7 @@ export default async function AdminDashboard() {
  * Their company is named, because knowing who you work for is not a
  * disclosure; its address, GSTIN and PAN are not.
  */
-async function AgentDashboard({ userId }: { userId: number }) {
+async function AgentDashboard({ userId, insights }: { userId: number; insights: React.ReactNode }) {
   const [me] = await listSalesAgents(sql`a.user_id = ${userId}`);
   if (!me) {
     return (
@@ -224,6 +273,7 @@ async function AgentDashboard({ userId }: { userId: number }) {
           />
         }
       />
+      {insights ? <div className="mb-6">{insights}</div> : null}
       <Card className="p-6">
         <h2 className="mb-4 text-sm font-semibold text-verdigris-50">Your record</h2>
         <FactList
@@ -258,7 +308,9 @@ async function AgentDashboard({ userId }: { userId: number }) {
 async function ImporterDashboard({
   importerId,
   canEdit,
+  insights,
 }: {
+  insights: React.ReactNode;
   importerId: number;
   /** False for a SALES_AGENT: they see the company, the owner edits it. */
   canEdit: boolean;
@@ -284,7 +336,8 @@ async function ImporterDashboard({
           ) : null
         }
       />
-      {verified ? <InwardStats actor={await currentActor()} dock={false} /> : null}
+      {verified ? insights ?? <InwardStats actor={await currentActor()} dock={false} /> : null}
+      {verified && insights ? <div className="mb-6" /> : null}
       <CompanyProfileForm initial={profile} geo={geo} readOnly={!canEdit} />
     </>
   );

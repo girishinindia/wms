@@ -99,7 +99,8 @@ export type AdminNavIcon =
   | "mail"
   | "sitemap"
   | "qr"
-  | "stack";
+  | "stack"
+  | "report";
 
 /** A collapsible section. Its children are ordinary items and are what
  *  `visibleNav` returns — the group itself grants nothing. */
@@ -341,6 +342,12 @@ export const USERS_ITEMS: AdminNavItem[] = [
  */
 export const ADMIN_NAV: AdminNavNode[] = [
   { href: "/admin", label: "Dashboard", permission: null, icon: "chart" },
+  /**
+   * Reports — like the dashboard, no permission of its own: every report
+   * in the catalogue checks its own (see lib/insights/report-defs), and
+   * the page lists only the ones this person may open.
+   */
+  { href: "/admin/reports", label: "Reports", permission: null, icon: "report" },
   /**
    * Notifications, like the dashboard, has NO permission of its own.
    *

@@ -13,6 +13,7 @@ import {
   SitemapIcon,
   QrIcon,
   StackIcon,
+  ReportIcon,
   WarehouseIcon,
   BoxIcon,
   BuildingIcon,
@@ -92,6 +93,7 @@ const ICONS = {
   sitemap: SitemapIcon,
   qr: QrIcon,
   stack: StackIcon,
+  report: ReportIcon,
 } as const;
 
 export type AdminUser = {

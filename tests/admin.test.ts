@@ -58,7 +58,7 @@ describe("admin navigation", () => {
         { permission: "inward.request.read", scope: "WAREHOUSE" },
         { permission: "inward.goods.update", scope: "WAREHOUSE" },
       ]),
-    ).toEqual(["Dashboard", "Inward requests", "QR codes", "Notifications"]);
+    ).toEqual(["Dashboard", "Reports", "Inward requests", "QR codes", "Notifications"]);
   });
 
   it("does not show the dashboard on its own", () => {
@@ -95,6 +95,7 @@ describe("admin navigation", () => {
     // reviewing who works for them, scoped to their own sites.
     expect(labels).toEqual([
       "Dashboard",
+      "Reports",
       "Notifications",
       "Users",
       "Business hierarchy",
@@ -134,6 +135,7 @@ describe("admin navigation", () => {
     const platform = scoped.map((p) => ({ ...p, scope: "ALL" as const }));
     expect(visibleNav(platform).map((i) => i.label)).toEqual([
       "Dashboard",
+      "Reports",
       "Notifications",
       "Warehouse",
       "Gallery",
@@ -219,7 +221,7 @@ describe("admin navigation: grouping", () => {
     // Transporters & Vehicles, so none of them is here at all. A section
     // header that opens onto nothing reads as a broken page, not as a
     // permission boundary.
-    expect(nodes.map((n) => n.label)).toEqual(["Dashboard", "Notifications", "Users & Roles"]);
+    expect(nodes.map((n) => n.label)).toEqual(["Dashboard", "Reports", "Notifications", "Users & Roles"]);
   });
 
   it("keeps a group that earned some of its children, holding only those", () => {
@@ -261,6 +263,8 @@ describe("admin navigation: grouping", () => {
     // `groupNav` walks that array — so this is the list, top to bottom.
     expect(groupNav(visibleNav(SUPER_ADMIN)).map((n) => n.label)).toEqual([
       "Dashboard",
+      // Every report checks its own permission; the page lists only the allowed ones.
+      "Reports",
       // Both sides of the counter, right under the dashboard: the one
       // screen an importer and a dock manager both open every day.
       "Inward requests",
@@ -323,7 +327,7 @@ describe("admin navigation: grouping", () => {
     const leaves = visibleNav(importer).map((i) => i.label);
     // No "My company" entry: the importer's company profile is their
     // dashboard.
-    expect(leaves).toEqual(["Dashboard", "Notifications", "Sales agents"]);
+    expect(leaves).toEqual(["Dashboard", "Reports", "Notifications", "Sales agents"]);
     const nodes = groupNav(visibleNav(importer));
     const group = nodes.find((n) => isGroup(n) && n.label === "Importers & agents");
     expect(group).toBeDefined();
@@ -341,6 +345,7 @@ describe("admin navigation: grouping", () => {
     ];
     expect(visibleNav(agent, { agentOnly: true }).map((i) => i.label)).toEqual([
       "Dashboard",
+      "Reports",
       "Notifications",
     ]);
     // The same permissions WITHOUT the flag are an importer, who keeps
