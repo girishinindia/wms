@@ -166,13 +166,13 @@ describe("who may read the audit log", () => {
     expect(entry!.own).toBeUndefined();
   });
 
-  it("sits under Users & Roles, after Users and Roles", async () => {
+  it("sits last under People and access, after Users, Roles and the hierarchy", async () => {
     const { USERS_ITEMS } = await import("@/components/admin/nav");
     expect(USERS_ITEMS.map((i) => i.href)).toEqual([
       "/admin/users",
       "/admin/roles",
-      "/admin/audit",
       "/admin/org",
+      "/admin/audit",
     ]);
   });
 

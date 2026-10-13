@@ -6,6 +6,8 @@ import {
   groupNav,
   isGroup,
   MASTER_ITEMS,
+  NAV_SECTIONS,
+  sectionTitle,
   visibleNav,
   WAREHOUSE_ITEMS,
 } from "@/components/admin/nav";
@@ -58,7 +60,7 @@ describe("admin navigation", () => {
         { permission: "inward.request.read", scope: "WAREHOUSE" },
         { permission: "inward.goods.update", scope: "WAREHOUSE" },
       ]),
-    ).toEqual(["Dashboard", "Reports", "Inward requests", "QR codes", "Notifications"]);
+    ).toEqual(["Dashboard", "Reports", "Notifications", "Inward requests", "QR codes"]);
   });
 
   it("does not show the dashboard on its own", () => {
@@ -85,8 +87,8 @@ describe("admin navigation", () => {
     // Dashboard and Notifications ride along; cities does not, because
     // adding master data is not a warehouse admin's job.
     //
-    // The order is `ADMIN_NAV`'s: "Users & Roles" sits above
-    // "Importers & agents". Asserted as an ordered list on purpose —
+    // The order is `ADMIN_NAV`'s: Customers (Importers) sits above
+    // People and access (Users). Asserted as an ordered list on purpose —
     // this is the array the sidebar renders from.
     //
     // Business hierarchy is in the list because it is keyed on plain
@@ -97,9 +99,9 @@ describe("admin navigation", () => {
       "Dashboard",
       "Reports",
       "Notifications",
+      "Importers",
       "Users",
       "Business hierarchy",
-      "Importers",
     ]);
   });
 
@@ -137,7 +139,7 @@ describe("admin navigation", () => {
       "Dashboard",
       "Reports",
       "Notifications",
-      "Warehouse",
+      "Warehouse list",
       "Gallery",
     ]);
   });
@@ -196,7 +198,7 @@ describe("admin navigation: grouping", () => {
 
   it("nests the master entries under one group for rendering", () => {
     const nodes = groupNav(visibleNav(SUPER_ADMIN));
-    const master = nodes.find((n) => isGroup(n) && n.label === "Master");
+    const master = nodes.find((n) => isGroup(n) && n.label === "Master data");
     expect(master).toBeDefined();
     expect(isGroup(master!) && master.children.map((c) => c.label)).toEqual([
       "Countries",
@@ -217,78 +219,79 @@ describe("admin navigation: grouping", () => {
       { permission: "user.read", scope: "WAREHOUSE" as const },
     ];
     const nodes = groupNav(visibleNav(warehouseAdmin));
-    // Nothing earned inside Importers & agents, Master, Warehouses or
-    // Transporters & Vehicles, so none of them is here at all. A section
-    // header that opens onto nothing reads as a broken page, not as a
-    // permission boundary.
-    expect(nodes.map((n) => n.label)).toEqual(["Dashboard", "Reports", "Notifications", "Users & Roles"]);
+    // Nothing earned inside Master data or Warehouses, so neither group
+    // is here at all. A fold-out that opens onto nothing reads as a
+    // broken page, not as a permission boundary.
+    expect(nodes.map((n) => n.label)).toEqual(["Dashboard", "Reports", "Notifications", "Users", "Business hierarchy"]);
+    expect(nodes.some((n) => isGroup(n))).toBe(false);
   });
 
   it("keeps a group that earned some of its children, holding only those", () => {
-    /**
-     * The other half of the same rule, and the one a warehouse admin
-     * actually meets: they hold `user.read` but neither `role.read` nor
-     * `audit_log.read` at ALL, so "Users & Roles" opens onto the two
-     * entries keyed on `user.read` and nothing else.
-     *
-     * Worth its own test because the four entries in that section are
-     * deliberately keyed differently. Roles and the Audit log are
-     * `allOnly` — `role_permission` has no warehouse column, and the
-     * audit log's scoping columns are never written. Users and Business
-     * hierarchy are not, because both CAN be narrowed honestly. A
-     * partially-earned group is exactly what that produces.
-     */
+    // A warehouse admin earns the users entries keyed on `user.read` but
+    // neither Roles nor the Audit log (`allOnly`) — so the section holds
+    // those two and nothing else.
     const nodes = groupNav(visibleNav([{ permission: "user.read", scope: "WAREHOUSE" }]));
-    const group = nodes.find((n) => isGroup(n) && n.label === "Users & Roles");
-    expect(group).toBeDefined();
-    expect(isGroup(group!) && group.children.map((c) => c.href)).toEqual([
+    expect(nodes.filter((n) => n.section === "People and access").map((n) => !isGroup(n) && n.href)).toEqual([
       "/admin/users",
       "/admin/org",
     ]);
+    // A fold-out group keeps only what was earned: one master list.
+    const one = groupNav(visibleNav([{ permission: "master.city.create", scope: "ALL" }]));
+    const master = one.find((n) => isGroup(n) && n.label === "Master data");
+    expect(isGroup(master!) && master.children.map((c) => c.href)).toEqual(["/admin/master/cities"]);
 
-    // A super admin, who holds both, gets both.
-    const full = groupNav(visibleNav(SUPER_ADMIN)).find(
-      (n) => isGroup(n) && n.label === "Users & Roles",
-    );
-    expect(isGroup(full!) && full.children.map((c) => c.href)).toEqual([
+    // A super admin, who holds all four, gets all four.
+    const full = groupNav(visibleNav(SUPER_ADMIN)).filter((n) => n.section === "People and access");
+    expect(full.map((n) => !isGroup(n) && n.href)).toEqual([
       "/admin/users",
       "/admin/roles",
-      "/admin/audit",
       "/admin/org",
+      "/admin/audit",
     ]);
   });
 
-  it("renders the sections in the order the sidebar shows them", () => {
-    // The customer's order. `ADMIN_NAV` is the single source of it, and
-    // `groupNav` walks that array — so this is the list, top to bottom.
-    expect(groupNav(visibleNav(SUPER_ADMIN)).map((n) => n.label)).toEqual([
-      "Dashboard",
-      // Every report checks its own permission; the page lists only the allowed ones.
-      "Reports",
-      // Both sides of the counter, right under the dashboard: the one
-      // screen an importer and a dock manager both open every day.
-      "Inward requests",
-      // Goods going out to a buyer: the agent's note, the importer's approval.
-      "Delivery notes",
-      // The warehouse side of the same note: pick, pack, verify.
-      "Pick & pack",
-      // Dispatch orders: loading the vehicle, departure, the Lorry Receipt.
-      "Outward",
-      // Stickers and scanning, right under the requests they belong to.
-      "QR codes",
-      // Cartons into galas, and the floors and galas themselves.
-      "Store cartons",
-      "Floors and galas",
-      "Notifications",
-      "Enquiry",
-      "Users & Roles",
-      "Master",
-      "Warehouses",
-      "Transporters & Vehicles",
-      "Importers & agents",
-      "Expenses",
-      "FAQs",
+  it("renders the entries in the order the goods move", () => {
+    // `ADMIN_NAV` is the single source of the order, and `groupNav`
+    // walks that array — so this is the sidebar, top to bottom.
+    const nodes = groupNav(visibleNav(SUPER_ADMIN));
+    expect(nodes.map((n) => `${n.section} · ${n.label}`)).toEqual([
+      "Overview · Dashboard",
+      "Overview · Reports",
+      "Overview · Notifications",
+      // In at the dock: the request, then its stickers and scanning.
+      "Goods in · Inward requests",
+      "Goods in · QR codes",
+      // Into the galas.
+      "Storage · Store cartons",
+      "Storage · Floors and galas",
+      // Out to a buyer: the note, picking and packing, the vehicle.
+      "Goods out · Delivery notes",
+      "Goods out · Pick & pack",
+      "Goods out · Outward",
+      "Customers · Importers",
+      "Customers · Sales agents",
+      "Customers · Enquiries",
+      "Money · Expenses",
+      "People and access · Users",
+      "People and access · Roles",
+      "People and access · Business hierarchy",
+      "People and access · Audit log",
+      "Setup · Warehouses",
+      "Setup · Transporters",
+      "Setup · Vehicles",
+      "Setup · Drivers",
+      "Setup · Master data",
+      "Setup · FAQs",
     ]);
+    // Every heading appears once, in `NAV_SECTIONS` order.
+    const order = [...new Set(nodes.map((n) => n.section))];
+    expect(order).toEqual([...NAV_SECTIONS]);
+  });
+
+  it("calls the customers section an importer's own company", () => {
+    expect(sectionTitle("Customers", ["/admin", "/admin/sales-agents"])).toBe("My company");
+    expect(sectionTitle("Customers", ["/admin/importers", "/admin/sales-agents"])).toBe("Customers");
+    expect(sectionTitle("Goods in", ["/admin/inward"])).toBe("Goods in");
   });
 
   it("names each badge, and gives each its own count", () => {
@@ -316,7 +319,7 @@ describe("admin navigation: grouping", () => {
     expect(new Set(names).size, "two entries share one badge name").toBe(names.length);
   });
 
-  it("shows an importer only their own screens, under the importers group", () => {
+  it("shows an importer only their own screens, under their company", () => {
     const importer = [
       { permission: "importer.read", scope: "OWN" as const },
       { permission: "importer.update", scope: "OWN" as const },
@@ -329,9 +332,9 @@ describe("admin navigation: grouping", () => {
     // dashboard.
     expect(leaves).toEqual(["Dashboard", "Reports", "Notifications", "Sales agents"]);
     const nodes = groupNav(visibleNav(importer));
-    const group = nodes.find((n) => isGroup(n) && n.label === "Importers & agents");
-    expect(group).toBeDefined();
-    expect(isGroup(group!) && group.children.map((c) => c.href)).toEqual(["/admin/sales-agents"]);
+    const mine = nodes.filter((n) => n.section === "Customers");
+    expect(mine.map((n) => !isGroup(n) && n.href)).toEqual(["/admin/sales-agents"]);
+    expect(sectionTitle("Customers", visibleNav(importer).map((i) => i.href))).toBe("My company");
   });
 
   it("gives a sales agent the dashboard and the bell, and no list of themselves", () => {

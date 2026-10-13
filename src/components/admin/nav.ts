@@ -75,6 +75,12 @@ export type AdminNavItem = {
    * statement that this entry has something to count.
    */
   badge?: "notifications" | "enquiries";
+  /**
+   * The sidebar heading this entry sits under (see `NAV_SECTIONS`).
+   * Set on the top-level nodes of `ADMIN_NAV` only; a group's children
+   * inherit the group's. Rendering only — it grants nothing.
+   */
+  section?: NavSection;
 };
 
 export type AdminNavIcon =
@@ -102,10 +108,40 @@ export type AdminNavIcon =
   | "stack"
   | "report";
 
+/**
+ * The sidebar's headings, in the order the work happens: goods come in,
+ * are stored, go out — then the customers, the money, the people, and
+ * the set-up nobody touches daily. The app's drawer uses the same
+ * headings in the same order, so a person moving between the two finds
+ * every entry in the same place.
+ */
+export const NAV_SECTIONS = [
+  "Overview",
+  "Goods in",
+  "Storage",
+  "Goods out",
+  "Customers",
+  "Money",
+  "People and access",
+  "Setup",
+] as const;
+
+export type NavSection = (typeof NAV_SECTIONS)[number];
+
+/**
+ * The heading as this person reads it. An importer's "Customers" section
+ * holds only their own sales agents — for them it is their company.
+ */
+export function sectionTitle(section: NavSection, visibleHrefs: string[]): string {
+  if (section === "Customers" && !visibleHrefs.includes("/admin/importers")) return "My company";
+  return section;
+}
+
 /** A collapsible section. Its children are ordinary items and are what
  *  `visibleNav` returns — the group itself grants nothing. */
 export type AdminNavGroup = {
   label: string;
+  section?: NavSection;
   icon: AdminNavIcon;
   /** Regex source (anchored at the start of the path) used to decide
    *  whether the group is the current section. */
@@ -223,7 +259,7 @@ export const IMPORTER_ITEMS: AdminNavItem[] = [
 export const WAREHOUSE_ITEMS: AdminNavItem[] = [
   {
     href: "/admin/warehouses",
-    label: "Warehouse",
+    label: "Warehouse list",
     permission: "warehouse.create",
     allOnly: true,
     icon: "warehouse",
@@ -296,6 +332,21 @@ export const USERS_ITEMS: AdminNavItem[] = [
     icon: "key",
   },
   /**
+   * The whole structure in one place: sites, roles, people, permissions.
+   *
+   * Keyed on `user.read` and deliberately NOT `allOnly`, unlike Roles
+   * and the Audit log. This one CAN be scoped honestly —
+   * `user_role_assignment.warehouse_id` is populated on every warehouse
+   * assignment — so a branch manager reviewing who works for them is
+   * the ordinary use of the screen rather than an exception to it.
+   */
+  {
+    href: "/admin/org",
+    label: "Business hierarchy",
+    permission: "user.read",
+    icon: "sitemap",
+  },
+  /**
    * The audit log, `allOnly` — and for once not because of seniority.
    *
    * `audit_log.read` is granted at WAREHOUSE to a warehouse admin and at
@@ -313,41 +364,31 @@ export const USERS_ITEMS: AdminNavItem[] = [
     allOnly: true,
     icon: "clock",
   },
-  /**
-   * The whole structure in one place: sites, roles, people, permissions.
-   *
-   * Keyed on `user.read` and deliberately NOT `allOnly`, unlike Roles
-   * and the Audit log. This one CAN be scoped honestly —
-   * `user_role_assignment.warehouse_id` is populated on every warehouse
-   * assignment — so a branch manager reviewing who works for them is
-   * the ordinary use of the screen rather than an exception to it.
-   */
-  {
-    href: "/admin/org",
-    label: "Business hierarchy",
-    permission: "user.read",
-    icon: "sitemap",
-  },
 ];
 
 /**
- * The sidebar, in order.
+ * The sidebar, in order — and in sections (`NAV_SECTIONS`), following
+ * the goods: in at the dock, into the galas, out on a vehicle.
  *
- * The order is the customer's, and it is only an ordering: every
- * `permission`, `own` and `allOnly` below is unchanged from where it
- * sat before. Worth saying because `visibleNav` derives from this array
- * and three callers outside the sidebar read it — but all three ask
- * only whether the result is EMPTY, never what comes first, so moving
- * rows around cannot change who is admitted or where signing in lands.
+ * It is only an ordering: every `permission`, `own` and `allOnly` below
+ * is unchanged from where it sat before. Worth saying because
+ * `visibleNav` derives from this array and three callers outside the
+ * sidebar read it — but all three ask only whether the result is EMPTY,
+ * never what comes first, so moving rows around cannot change who is
+ * admitted or where signing in lands.
+ *
+ * Two groups stay fold-outs (Warehouses, Master data): set-up lists
+ * nobody opens daily. Everything else is one click.
  */
 export const ADMIN_NAV: AdminNavNode[] = [
-  { href: "/admin", label: "Dashboard", permission: null, icon: "chart" },
+  // ── Overview ──────────────────────────────────────────────────────
+  { href: "/admin", label: "Dashboard", permission: null, icon: "chart", section: "Overview" },
   /**
    * Reports — like the dashboard, no permission of its own: every report
    * in the catalogue checks its own (see lib/insights/report-defs), and
    * the page lists only the ones this person may open.
    */
-  { href: "/admin/reports", label: "Reports", permission: null, icon: "report" },
+  { href: "/admin/reports", label: "Reports", permission: null, icon: "report", section: "Overview" },
   /**
    * Notifications, like the dashboard, has NO permission of its own.
    *
@@ -357,6 +398,16 @@ export const ADMIN_NAV: AdminNavNode[] = [
    * whatever else the user earned instead — and everyone who is already
    * inside can see their own bell.
    */
+  {
+    href: "/admin/notifications",
+    label: "Notifications",
+    permission: null,
+    icon: "bell",
+    badge: "notifications",
+    section: "Overview",
+  },
+
+  // ── Goods in ──────────────────────────────────────────────────────
   /**
    * Inward requests — both sides of the counter on one entry.
    *
@@ -372,9 +423,46 @@ export const ADMIN_NAV: AdminNavNode[] = [
     own: true,
     agent: true,
     icon: "box",
+    section: "Goods in",
   },
   /**
-   * Delivery notes (DN / DO) — goods going out to a buyer. Keyed on
+   * QR codes — carton numbers, stickers and scanning at the dock. Keyed
+   * on `inward.goods.update`, which only the super admin (ALL), warehouse
+   * admin and inward manager (WAREHOUSE) hold; an importer's OWN goods
+   * grant earns nothing here.
+   */
+  {
+    href: "/admin/qr-codes",
+    label: "QR codes",
+    permission: "inward.goods.update",
+    icon: "qr",
+    section: "Goods in",
+  },
+
+  // ── Storage ───────────────────────────────────────────────────────
+  /**
+   * Cartons into galas, and the floors and galas themselves. Keyed on
+   * `storage.goods.update`, which the super admin (ALL) and the
+   * warehouse admin and storage manager (WAREHOUSE) hold.
+   */
+  {
+    href: "/admin/storage",
+    label: "Store cartons",
+    permission: "storage.goods.update",
+    icon: "stack",
+    section: "Storage",
+  },
+  {
+    href: "/admin/locations",
+    label: "Floors and galas",
+    permission: "storage.goods.update",
+    icon: "grid",
+    section: "Storage",
+  },
+
+  // ── Goods out ─────────────────────────────────────────────────────
+  /**
+   * Delivery notes (DN) — goods going out to a buyer. Keyed on
    * `dispatch.order.read` with `own` and `agent` set: the sales agent
    * (their own notes) and the importer (their company's) at OWN; the
    * warehouse admin, package manager and outward (dispatch) manager at
@@ -387,19 +475,20 @@ export const ADMIN_NAV: AdminNavNode[] = [
     own: true,
     agent: true,
     icon: "truck",
+    section: "Goods out",
   },
   /**
-   * Pick & pack — the warehouse side of a delivery note: assign staff,
-   * pick cartons by scan, pack them into packages with their own QR,
-   * verify, ready for dispatch. Keyed on `package.read` WITHOUT `own`:
-   * the importer and the agent hold it at OWN (to see their packages on
-   * the note), but this screen is the warehouse's.
+   * Pick & pack — the warehouse side of a delivery note. Keyed on
+   * `package.read` WITHOUT `own`: the importer and the agent hold it at
+   * OWN (to see their packages on the note), but this screen is the
+   * warehouse's.
    */
   {
     href: "/admin/dispatch",
     label: "Pick & pack",
     permission: "package.read",
     icon: "stack",
+    section: "Goods out",
   },
   /**
    * Outward — Dispatch Orders: load the vehicle by scan, confirm it left,
@@ -414,46 +503,15 @@ export const ADMIN_NAV: AdminNavNode[] = [
     own: true,
     agent: true,
     icon: "truck",
+    section: "Goods out",
   },
+
+  // ── Customers ─────────────────────────────────────────────────────
+  // An importer sees only "Sales agents" here, under "My company"
+  // (`sectionTitle`); their company profile is their dashboard.
+  ...IMPORTER_ITEMS.map((i) => ({ ...i, section: "Customers" as const })),
   /**
-   * QR codes — carton numbers, stickers and scanning, reached without
-   * opening the request first. Keyed on `inward.goods.update`, which only
-   * the super admin (ALL), warehouse admin and inward manager (WAREHOUSE)
-   * hold; an importer's OWN goods grant earns nothing here.
-   */
-  {
-    href: "/admin/qr-codes",
-    label: "QR codes",
-    permission: "inward.goods.update",
-    icon: "qr",
-  },
-  /**
-   * Storage — cartons into galas, and the floors and galas themselves.
-   * Keyed on `storage.goods.update`, which the super admin (ALL) and the
-   * warehouse admin and storage manager (WAREHOUSE) hold. The importer's
-   * OWN read of their goods earns nothing here.
-   */
-  {
-    href: "/admin/storage",
-    label: "Store cartons",
-    permission: "storage.goods.update",
-    icon: "stack",
-  },
-  {
-    href: "/admin/locations",
-    label: "Floors and galas",
-    permission: "storage.goods.update",
-    icon: "grid",
-  },
-  {
-    href: "/admin/notifications",
-    label: "Notifications",
-    permission: null,
-    icon: "bell",
-    badge: "notifications",
-  },
-  /**
-   * Enquiry — the public contact form's inbox.
+   * Enquiries — the public contact form's inbox.
    *
    * `allOnly`, and keyed on `enquiry.read`, which 27_enquiry.sql grants
    * to SUPER_ADMIN and nobody else. Two separate things have to be true
@@ -465,62 +523,51 @@ export const ADMIN_NAV: AdminNavNode[] = [
    */
   {
     href: "/admin/enquiries",
-    label: "Enquiry",
+    label: "Enquiries",
     permission: "enquiry.read",
     allOnly: true,
     icon: "mail",
     badge: "enquiries",
+    section: "Customers",
   },
-  {
-    label: "Users & Roles",
-    icon: "shield",
-    match: "/admin/(users|roles|audit|org)",
-    children: USERS_ITEMS,
-  },
-  {
-    label: "Master",
-    icon: "database",
-    match: "/admin/master",
-    children: MASTER_ITEMS,
-  },
-  {
-    label: "Warehouses",
-    icon: "warehouse",
-    match: "/admin/warehouses",
-    children: WAREHOUSE_ITEMS,
-  },
-  {
-    label: "Transporters & Vehicles",
-    icon: "truck",
-    match: "/admin/(transporters|vehicles|drivers)",
-    children: TRANSPORT_ITEMS,
-  },
-  {
-    label: "Importers & agents",
-    icon: "box",
-    match: "/admin/(importers|sales-agents)",
-    children: IMPORTER_ITEMS,
-  },
+
+  // ── Money ─────────────────────────────────────────────────────────
   /**
-   * Expenses, above FAQs and outside Master.
-   *
    * Keyed on plain `expense.read` and deliberately NOT `allOnly`: four
    * roles are meant to see this one, two of them at WAREHOUSE scope.
-   * The page narrows what they see to their own sites; the entry only
-   * decides whether the door is there at all.
+   * The page narrows what they see to their own sites.
    */
   {
     href: "/admin/expenses",
     label: "Expenses",
     permission: "expense.read",
     icon: "rupee",
+    section: "Money",
+  },
+
+  // ── People and access ─────────────────────────────────────────────
+  ...USERS_ITEMS.map((i) => ({ ...i, section: "People and access" as const })),
+
+  // ── Setup ─────────────────────────────────────────────────────────
+  {
+    label: "Warehouses",
+    icon: "warehouse",
+    section: "Setup",
+    match: "/admin/warehouses",
+    children: WAREHOUSE_ITEMS,
+  },
+  ...TRANSPORT_ITEMS.map((i) => ({ ...i, section: "Setup" as const })),
+  {
+    label: "Master data",
+    icon: "database",
+    section: "Setup",
+    match: "/admin/master",
+    children: MASTER_ITEMS,
   },
   /**
-   * FAQs, last.
-   *
-   * Keyed on `faq.create`, and `allOnly` like the Warehouses section:
-   * the permission is held by the super admin alone, and the route
-   * behind the link asks the same question the link does.
+   * FAQs. Keyed on `faq.create`, and `allOnly` like the Warehouses
+   * group: the permission is held by the super admin alone, and the
+   * route behind the link asks the same question the link does.
    */
   {
     href: "/admin/faqs",
@@ -528,6 +575,7 @@ export const ADMIN_NAV: AdminNavNode[] = [
     permission: "faq.create",
     allOnly: true,
     icon: "help",
+    section: "Setup",
   },
 ];
 

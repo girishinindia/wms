@@ -53,7 +53,7 @@ import {
 import Avatar from "./Avatar";
 import { useEnquiryCount, useUnreadCount } from "@/lib/notifications/unread";
 
-import { groupNav, inSection, isGroup, type AdminNavItem } from "./nav";
+import { groupNav, inSection, isGroup, sectionTitle, type AdminNavItem, type AdminNavNode } from "./nav";
 import NavProgress from "./NavProgress";
 import NotificationBell from "./NotificationBell";
 import QuickFind from "./QuickFind";
@@ -299,6 +299,27 @@ export default function AdminShell({
     }));
   };
 
+  /**
+   * A small heading where the section changes — Overview, Goods in,
+   * Storage, Goods out … — the same headings as the app's drawer. A
+   * section with nothing visible in it never gets here, so it never
+   * shows an empty heading.
+   */
+  const visibleHrefs = items.map((i) => i.href);
+  function sectionHeading(node: AdminNavNode, i: number) {
+    const section = node.section;
+    if (!section || (i > 0 && nodes[i - 1]!.section === section)) return null;
+    return (
+      <p
+        key={`section-${section}`}
+        data-nav-section={section}
+        className={`px-3 pb-1 font-mono text-[0.66rem] uppercase tracking-[0.14em] text-verdigris-300/60 ${i === 0 ? "pt-1" : "pt-4"}`}
+      >
+        {sectionTitle(section, visibleHrefs)}
+      </p>
+    );
+  }
+
   function renderItem(item: AdminNavItem, nested: boolean) {
     const Icon = ICONS[item.icon];
     // `/admin` would otherwise match every child route.
@@ -431,7 +452,8 @@ export default function AdminShell({
         </a>
 
         <nav className="flex-1 space-y-0.5 p-3">
-          {nodes.map((node) =>
+          {nodes.map((node, i) => [
+            sectionHeading(node, i),
             isGroup(node) ? (
               <div key={node.label}>
                 <button
@@ -475,7 +497,7 @@ export default function AdminShell({
             ) : (
               renderItem(node, false)
             ),
-          )}
+          ])}
         </nav>
 
         <div className="border-t border-verdigris-300/10 p-3">

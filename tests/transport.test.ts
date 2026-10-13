@@ -94,11 +94,14 @@ describe("the menu trap", () => {
     expect(sql).toContain("'IMPORTER', 'SALES_AGENT'");
   });
 
-  it("sits above FAQs and outside Master", async () => {
+  it("sits under Setup, after Warehouses, above Master data, outside it", async () => {
     const { ADMIN_NAV } = await import("@/components/admin/nav");
     const labels = ADMIN_NAV.map((n) => n.label);
-    expect(labels.indexOf("Transporters & Vehicles")).toBeGreaterThan(labels.indexOf("Master"));
-    expect(labels.indexOf("Transporters & Vehicles")).toBeLessThan(labels.indexOf("FAQs"));
+    const at = (l: string) => labels.indexOf(l);
+    expect(at("Transporters")).toBe(at("Warehouses") + 1);
+    expect(labels.slice(at("Transporters"), at("Transporters") + 3)).toEqual(["Transporters", "Vehicles", "Drivers"]);
+    expect(at("Drivers")).toBeLessThan(at("Master data"));
+    for (const l of ["Transporters", "Vehicles", "Drivers"]) expect(ADMIN_NAV[at(l)]!.section).toBe("Setup");
   });
 });
 

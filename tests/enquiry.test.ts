@@ -174,13 +174,14 @@ describe("enquiries are super admin only", () => {
     expect(route).not.toMatch(/fail\("FORBIDDEN"/);
   });
 
-  it("sits below Notifications and is hidden without the grant", async () => {
+  it("sits under Customers, after the importers and agents, and is hidden without the grant", async () => {
     const { ADMIN_NAV, isGroup } = await import("@/components/admin/nav");
     const flat = ADMIN_NAV.filter((n) => !isGroup(n));
-    const notifications = flat.findIndex((n) => !isGroup(n) && n.href === "/admin/notifications");
+    const agents = flat.findIndex((n) => !isGroup(n) && n.href === "/admin/sales-agents");
     const enquiry = flat.findIndex((n) => !isGroup(n) && n.href === "/admin/enquiries");
-    expect(enquiry, "Enquiry is not in the nav").toBeGreaterThan(-1);
-    expect(enquiry).toBe(notifications + 1);
+    expect(enquiry, "Enquiries is not in the nav").toBeGreaterThan(-1);
+    expect(enquiry).toBe(agents + 1);
+    expect(flat[enquiry]!.section).toBe("Customers");
 
     const entry = flat[enquiry]!;
     if (isGroup(entry)) throw new Error("Enquiry should be a leaf, not a group");

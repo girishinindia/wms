@@ -350,11 +350,13 @@ describe("receipts", () => {
 });
 
 describe("where the menus put it", () => {
-  it("puts Expenses above FAQs and outside Master", async () => {
+  it("puts Expenses in its own Money section, outside Master data", async () => {
     const { ADMIN_NAV } = await import("@/components/admin/nav");
     const labels = ADMIN_NAV.map((n) => n.label);
-    expect(labels.indexOf("Expenses")).toBeGreaterThan(labels.indexOf("Master"));
-    expect(labels.indexOf("Expenses")).toBeLessThan(labels.indexOf("FAQs"));
+    const at = labels.indexOf("Expenses");
+    expect(at).toBeGreaterThan(-1);
+    expect(ADMIN_NAV[at]!.section).toBe("Money");
+    expect(at).toBeLessThan(labels.indexOf("Master data"));
   });
 
   it("keys Expenses on read, because four roles are meant to see it", async () => {
