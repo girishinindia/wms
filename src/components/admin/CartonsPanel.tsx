@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { CartonLabel, CartonOverview } from "@/lib/inward/cartons";
 import { useToast } from "@/components/Toast";
+import { SortTh, useSort } from "@/components/admin/SortTh";
 import { Card, ConfirmDialog } from "@/components/admin/ui";
 
 import { fitNumbers, printMarkerList, printStickers, qrSvg, STICKER_MM, STICKER_SIZES, stickerPreviewDoc, type StickerSize } from "./carton-print";
@@ -63,6 +64,13 @@ export default function CartonsPanel({
 
   // Already read with the page: no second request on arrival.
   const [fresh] = useState(Boolean(initial));
+  // The lines table sorts by item, cartons or how far each line has got.
+  const { rows: sortedLines, sort: lineSort, toggle: sortLines } = useSort(o?.lines ?? [], {
+    item: (l) => `${l.itemCode ?? ""} ${l.description}`.trim(),
+    cartons: (l) => l.cartonQty,
+    numbers: (l) => l.from,
+    progress: (l) => (l.generated ? (l.received + l.hold) / l.generated : -1),
+  });
   useEffect(() => {
     if (!fresh) void load();
   }, [load, fresh]);
@@ -194,15 +202,15 @@ export default function CartonsPanel({
         <table className="w-full text-sm">
           <thead className="text-left text-[11px] uppercase tracking-[0.08em] text-verdigris-300">
             <tr>
-              <th className="pb-2 pr-3">Item</th>
-              <th className="pb-2 pr-3 text-right">Ctns</th>
-              <th className="pb-2 pr-3">Carton numbers</th>
-              <th className="pb-2 pr-3">Progress</th>
+              <SortTh label="Item" k="item" sort={lineSort} onSort={sortLines} className="pb-2 pr-3" />
+              <SortTh label="Ctns" k="cartons" sort={lineSort} onSort={sortLines} numeric right className="pb-2 pr-3" />
+              <SortTh label="Carton numbers" k="numbers" sort={lineSort} onSort={sortLines} className="pb-2 pr-3" />
+              <SortTh label="Progress" k="progress" sort={lineSort} onSort={sortLines} numeric className="pb-2 pr-3" />
               <th className="pb-2" />
             </tr>
           </thead>
           <tbody className="divide-y divide-verdigris-300/10">
-            {o.lines.map((l) => {
+            {sortedLines.map((l) => {
               const done = l.generated > 0 && l.received + l.hold >= l.generated;
               return (
                 <tr key={l.lineId}>

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import "@fortawesome/fontawesome-svg-core/styles.css";
 import "./globals.css";
 import { ToastProvider } from "@/components/Toast";
 import { PREFS_BOOT_SCRIPT } from "@/lib/admin/prefs";

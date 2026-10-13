@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { SortTh, useSort } from "@/components/admin/SortTh";
 
 import { api } from "@/lib/api/client";
 import { useToast } from "@/components/Toast";
@@ -42,6 +43,18 @@ export default function InwardDetail({
   const router = useRouter();
   const toast = useToast();
   const [d, setD] = useState(initial);
+  // The goods lines sort by any column; "#" keeps each line's own number.
+  const numbered = useMemo(() => d.items.map((l, i) => ({ l, no: i + 1 })), [d.items]);
+  const { rows: lines, sort: lineSort, toggle: sortLines } = useSort(numbered, {
+    no: (x) => x.no,
+    item: (x) => `${x.l.itemCode ?? ""} ${x.l.description}`.trim(),
+    cartons: (x) => x.l.cartonQty,
+    ppc: (x) => x.l.piecesPerCarton,
+    unit: (x) => x.l.unitCode,
+    pieces: (x) => x.l.totalPieces,
+    kgc: (x) => x.l.kgPerCarton,
+    kg: (x) => x.l.totalKg,
+  });
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<null | "cancel" | "complete">(null);
   const [note, setNote] = useState<string | null>(null);
@@ -152,20 +165,20 @@ export default function InwardDetail({
             <table className="w-full text-sm">
               <thead className="bg-ink-900/50 text-left text-[11px] uppercase tracking-[0.1em] text-verdigris-300">
                 <tr>
-                  <th className="px-5 py-2">#</th>
-                  <th className="px-3 py-2">Item</th>
-                  <th className="px-3 py-2 text-right">Cartons</th>
-                  <th className="px-3 py-2 text-right">Pcs / ctn</th>
-                  <th className="px-3 py-2">Unit</th>
-                  <th className="px-3 py-2 text-right">Pieces</th>
-                  <th className="px-3 py-2 text-right">Kg / ctn</th>
-                  <th className="px-5 py-2 text-right">Kg</th>
+                  <SortTh label="#" k="no" sort={lineSort} onSort={sortLines} className="px-5 py-2" />
+                  <SortTh label="Item" k="item" sort={lineSort} onSort={sortLines} className="px-3 py-2" />
+                  <SortTh label="Cartons" k="cartons" sort={lineSort} onSort={sortLines} numeric right className="px-3 py-2" />
+                  <SortTh label="Pcs / ctn" k="ppc" sort={lineSort} onSort={sortLines} numeric right className="px-3 py-2" />
+                  <SortTh label="Unit" k="unit" sort={lineSort} onSort={sortLines} className="px-3 py-2" />
+                  <SortTh label="Pieces" k="pieces" sort={lineSort} onSort={sortLines} numeric right className="px-3 py-2" />
+                  <SortTh label="Kg / ctn" k="kgc" sort={lineSort} onSort={sortLines} numeric right className="px-3 py-2" />
+                  <SortTh label="Kg" k="kg" sort={lineSort} onSort={sortLines} numeric right className="px-5 py-2" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-verdigris-300/10">
-                {d.items.map((l, i) => (
+                {lines.map(({ l, no }) => (
                   <tr key={l.id}>
-                    <td className="px-5 py-2 text-verdigris-200/50">{i + 1}</td>
+                    <td className="px-5 py-2 text-verdigris-200/50">{no}</td>
                     <td className="px-3 py-2 text-verdigris-50">
                       <span className="flex items-center gap-2">
                         {l.imageUrl ? (

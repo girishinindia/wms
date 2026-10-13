@@ -18,7 +18,7 @@ export default async function QrCodesPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const guard = await pageGuard("inward.goods.update");
-  if (!guard.ok) return <Denied what="QR codes" />;
+  if (!guard.ok) return <Denied what="Generate QR & Scan" />;
 
   const raw = await searchParams;
   const completed = raw.completed === "1";
@@ -34,7 +34,7 @@ export default async function QrCodesPage({
   return (
     <>
       <PageHeader
-        title="QR codes"
+        title="Generate QR & Scan"
         subtitle="Pick the inward, then number its cartons, print the stickers and scan them in."
         leading={<BackButton fallback={picked === null ? "/admin/inward" : `/admin/inward/${picked}`} />}
       />

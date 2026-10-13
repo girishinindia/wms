@@ -43,7 +43,7 @@ describe("admin navigation", () => {
     expect(visibleNav(IMPORTER)).toEqual([]);
   });
 
-  it("shows QR codes to the dock and super admin, never to an importer", () => {
+  it("shows Generate QR & Scan to the dock and super admin, never to an importer", () => {
     const labels = (set: { permission: string; scope: "OWN" | "WAREHOUSE" | "ALL" }[]) =>
       visibleNav(set).map((i) => i.label);
     // Importer and sales agent: goods at OWN, read only.
@@ -53,14 +53,14 @@ describe("admin navigation", () => {
         { permission: "inward.goods.read", scope: "OWN" },
         { permission: "inward.goods.update", scope: "OWN" },
       ]),
-    ).not.toContain("QR codes");
+    ).not.toContain("Generate QR & Scan");
     // Inward manager / warehouse admin.
     expect(
       labels([
         { permission: "inward.request.read", scope: "WAREHOUSE" },
         { permission: "inward.goods.update", scope: "WAREHOUSE" },
       ]),
-    ).toEqual(["Dashboard", "Reports", "Notifications", "Inward requests", "QR codes"]);
+    ).toEqual(["Dashboard", "Reports", "Notifications", "Inward requests", "Generate QR & Scan"]);
   });
 
   it("does not show the dashboard on its own", () => {
@@ -260,7 +260,7 @@ describe("admin navigation: grouping", () => {
       "Overview · Notifications",
       // In at the dock: the request, then its stickers and scanning.
       "Goods in · Inward requests",
-      "Goods in · QR codes",
+      "Goods in · Generate QR & Scan",
       // Into the galas.
       "Storage · Store cartons",
       "Storage · Floors and galas",

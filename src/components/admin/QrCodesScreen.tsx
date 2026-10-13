@@ -6,13 +6,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import type { CartonQueueRow } from "@/lib/inward/cartons";
 import { fmtDay } from "@/lib/format/datetime";
+import { SortMenu, useSort } from "@/components/admin/SortTh";
 import { Card, StatusBadge } from "@/components/admin/ui";
 
 import CartonsPanel, { type CartonsInitial } from "./CartonsPanel";
 import { fmt } from "./InwardTable";
 
 /**
- * The "QR codes" menu: one box to find the inward (by number, container,
+ * The "Generate QR & Scan" menu: one box to find the inward (by number, container,
  * importer or warehouse), one tap to pick it, and its cartons panel —
  * generate, print, scan, finish — right underneath. The menu always
  * opens on the list; a picked inward lives in the address (?id=), so
@@ -79,6 +80,14 @@ export default function QrCodesScreen({
       [r.code, r.containerNumber ?? "", r.importer, r.warehouse].some((v) => v.toLowerCase().includes(t)),
     );
   }, [rows, q]);
+  // A list, so a menu sorts it: newest arrival, number, importer, progress.
+  const { rows: sortedShown, sort, set: setSort } = useSort(shown, {
+    code: (r) => r.code,
+    importer: (r) => r.importer,
+    expected: (r) => r.expectedArrival,
+    cartons: (r) => r.declared,
+    left: (r) => (r.declared ? r.received / r.declared : 0),
+  });
 
   const current = rows.find((r) => r.id === picked) ?? null;
 
@@ -142,6 +151,19 @@ export default function QrCodesScreen({
                 />
                 Include completed (30 days)
               </label>
+              <SortMenu
+                id="qr-sort"
+                sort={sort}
+                onPick={setSort}
+                options={[
+                  { value: "", label: "Queue order" },
+                  { value: "expected", label: "Arriving first", key: "expected", dir: "asc" },
+                  { value: "code", label: "Inward number", key: "code", dir: "asc" },
+                  { value: "importer", label: "Importer, A to Z", key: "importer", dir: "asc" },
+                  { value: "cartons", label: "Most cartons", key: "cartons", dir: "desc" },
+                  { value: "left", label: "Least scanned in", key: "left", dir: "asc" },
+                ]}
+              />
               {current ? (
                 <button type="button" onClick={() => setOpen(false)} className="text-sm text-verdigris-200/60 hover:text-patina">
                   Cancel
@@ -156,7 +178,7 @@ export default function QrCodesScreen({
               </p>
             ) : (
               <ul className="mt-4 max-h-[26rem] divide-y divide-verdigris-300/10 overflow-y-auto rounded-xl border border-verdigris-300/10" id="qr-list">
-                {shown.map((r) => {
+                {sortedShown.map((r) => {
                   const p = progress(r);
                   return (
                     <li key={r.id}>

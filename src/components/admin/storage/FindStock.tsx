@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { SortTh, useSort } from "@/components/admin/SortTh";
+
 import { api } from "@/lib/api/client";
 import type { FindAnswer } from "@/lib/storage/cartons";
 
@@ -19,6 +21,11 @@ export default function FindStock({ warehouseId }: { warehouseId: number }) {
   const [q, setQ] = useState("");
   const [a, setA] = useState<FindAnswer | null>(null);
   const [busy, setBusy] = useState(false);
+  const { rows: places, sort, toggle } = useSort(a?.places ?? [], {
+    item: (p) => `${p.itemCode ?? ""} ${p.description}`.trim(),
+    gala: (p) => p.galaCode,
+    cartons: (p) => p.cartons,
+  });
   const seq = useRef(0);
 
   useEffect(() => {
@@ -91,8 +98,15 @@ export default function FindStock({ warehouseId }: { warehouseId: number }) {
           ) : null}
           {a?.places.length ? (
             <table className="w-full text-sm">
+              <thead className="text-left text-[11px] uppercase tracking-[0.08em] text-verdigris-300">
+                <tr>
+                  <SortTh label="Item" k="item" sort={sort} onSort={toggle} className="pb-1.5 pr-3" />
+                  <SortTh label="Gala" k="gala" sort={sort} onSort={toggle} className="pb-1.5 pr-3" />
+                  <SortTh label="Cartons" k="cartons" sort={sort} onSort={toggle} numeric right className="pb-1.5" />
+                </tr>
+              </thead>
               <tbody>
-                {a.places.map((p, i) => (
+                {places.map((p, i) => (
                   <tr key={i} className="border-t border-verdigris-300/10 first:border-t-0">
                     <td className="py-1.5 pr-3 text-verdigris-50">
                       {p.itemCode ? <span className="font-mono text-verdigris-200/70">{p.itemCode} · </span> : null}

@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState , useMemo} from "react";
 
 import { useToast } from "@/components/Toast";
+import { SortTh, useSort } from "@/components/admin/SortTh";
 import { Card, StatusBadge } from "@/components/admin/ui";
 import { api } from "@/lib/api/client";
 import { HANDLING_LABEL, PACKING_LABEL } from "@/lib/delivery/labels";
@@ -86,6 +87,15 @@ export default function DeliveryNoteDetail({ note, workLink = false }: { note: N
 
   const totalPieces = note.lineItems.reduce((s, l) => s + l.pieces, 0);
   const totalCartons = note.lineItems.reduce((s, l) => s + l.cartons, 0);
+  const numbered = useMemo(() => note.lineItems.map((l, i) => ({ l, no: i + 1 })), [note.lineItems]);
+  const { rows: lines, sort: lineSort, toggle: sortLines } = useSort(numbered, {
+    no: (x) => x.no,
+    item: (x) => `${x.l.itemCode ?? ""} ${x.l.description}`.trim(),
+    ppc: (x) => x.l.piecesPerCarton,
+    ordered: (x) => x.l.orderPieces,
+    cartons: (x) => x.l.cartons,
+    pieces: (x) => x.l.pieces,
+  });
 
   return (
     <div className="space-y-5">
@@ -320,18 +330,18 @@ export default function DeliveryNoteDetail({ note, workLink = false }: { note: N
         <table className="w-full text-sm" id="dn-lines">
           <thead>
             <tr className="border-b border-verdigris-300/10 text-left text-[0.72rem] uppercase tracking-[0.1em] text-verdigris-300">
-              <th className="px-4 py-3 font-medium">#</th>
-              <th className="px-4 py-3 font-medium">Item</th>
-              <th className="px-4 py-3 text-right font-medium">Per carton</th>
-              <th className="px-4 py-3 text-right font-medium">Ordered</th>
-              <th className="px-4 py-3 text-right font-medium">Cartons</th>
-              <th className="px-4 py-3 text-right font-medium">Total pieces</th>
+              <SortTh label="#" k="no" sort={lineSort} onSort={sortLines} className="px-4 py-3 font-medium" />
+              <SortTh label="Item" k="item" sort={lineSort} onSort={sortLines} className="px-4 py-3 font-medium" />
+              <SortTh label="Per carton" k="ppc" sort={lineSort} onSort={sortLines} numeric right className="px-4 py-3 font-medium" />
+              <SortTh label="Ordered" k="ordered" sort={lineSort} onSort={sortLines} numeric right className="px-4 py-3 font-medium" />
+              <SortTh label="Cartons" k="cartons" sort={lineSort} onSort={sortLines} numeric right className="px-4 py-3 font-medium" />
+              <SortTh label="Total pieces" k="pieces" sort={lineSort} onSort={sortLines} numeric right className="px-4 py-3 font-medium" />
             </tr>
           </thead>
           <tbody>
-            {note.lineItems.map((l, i) => (
+            {lines.map(({ l, no }) => (
               <tr key={l.key} className="border-b border-verdigris-300/5">
-                <td className="px-4 py-2.5 text-verdigris-200/60">{i + 1}</td>
+                <td className="px-4 py-2.5 text-verdigris-200/60">{no}</td>
                 <td className="px-4 py-2.5 text-verdigris-50">
                   {l.itemCode ? <span className="font-mono text-verdigris-200/70">{l.itemCode} · </span> : null}
                   {l.description}

@@ -84,29 +84,42 @@ export type AdminNavItem = {
 };
 
 export type AdminNavIcon =
-  | "chart"
-  | "box"
-  | "shield"
-  | "pin"
-  | "database"
-  | "globe"
-  | "map"
-  | "grid"
-  | "truck"
-  | "users"
-  | "building"
+  | "agent"
+  | "anchor"
   | "bell"
-  | "warehouse"
-  | "image"
-  | "help"
-  | "rupee"
-  | "key"
+  | "building"
   | "clock"
+  | "container"
+  | "dashboard"
+  | "database"
+  | "driver"
+  | "folder"
+  | "galas"
+  | "globe"
+  | "help"
+  | "image"
+  | "importer"
+  | "inward"
+  | "key"
+  | "list"
   | "mail"
-  | "sitemap"
+  | "map"
+  | "note"
+  | "outward"
+  | "pickpack"
+  | "pin"
   | "qr"
-  | "stack"
-  | "report";
+  | "report"
+  | "ruler"
+  | "rupee"
+  | "sitemap"
+  | "store"
+  | "tags"
+  | "transporter"
+  | "users"
+  | "vehicle"
+  | "vehicleType"
+  | "warehouse";
 
 /**
  * The sidebar's headings, in the order the work happens: goods come in,
@@ -183,34 +196,34 @@ export const MASTER_ITEMS: AdminNavItem[] = [
     href: "/admin/master/warehouse-types",
     label: "Warehouse types",
     permission: "master.warehouse_type.create",
-    icon: "grid",
+    icon: "building",
   },
   {
     href: "/admin/master/vehicle-types",
     label: "Vehicle types",
     permission: "master.vehicle_type.create",
-    icon: "truck",
+    icon: "vehicleType",
   },
   {
     href: "/admin/master/container-types",
     label: "Container types",
     permission: "master.container_type.create",
     allOnly: true,
-    icon: "grid",
+    icon: "container",
   },
   {
     href: "/admin/master/ports",
     label: "Ports",
     permission: "master.port.create",
     allOnly: true,
-    icon: "pin",
+    icon: "anchor",
   },
   {
     href: "/admin/master/measurement-units",
     label: "Measurement units",
     permission: "master.measurement_unit.create",
     allOnly: true,
-    icon: "grid",
+    icon: "ruler",
   },
   {
     href: "/admin/master/expense-categories",
@@ -220,14 +233,14 @@ export const MASTER_ITEMS: AdminNavItem[] = [
     // because they need the picker. `.create` is the super admin's
     // alone, which is what this entry is keyed on.
     allOnly: true,
-    icon: "rupee",
+    icon: "tags",
   },
   {
     href: "/admin/master/faq-categories",
     label: "FAQ categories",
     permission: "master.faq_category.create",
     allOnly: true,
-    icon: "help",
+    icon: "folder",
   },
 ];
 
@@ -237,13 +250,13 @@ export const MASTER_ITEMS: AdminNavItem[] = [
  * not a menu entry. Same section, different leaves.
  */
 export const IMPORTER_ITEMS: AdminNavItem[] = [
-  { href: "/admin/importers", label: "Importers", permission: "importer.read", icon: "box" },
+  { href: "/admin/importers", label: "Importers", permission: "importer.read", icon: "importer" },
   {
     href: "/admin/sales-agents",
     label: "Sales agents",
     permission: "sales_agent.read",
     own: true,
-    icon: "users",
+    icon: "agent",
   },
 ];
 
@@ -262,7 +275,7 @@ export const WAREHOUSE_ITEMS: AdminNavItem[] = [
     label: "Warehouse list",
     permission: "warehouse.create",
     allOnly: true,
-    icon: "warehouse",
+    icon: "list",
   },
   {
     href: "/admin/warehouses/gallery",
@@ -293,19 +306,19 @@ export const TRANSPORT_ITEMS: AdminNavItem[] = [
     href: "/admin/transporters",
     label: "Transporters",
     permission: "transporter.create",
-    icon: "truck",
+    icon: "transporter",
   },
   {
     href: "/admin/vehicles",
     label: "Vehicles",
     permission: "vehicle.create",
-    icon: "truck",
+    icon: "vehicle",
   },
   {
     href: "/admin/drivers",
     label: "Drivers",
     permission: "driver.create",
-    icon: "users",
+    icon: "driver",
   },
 ];
 
@@ -323,7 +336,7 @@ export const TRANSPORT_ITEMS: AdminNavItem[] = [
  * two entries in this one section are deliberately keyed differently.
  */
 export const USERS_ITEMS: AdminNavItem[] = [
-  { href: "/admin/users", label: "Users", permission: "user.read", icon: "shield" },
+  { href: "/admin/users", label: "Users", permission: "user.read", icon: "users" },
   {
     href: "/admin/roles",
     label: "Roles",
@@ -382,7 +395,7 @@ export const USERS_ITEMS: AdminNavItem[] = [
  */
 export const ADMIN_NAV: AdminNavNode[] = [
   // ── Overview ──────────────────────────────────────────────────────
-  { href: "/admin", label: "Dashboard", permission: null, icon: "chart", section: "Overview" },
+  { href: "/admin", label: "Dashboard", permission: null, icon: "dashboard", section: "Overview" },
   /**
    * Reports — like the dashboard, no permission of its own: every report
    * in the catalogue checks its own (see lib/insights/report-defs), and
@@ -422,7 +435,7 @@ export const ADMIN_NAV: AdminNavNode[] = [
     permission: "inward.request.read",
     own: true,
     agent: true,
-    icon: "box",
+    icon: "inward",
     section: "Goods in",
   },
   /**
@@ -433,7 +446,7 @@ export const ADMIN_NAV: AdminNavNode[] = [
    */
   {
     href: "/admin/qr-codes",
-    label: "QR codes",
+    label: "Generate QR & Scan",
     permission: "inward.goods.update",
     icon: "qr",
     section: "Goods in",
@@ -449,14 +462,14 @@ export const ADMIN_NAV: AdminNavNode[] = [
     href: "/admin/storage",
     label: "Store cartons",
     permission: "storage.goods.update",
-    icon: "stack",
+    icon: "store",
     section: "Storage",
   },
   {
     href: "/admin/locations",
     label: "Floors and galas",
     permission: "storage.goods.update",
-    icon: "grid",
+    icon: "galas",
     section: "Storage",
   },
 
@@ -474,7 +487,7 @@ export const ADMIN_NAV: AdminNavNode[] = [
     permission: "dispatch.order.read",
     own: true,
     agent: true,
-    icon: "truck",
+    icon: "note",
     section: "Goods out",
   },
   /**
@@ -487,7 +500,7 @@ export const ADMIN_NAV: AdminNavNode[] = [
     href: "/admin/dispatch",
     label: "Pick & pack",
     permission: "package.read",
-    icon: "stack",
+    icon: "pickpack",
     section: "Goods out",
   },
   /**
@@ -502,7 +515,7 @@ export const ADMIN_NAV: AdminNavNode[] = [
     permission: "outward.order.read",
     own: true,
     agent: true,
-    icon: "truck",
+    icon: "outward",
     section: "Goods out",
   },
 

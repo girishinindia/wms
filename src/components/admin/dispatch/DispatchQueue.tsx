@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { SortTh, useSort } from "@/components/admin/SortTh";
 import { Card, Empty, StatusBadge } from "@/components/admin/ui";
 import { api } from "@/lib/api/client";
 import type { WorkRow } from "@/lib/dispatch/ops";
@@ -120,6 +121,15 @@ export default function DispatchQueue({ initial }: { initial: WorkRow[] }) {
     return list.sort(by[f.sort]);
   }, [rows, q, serverQ, f]);
   const extra = [f.warehouse, f.step, f.approval, f.priority, f.handling, f.person].filter(Boolean).length;
+  // Column headings sort (↑, ↓, off) on top of the menu's order.
+  const { rows: sortedRows, sort: col, toggle, clear } = useSort(shown, {
+    note: (r) => r.dnNo,
+    buyer: (r) => r.buyerName,
+    status: (r) => r.workLabel,
+    picked: (r) => r.picked / Math.max(1, r.required),
+    packed: (r) => r.packed,
+    assigned: (r) => r.assignees.join(", "),
+  });
 
   const csv: CsvColumn<WorkRow>[] = [
     { label: "Delivery note", value: (r) => r.dnNo },
@@ -168,7 +178,16 @@ export default function DispatchQueue({ initial }: { initial: WorkRow[] }) {
         <button type="button" id="work-filters-toggle" onClick={() => setMore((v) => !v)} className={small}>
           Filters{extra ? ` (${extra})` : ""} {more ? "▴" : "▾"}
         </button>
-        <select id="work-sort" aria-label="Sort" className={select} value={f.sort} onChange={(e) => set({ sort: e.target.value as SortKey })}>
+        <select
+          id="work-sort"
+          aria-label="Sort"
+          className={select}
+          value={f.sort}
+          onChange={(e) => {
+            clear();
+            set({ sort: e.target.value as SortKey });
+          }}
+        >
           {SORTS.map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}
@@ -252,16 +271,16 @@ export default function DispatchQueue({ initial }: { initial: WorkRow[] }) {
             <table className="w-full text-sm" id="work-table">
               <thead>
                 <tr className="border-b border-verdigris-300/10 text-left text-[0.72rem] uppercase tracking-[0.1em] text-verdigris-300">
-                  <th className="px-4 py-3 font-medium">Delivery note</th>
-                  <th className="px-4 py-3 font-medium">Buyer</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 text-right font-medium">Picked</th>
-                  <th className="px-4 py-3 text-right font-medium">Packed</th>
-                  <th className="px-4 py-3 font-medium">Assigned</th>
+                  <SortTh label="Delivery note" k="note" sort={col} onSort={toggle} className="px-4 py-3 font-medium" />
+                  <SortTh label="Buyer" k="buyer" sort={col} onSort={toggle} className="px-4 py-3 font-medium" />
+                  <SortTh label="Status" k="status" sort={col} onSort={toggle} className="px-4 py-3 font-medium" />
+                  <SortTh label="Picked" k="picked" sort={col} onSort={toggle} numeric right className="px-4 py-3 font-medium" />
+                  <SortTh label="Packed" k="packed" sort={col} onSort={toggle} numeric right className="px-4 py-3 font-medium" />
+                  <SortTh label="Assigned" k="assigned" sort={col} onSort={toggle} className="px-4 py-3 font-medium" />
                 </tr>
               </thead>
               <tbody>
-                {shown.map((r) => (
+                {sortedRows.map((r) => (
                   <tr key={r.id} className="border-b border-verdigris-300/5 hover:bg-ink-900/30">
                     <td className="px-4 py-2.5">
                       <Link href={`/admin/dispatch/${r.id}`} className="font-mono font-semibold text-verdigris-50 hover:text-patina">

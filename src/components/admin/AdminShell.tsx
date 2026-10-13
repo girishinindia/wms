@@ -3,37 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
-import {
-  BellIcon,
-  ClockIcon,
-  ImageIcon,
-  HelpIcon,
-  KeyIcon,
-  RupeeIcon,
-  SitemapIcon,
-  QrIcon,
-  StackIcon,
-  ReportIcon,
-  WarehouseIcon,
-  BoxIcon,
-  BuildingIcon,
-  ChartIcon,
-  CheckShieldIcon,
-  DatabaseIcon,
-  GlobeIcon,
-  GridIcon,
-  LayersIcon,
-  LockIcon,
-  MailIcon,
-  MapIcon,
-  MenuIcon,
-  MoonIcon,
-  PinIcon,
-  SidebarIcon,
-  SunIcon,
-  TruckIcon,
-  UsersIcon,
-} from "@/components/icons";
+import { LayersIcon, LockIcon, MenuIcon, MoonIcon, SidebarIcon, SunIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
 import { useToast } from "@/components/Toast";
 import { api } from "@/lib/api/client";
@@ -53,7 +23,48 @@ import {
 import Avatar from "./Avatar";
 import { useEnquiryCount, useUnreadCount } from "@/lib/notifications/unread";
 
-import { groupNav, inSection, isGroup, sectionTitle, type AdminNavItem, type AdminNavNode } from "./nav";
+import {
+  faAnchor,
+  faBell,
+  faBoxArchive,
+  faBoxesStacked,
+  faBoxOpen,
+  faBuilding,
+  faChartColumn,
+  faCircleQuestion,
+  faCity,
+  faClockRotateLeft,
+  faDatabase,
+  faEarthAsia,
+  faEnvelope,
+  faFileInvoice,
+  faFolderOpen,
+  faGaugeHigh,
+  faIdCard,
+  faImages,
+  faIndianRupeeSign,
+  faKey,
+  faList,
+  faLocationDot,
+  faMap,
+  faQrcode,
+  faRuler,
+  faSitemap,
+  faTableCellsLarge,
+  faTags,
+  faTruck,
+  faTruckFast,
+  faTruckPickup,
+  faTruckRampBox,
+  faUsers,
+  faUserTie,
+  faVanShuttle,
+  faWarehouse,
+} from "@fortawesome/free-solid-svg-icons";
+
+import { faIcon } from "@/lib/ui/fa";
+
+import { groupNav, inSection, isGroup, sectionTitle, type AdminNavIcon, type AdminNavItem, type AdminNavNode } from "./nav";
 import NavProgress from "./NavProgress";
 import NotificationBell from "./NotificationBell";
 import QuickFind from "./QuickFind";
@@ -70,31 +81,48 @@ import { useNavigating, useNavStage } from "@/lib/admin/navigating";
  * permission check never depends on the browser.
  */
 
-const ICONS = {
-  chart: ChartIcon,
-  box: BoxIcon,
-  shield: CheckShieldIcon,
-  pin: PinIcon,
-  database: DatabaseIcon,
-  globe: GlobeIcon,
-  map: MapIcon,
-  grid: GridIcon,
-  truck: TruckIcon,
-  users: UsersIcon,
-  building: BuildingIcon,
-  bell: BellIcon,
-  warehouse: WarehouseIcon,
-  image: ImageIcon,
-  help: HelpIcon,
-  rupee: RupeeIcon,
-  key: KeyIcon,
-  clock: ClockIcon,
-  mail: MailIcon,
-  sitemap: SitemapIcon,
-  qr: QrIcon,
-  stack: StackIcon,
-  report: ReportIcon,
-} as const;
+/**
+ * One Font Awesome icon per menu entry — no two entries share one, so the
+ * eye can find "Outward" without reading the word.
+ */
+const ICONS: Record<AdminNavIcon, ReturnType<typeof faIcon>> = {
+  dashboard: faIcon(faGaugeHigh),
+  report: faIcon(faChartColumn),
+  bell: faIcon(faBell),
+  inward: faIcon(faTruckRampBox),
+  qr: faIcon(faQrcode),
+  store: faIcon(faBoxesStacked),
+  galas: faIcon(faTableCellsLarge),
+  note: faIcon(faFileInvoice),
+  pickpack: faIcon(faBoxOpen),
+  outward: faIcon(faTruckFast),
+  importer: faIcon(faBuilding),
+  agent: faIcon(faUserTie),
+  mail: faIcon(faEnvelope),
+  rupee: faIcon(faIndianRupeeSign),
+  users: faIcon(faUsers),
+  key: faIcon(faKey),
+  sitemap: faIcon(faSitemap),
+  clock: faIcon(faClockRotateLeft),
+  warehouse: faIcon(faWarehouse),
+  list: faIcon(faList),
+  image: faIcon(faImages),
+  transporter: faIcon(faTruck),
+  vehicle: faIcon(faVanShuttle),
+  driver: faIcon(faIdCard),
+  database: faIcon(faDatabase),
+  help: faIcon(faCircleQuestion),
+  globe: faIcon(faEarthAsia),
+  map: faIcon(faMap),
+  pin: faIcon(faLocationDot),
+  building: faIcon(faCity),
+  vehicleType: faIcon(faTruckPickup),
+  container: faIcon(faBoxArchive),
+  anchor: faIcon(faAnchor),
+  ruler: faIcon(faRuler),
+  tags: faIcon(faTags),
+  folder: faIcon(faFolderOpen),
+};
 
 export type AdminUser = {
   name: string;

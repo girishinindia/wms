@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+import { SortTh, useSort } from "@/components/admin/SortTh";
 import { Card, Empty, StatusBadge } from "@/components/admin/ui";
 import type { NoteSummary } from "@/lib/delivery/ops";
 import { fmtDay } from "@/lib/format/datetime";
@@ -137,26 +138,20 @@ export default function DeliveryNotesTable({
   }, [searched, f.status, f.sort]);
   const extra = [f.warehouse, f.importer, f.agent, f.priority, f.work, f.from, f.to].filter(Boolean).length;
 
-  // A column heading sorts by it; the note column flips newest / oldest.
-  const th = (label: string, key: SortKey | null, right = false) => {
-    const on = key !== null && (f.sort === key || (key === "NEWEST" && f.sort === "OLDEST"));
-    return (
-      <th className={`px-4 py-3 font-medium ${right ? "text-right" : ""}`}>
-        {key ? (
-          <button
-            type="button"
-            className={`uppercase tracking-[0.1em] hover:text-patina ${on ? "text-patina" : ""}`}
-            onClick={() => set({ sort: key === "NEWEST" && f.sort === "NEWEST" ? "OLDEST" : key })}
-          >
-            {label}
-            {on ? (f.sort === "OLDEST" ? " ▴" : " ▾") : ""}
-          </button>
-        ) : (
-          label
-        )}
-      </th>
-    );
-  };
+  // A column heading sorts by it (↑, ↓, off); the menu sets the order
+  // underneath, and choosing from it lets go of a column sort.
+  const { rows: sortedRows, sort: col, toggle, clear } = useSort(rows, {
+    note: (r) => r.dnNo,
+    buyer: (r) => r.buyerName,
+    importer: (r) => r.importerName,
+    warehouse: (r) => r.warehouseName,
+    cartons: (r) => r.cartons,
+    agent: (r) => r.createdByName,
+    status: (r) => r.statusLabel,
+  });
+  const th = (label: string, k: string, numeric = false) => (
+    <SortTh label={label} k={k} sort={col} onSort={toggle} numeric={numeric} right={numeric} className="px-4 py-3 font-medium" />
+  );
 
   const csv: CsvColumn<NoteSummary>[] = [
     { label: "Delivery note", value: (r) => r.dnNo },
@@ -205,7 +200,10 @@ export default function DeliveryNotesTable({
         <button type="button" id="dn-filters-toggle" onClick={() => setMore((v) => !v)} className={small}>
           Filters{extra ? ` (${extra})` : ""} {more ? "▴" : "▾"}
         </button>
-        <select id="dn-sort" aria-label="Sort" className={select} value={f.sort} onChange={(e) => set({ sort: e.target.value as SortKey })}>
+        <select id="dn-sort" aria-label="Sort" className={select} value={f.sort} onChange={(e) => {
+            clear();
+            set({ sort: e.target.value as SortKey });
+          }}>
           {SORTS.map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}
@@ -293,17 +291,17 @@ export default function DeliveryNotesTable({
             <table className="w-full text-sm" id="dn-table">
               <thead>
                 <tr className="border-b border-verdigris-300/10 text-left text-[0.72rem] uppercase tracking-[0.1em] text-verdigris-300">
-                  {th("Delivery note", "NEWEST")}
-                  {th("Buyer", "BUYER")}
-                  {showImporter ? th("Importer", null) : null}
-                  {th("Warehouse", "WAREHOUSE")}
-                  {th("Cartons", "CARTONS", true)}
-                  {showAgent ? th("Sales agent", null) : null}
-                  {th("Status", "PENDING")}
+                  {th("Delivery note", "note")}
+                  {th("Buyer", "buyer")}
+                  {showImporter ? th("Importer", "importer") : null}
+                  {th("Warehouse", "warehouse")}
+                  {th("Cartons", "cartons", true)}
+                  {showAgent ? th("Sales agent", "agent") : null}
+                  {th("Status", "status")}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {sortedRows.map((r) => (
                   <tr key={r.id} className="border-b border-verdigris-300/5 last:border-0 hover:bg-verdigris-400/5">
                     <td className="px-4 py-3">
                       <Link href={`/admin/delivery-notes/${r.id}`} className="font-mono font-semibold text-verdigris-50 hover:text-patina">

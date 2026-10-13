@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { SortMenu, SortTh, useSort } from "@/components/admin/SortTh";
 import { Card, Empty } from "@/components/admin/ui";
 import { api } from "@/lib/api/client";
 import { fmtDay } from "@/lib/format/datetime";
@@ -145,10 +146,35 @@ export default function OutwardBoard({ initial, canCreate }: { initial: Board; c
 }
 
 function ReadyList({ notes, canCreate }: { notes: ReadyNote[]; canCreate: boolean }) {
+  const { rows, sort, set } = useSort(notes, {
+    note: (r) => r.dnNo,
+    buyer: (r) => r.buyerName,
+    packages: (r) => r.readyPackages,
+    cartons: (r) => r.readyCartons,
+    urgent: (r) => (r.priority === "URGENT" ? 1 : 0),
+    ready: (r) => r.readyAt,
+  });
   if (!notes.length) return <Card className="p-6"><Empty title="Nothing waiting" hint="A delivery note shows here once its packages are verified and it is approved." /></Card>;
   return (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <SortMenu
+          id="outward-ready-sort"
+          sort={sort}
+          onPick={set}
+          options={[
+            { value: "", label: "Board order" },
+            { value: "urgent", label: "Urgent first", key: "urgent", dir: "desc" },
+            { value: "ready-old", label: "Ready longest", key: "ready", dir: "asc" },
+            { value: "note", label: "Note number", key: "note", dir: "asc" },
+            { value: "buyer", label: "Buyer, A to Z", key: "buyer", dir: "asc" },
+            { value: "packages", label: "Most packages", key: "packages", dir: "desc" },
+            { value: "cartons", label: "Most cartons", key: "cartons", dir: "desc" },
+          ]}
+        />
+      </div>
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" id="outward-ready">
-      {notes.map((r) => (
+      {rows.map((r) => (
         <Card key={r.id} className="flex flex-col gap-2 p-4">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -177,10 +203,19 @@ function ReadyList({ notes, canCreate }: { notes: ReadyNote[]; canCreate: boolea
         </Card>
       ))}
     </div>
+    </div>
   );
 }
 
 function OrderList({ orders, view }: { orders: DoRow[]; view: OutwardView }) {
+  const { rows, sort, toggle } = useSort(orders, {
+    do: (d) => d.doNo,
+    buyer: (d) => d.buyerName,
+    vehicle: (d) => d.vehicleNo,
+    packages: (d) => d.packages,
+    status: (d) => d.statusLabel,
+    lr: (d) => d.lrLabel,
+  });
   if (!orders.length) return <Card className="p-6"><Empty title="Nothing here" hint="Try another tab, or clear the search." /></Card>;
   return (
     <Card className="overflow-hidden">
@@ -188,16 +223,16 @@ function OrderList({ orders, view }: { orders: DoRow[]; view: OutwardView }) {
         <table className="w-full text-sm" id="outward-table">
           <thead>
             <tr className="border-b border-verdigris-300/10 text-left text-[0.72rem] uppercase tracking-[0.1em] text-verdigris-300">
-              <th className="px-4 py-3 font-medium">Dispatch order</th>
-              <th className="px-4 py-3 font-medium">Buyer</th>
-              <th className="px-4 py-3 font-medium">Vehicle</th>
-              <th className="px-4 py-3 text-right font-medium">Packages</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">LR</th>
+              <SortTh label="Dispatch order" k="do" sort={sort} onSort={toggle} className="px-4 py-3 font-medium" />
+              <SortTh label="Buyer" k="buyer" sort={sort} onSort={toggle} className="px-4 py-3 font-medium" />
+              <SortTh label="Vehicle" k="vehicle" sort={sort} onSort={toggle} className="px-4 py-3 font-medium" />
+              <SortTh label="Packages" k="packages" sort={sort} onSort={toggle} numeric right className="px-4 py-3 font-medium" />
+              <SortTh label="Status" k="status" sort={sort} onSort={toggle} className="px-4 py-3 font-medium" />
+              <SortTh label="LR" k="lr" sort={sort} onSort={toggle} className="px-4 py-3 font-medium" />
             </tr>
           </thead>
           <tbody>
-            {orders.map((d) => (
+            {rows.map((d) => (
               <tr key={d.id} className="border-b border-verdigris-300/5 hover:bg-patina/5" id={`outward-row-${d.id}`}>
                 <td className="px-4 py-3">
                   <Link href={`/admin/outward/${d.id}`} className="font-mono font-semibold text-verdigris-50 hover:text-patina">{d.doNo}</Link>

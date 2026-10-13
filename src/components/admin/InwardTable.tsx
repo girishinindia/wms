@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { SortTh, useSort } from "@/components/admin/SortTh";
 import { Card, Empty, StatusBadge } from "@/components/admin/ui";
 import { api } from "@/lib/api/client";
 import {
@@ -143,7 +144,17 @@ export default function InwardTable({
     return () => clearTimeout(t);
   }, [f.q, initialRows, initialTruncated]);
 
-  const { rows: shown, counts } = useMemo(() => applyBoard(rows, f), [rows, f]);
+  const { rows: filtered, counts } = useMemo(() => applyBoard(rows, f), [rows, f]);
+  const { rows: shown, sort, toggle } = useSort(filtered, {
+    code: (r) => r.code,
+    container: (r) => r.containerNumber,
+    importer: (r) => r.importer.name,
+    side: (r) => (dock ? r.importer.name : r.warehouse.name),
+    expected: (r) => r.expectedArrival,
+    cartons: (r) => r.totals.cartons,
+    kg: (r) => r.totals.kg,
+    status: (r) => r.status,
+  });
   const warehouses = useMemo(() => optionsOf(rows, (r) => r.warehouse), [rows]);
   const importers = useMemo(() => optionsOf(rows, (r) => r.importer), [rows]);
   const transporters = useMemo(() => optionsOf(rows, (r) => r.transporter), [rows]);
@@ -339,14 +350,14 @@ export default function InwardTable({
             <table className="w-full text-sm" id="inward-table">
               <thead className="bg-ink-900/50 text-left text-xs uppercase tracking-[0.1em] text-verdigris-300">
                 <tr>
-                  <th className="px-4 py-3">Number</th>
-                  <th className="px-4 py-3">Container</th>
-                  {both ? <th className="px-4 py-3">Importer</th> : null}
-                  <th className="px-4 py-3">{dock ? "Importer" : "Warehouse"}</th>
-                  <th className="px-4 py-3">Expected</th>
-                  <th className="px-4 py-3 text-right">Cartons</th>
-                  <th className="px-4 py-3 text-right">Kg</th>
-                  <th className="px-4 py-3">Status</th>
+                  <SortTh label="Number" k="code" sort={sort} onSort={toggle} />
+                  <SortTh label="Container" k="container" sort={sort} onSort={toggle} />
+                  {both ? <SortTh label="Importer" k="importer" sort={sort} onSort={toggle} /> : null}
+                  <SortTh label={dock ? "Importer" : "Warehouse"} k="side" sort={sort} onSort={toggle} />
+                  <SortTh label="Expected" k="expected" sort={sort} onSort={toggle} numeric />
+                  <SortTh label="Cartons" k="cartons" sort={sort} onSort={toggle} numeric right />
+                  <SortTh label="Kg" k="kg" sort={sort} onSort={toggle} numeric right />
+                  <SortTh label="Status" k="status" sort={sort} onSort={toggle} />
                 </tr>
               </thead>
               <tbody className="divide-y divide-verdigris-300/10">
