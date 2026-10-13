@@ -920,11 +920,19 @@ export type NoteDetail = NoteSummary & {
   itemsLocked: boolean;
   /** Where the cartons are (floor, gala, suggested cartons) — warehouse staff and super admin only; null for others or a closed note. */
   where: NoteWhere | null;
+  /** The Dispatch Orders this note left (or is leaving) on — for whoever may see dispatch orders. */
+  dispatchOrders: { id: number; doNo: string; status: string; vehicleNo: string | null; packages: number; cartons: number; dispatchedAt: string | null; lrStatus: string }[] | null;
+  /** The rest was closed short: what did not go is no longer asked for. */
+  shortClosed: { at: string; by: string | null; reason: string | null } | null;
+  /** Cartons asked for that have not left (and were not closed short). */
+  openCartons: number;
+  /** Verified packages not yet on a dispatch order. */
+  readyPackages: number;
   version: number;
   editedAt: string | null;
   lineItems: NoteLine[];
   events: NoteEvent[];
-  can: { approve: boolean; reject: boolean; confirmNeeded: boolean; edit: boolean; cancel: boolean };
+  can: { approve: boolean; reject: boolean; confirmNeeded: boolean; edit: boolean; cancel: boolean; closeShort: boolean; makeDo: boolean };
 };
 
 async function rawNote(id: number) {
@@ -995,6 +1003,44 @@ export async function getNote(scope: DnScope, actor: Actor, id: number): Promise
     status: String(r.status),
     created_by: Number(r.created_by),
   });
+  const dos = grantFor(actor, "outward.order.read")
+    ? await getDb().execute<Record<string, unknown>>(sql`
+        select o.id, o.do_no, o.status, o.vehicle_no, o.dispatched_at::text as dispatched_at, o.lr_status,
+               (select count(*) from wms.dispatch_order_package dp where dp.do_id = o.id and dp.live)::int as packages,
+               (select coalesce(sum(dp.cartons), 0) from wms.dispatch_order_package dp where dp.do_id = o.id and dp.live)::int as cartons
+          from wms.dispatch_order o where o.note_id = ${id} order by o.id
+      `)
+    : null;
+  const shortBy = r.short_closed_by
+    ? (await getDb().execute<{ n: string }>(sql`select trim(coalesce(first_name, '') || ' ' || coalesce(last_name, '')) as n from wms.users where id = ${Number(r.short_closed_by)}`))[0]?.n ?? null
+    : null;
+  const open = (await getDb().execute<{ n: number }>(sql`
+    select coalesce(sum(cartons - dispatched_cartons - short_cartons), 0)::int as n from wms.delivery_line where delivery_note_id = ${id}
+  `))[0]?.n ?? 0;
+  const liveDo = (await getDb().execute<{ n: number }>(sql`select count(*)::int as n from wms.dispatch_order where note_id = ${id} and status <> 'CANCELLED'`))[0]?.n ?? 0;
+  const readyPkgs = (await getDb().execute<{ n: number }>(sql`
+    select count(*)::int as n from wms.delivery_package p
+     where p.note_id = ${id} and p.status = 'VERIFIED'
+       and not exists (select 1 from wms.dispatch_order_package dp where dp.package_id = p.id and dp.live)
+  `))[0]?.n ?? 0;
+  const doGrant = grantFor(actor, "outward.order.create");
+  const canMakeDo =
+    !!doGrant &&
+    doGrant.scope !== "OWN" &&
+    (doGrant.scope === "ALL" || doGrant.warehouseIds.includes(Number(r.warehouse_id))) &&
+    String(r.status) === "APPROVED" &&
+    !r.short_closed_at &&
+    Number(readyPkgs) > 0;
+  const shortGrant = grantFor(actor, "outward.short_close.approve");
+  can.cancel = can.cancel && Number(liveDo) === 0;
+  const canCloseShort =
+    !!shortGrant &&
+    shortGrant.scope !== "OWN" &&
+    (shortGrant.scope === "ALL" || shortGrant.warehouseIds.includes(Number(r.warehouse_id))) &&
+    String(r.status) === "APPROVED" &&
+    !r.short_closed_at &&
+    Number(open) > 0 &&
+    Number(liveDo) > 0;
   const address = [x.address, [x.city, (x.pincode as string | null)?.trim()].filter(Boolean).join(" - ")]
     .filter((v) => v && String(v).trim())
     .join(", ");
@@ -1021,7 +1067,22 @@ export async function getNote(scope: DnScope, actor: Actor, id: number): Promise
     cancelReason: (r.cancel_reason as string | null) ?? null,
     work: await progressOf(id),
     itemsLocked: await pickingStarted(id),
-    where: canSeeWork(actor) && (s.status === "PENDING" || s.status === "APPROVED") ? await whereOf(id) : null,
+    where: canSeeWork(actor) && (s.status === "PENDING" || s.status === "APPROVED") && !r.short_closed_at ? await whereOf(id) : null,
+    dispatchOrders: dos
+      ? dos.map((d) => ({
+          id: Number(d.id),
+          doNo: String(d.do_no),
+          status: String(d.status),
+          vehicleNo: (d.vehicle_no as string | null) ?? null,
+          packages: Number(d.packages),
+          cartons: Number(d.cartons),
+          dispatchedAt: (d.dispatched_at as string | null) ?? null,
+          lrStatus: String(d.lr_status),
+        }))
+      : null,
+    shortClosed: r.short_closed_at ? { at: String(r.short_closed_at), by: shortBy, reason: (r.short_close_reason as string | null) ?? null } : null,
+    openCartons: Number(open),
+    readyPackages: Number(readyPkgs),
     version: Number(r.version),
     editedAt: (r.edited_at_text as string | null) ?? null,
     lineItems: lines.map((l) => ({
@@ -1040,7 +1101,7 @@ export async function getNote(scope: DnScope, actor: Actor, id: number): Promise
       at: String(e.at),
       remarks: (e.remarks as string | null) ?? null,
     })),
-    can: { approve: can.approve, reject: can.reject, confirmNeeded: can.confirmNeeded, edit: can.edit, cancel: can.cancel },
+    can: { approve: can.approve, reject: can.reject, confirmNeeded: can.confirmNeeded, edit: can.edit, cancel: can.cancel, closeShort: canCloseShort, makeDo: canMakeDo },
   };
 }
 
@@ -1160,6 +1221,9 @@ export async function cancelNote(scope: DnScope, actor: Actor, id: number, reaso
   const before = await getNote(scope, actor, id);
   if (before.status !== "PENDING" && before.status !== "APPROVED") {
     throw new InwardError("CONFLICT", `This delivery note is already ${before.status.toLowerCase()}`);
+  }
+  if (before.dispatchOrders?.some((d) => d.status !== "CANCELLED") || (await getDb().execute<{ n: number }>(sql`select count(*)::int as n from wms.dispatch_order where note_id = ${id} and status <> 'CANCELLED'`))[0]?.n) {
+    throw new InwardError("CONFLICT", "This delivery note has a dispatch order — goods that left cannot be cancelled. Cancel the open DO, or close the rest short.");
   }
   if (!before.can.cancel) throw new InwardError("FORBIDDEN", "Only the importer or a super admin cancels a delivery note.");
   const why = clean(reason, 500);

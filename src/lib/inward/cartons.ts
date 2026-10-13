@@ -121,7 +121,7 @@ export async function cartonQueue(
            coalesce((select sum(li.carton_qty) from wms.inward_request_item li where li.inward_request_id = r.id), 0)::text as declared,
            count(c.id)::text as generated,
            count(c.id) filter (where c.print_count > 0)::text as printed,
-           count(c.id) filter (where c.status = 'RECEIVED')::text as received,
+           count(c.id) filter (where c.status in ('RECEIVED','DISPATCHED'))::text as received,
            count(c.id) filter (where c.status = 'HOLD')::text as hold
       from wms.inward_request r
       join wms.importer i on i.id = r.importer_id
@@ -239,7 +239,7 @@ async function totalsOf(id: number): Promise<{ totals: CartonTotals; lines: Cart
            (array_agg(c.carton_no order by c.seq desc))[1] as to_no,
            count(c.id)::text as generated,
            count(c.id) filter (where c.print_count > 0)::text as printed,
-           count(c.id) filter (where c.status = 'RECEIVED')::text as received,
+           count(c.id) filter (where c.status in ('RECEIVED','DISPATCHED'))::text as received,
            count(c.id) filter (where c.status = 'HOLD')::text as hold,
            count(c.id) filter (where c.label_pending)::text as label_pending,
            count(c.id) filter (where c.print_count = 0)::text as print_pending

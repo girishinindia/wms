@@ -35,7 +35,9 @@ export const WORK_LABEL: Record<string, string> = {
   PARTIALLY_PACKAGED: "Partly packed",
   PACKAGED: "Packed",
   VERIFICATION_PENDING: "Verifying",
-  READY_FOR_DISPATCH: "Ready for dispatch",
+  READY_FOR_DISPATCH: "Ready for outward",
+  PARTIALLY_DISPATCHED: "Partly dispatched",
+  DISPATCHED: "Dispatched",
   RETURNING: "Put back to storage",
   CANCELLED: "Closed",
   ON_HOLD: "On hold",
@@ -145,11 +147,11 @@ export async function workQueue(actor: Actor, filter: { view?: string | null; q?
     sql`(n.status in ('PENDING','APPROVED') or n.work_status = 'RETURNING')`,
   ];
   const view = filter.view ?? "OPEN";
-  if (view === "OPEN") parts.push(sql`n.work_status not in ('READY_FOR_DISPATCH')`);
+  if (view === "OPEN") parts.push(sql`n.work_status not in ('READY_FOR_DISPATCH','DISPATCHED')`);
   if (view === "MINE") {
     parts.push(sql`exists (select 1 from wms.delivery_note_assignee a where a.note_id = n.id and a.removed_at is null and a.user_id = ${actor.session.userId})`);
   }
-  if (view === "READY") parts.push(sql`n.work_status = 'READY_FOR_DISPATCH'`);
+  if (view === "READY") parts.push(sql`n.work_status in ('READY_FOR_DISPATCH','PARTIALLY_DISPATCHED')`);
   if (view === "PUTBACK") parts.push(sql`n.work_status = 'RETURNING'`);
   const q = filter.q?.trim().toLowerCase();
   if (q) {
@@ -247,7 +249,7 @@ export type WorkDetail = WorkRow & {
   scans: WorkScan[];
   /** The suggested pick route for what is still to pick. */
   route: RouteStop[];
-  can: { assign: boolean; pick: boolean; pack: boolean; verify: boolean; hold: boolean; manage: boolean };
+  can: { assign: boolean; pick: boolean; pack: boolean; verify: boolean; hold: boolean; manage: boolean; makeDo: boolean };
 };
 
 const placeName = (kind: string, gala: unknown) => (kind === "GALA" ? String(gala) : kind === "DOCK" ? "At dock (not stored)" : "Put-back shelf");
@@ -592,6 +594,7 @@ export async function workDetail(actor: Actor, id: number): Promise<WorkDetail> 
       verify: can.verify && live && !base.onHold,
       hold: can.hold && live,
       manage: can.manage && live,
+      makeDo: n0.status === "APPROVED" && may(actor, "outward.order.create", Number(n0.warehouse_id)),
     },
   };
 }
@@ -808,6 +811,12 @@ export async function scan(actor: Actor, id: number, step: "PICK" | "ARRIVE" | "
   const r = (await getDb().execute<{ r: { result: ScanAnswer["result"]; message: string } }>(sql`
     select ${fn}(${id}, ${target}::bigint, ${code}, ${actor.session.userId}, ${via}, ${client}, ${device}) as r
   `))[0]!.r;
+  if (r.result === "REJECTED" && target && step === "PICK" && /^Not received at the dock yet/.test(r.message)) {
+    const gone = (await getDb().execute<{ do_no: string }>(sql`
+      select o.do_no from wms.inward_carton c join wms.dispatch_order o on o.id = c.dispatch_order_id where c.id = ${target} and c.status = 'DISPATCHED'
+    `))[0];
+    if (gone) r.message = `Already dispatched on ${gone.do_no} — it has left the warehouse`;
+  }
   const workStatus = await afterStep(id, String(n.work_status), actor, meta);
   // Its last returned carton just left the shelf: the old note is done — tell the admins.
   if (shelf && r.result === "OK") await afterStep(Number(shelf.dn_id), String(shelf.work_status), actor, meta);
@@ -887,6 +896,10 @@ export async function packageAction(
   }
   if (action === "REOPEN" || action === "CANCEL") {
     if (!can.manage) throw new InwardError("FORBIDDEN", "Only the warehouse admin reopens or cancels a package.");
+    const onDo = (await db.execute<{ do_no: string }>(sql`
+      select o.do_no from wms.dispatch_order_package dp join wms.dispatch_order o on o.id = dp.do_id where dp.package_id = ${pid} and dp.live limit 1
+    `))[0];
+    if (onDo) throw new InwardError("CONFLICT", `${p.code} is on dispatch order ${onDo.do_no} — take it off that DO (or cancel the DO) first`);
     if (p.status === "CANCELLED") throw new InwardError("CONFLICT", `${p.code} is already cancelled`);
     if (action === "REOPEN") {
       if (p.kind === "SINGLE") throw new InwardError("CONFLICT", "A single carton is not reopened — cancel it instead");

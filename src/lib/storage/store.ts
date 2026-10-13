@@ -183,6 +183,11 @@ export async function storeCartons(
       });
       continue;
     }
+    if (c.status === "DISPATCHED") {
+      // Left on a vehicle: same answer code as "not here", plainer words.
+      results.push({ clientScanId, code, cartonNo, result: "NOT_RECEIVED", carton, message: `Already dispatched${c.dn_no ? ` on delivery note ${c.dn_no}` : ""} — it has left the warehouse` });
+      continue;
+    }
     if (c.status !== "RECEIVED") {
       results.push({ clientScanId, code, cartonNo, result: "NOT_RECEIVED", carton, message: "Not received at the dock yet — scan it in first" });
       continue;
@@ -317,13 +322,14 @@ export type PutBackRow = { noteId: number; dnNo: string; status: string; importe
 export async function putBackList(actor: Actor, warehouseId: number): Promise<PutBackRow[]> {
   if (!mayUse(actor, "storage.goods.update", warehouseId)) throw new InwardError("NOT_FOUND", "No such warehouse");
   const rows = await getDb().execute<{ id: number; dn_no: string; status: string; importer: string; cartons: number; nos: string[] }>(sql`
-    select d.id, d.dn_no, d.status, i.company_name as importer, count(c.id)::int as cartons,
+    select d.id, d.dn_no, case when d.short_closed_at is not null then 'CLOSED_SHORT' else d.status end as status,
+           i.company_name as importer, count(c.id)::int as cartons,
            (array_agg(c.carton_no order by c.carton_no))[1:60] as nos
       from wms.inward_carton c
       join wms.delivery_note d on d.id = c.dn_id
       join wms.importer i on i.id = d.importer_id
      where c.area = 'RETURN' and d.warehouse_id = ${warehouseId}
-     group by d.id, i.company_name
+     group by d.id, i.company_name, d.short_closed_at
      order by d.id
   `);
   return rows.map((r) => ({

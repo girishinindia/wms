@@ -502,7 +502,7 @@ export async function listBoard(scope: InwardScope, opts: { q?: string } = {}): 
       left join lateral (
         select count(*) as generated,
                count(*) filter (where ic.print_count > 0) as printed,
-               count(*) filter (where ic.status = 'RECEIVED') as received,
+               count(*) filter (where ic.status in ('RECEIVED','DISPATCHED')) as received,
                count(*) filter (where ic.status = 'HOLD') as held,
                count(*) filter (where ic.gala_id is not null) as stored
           from wms.inward_carton ic where ic.inward_request_id = base.id

@@ -31,7 +31,7 @@ const GO: { key: string; href: string; label: string }[] = [
   { key: "n", href: "/admin/notifications", label: "Notifications" },
 ];
 
-const KIND: Record<FindHit["kind"], string> = { NOTE: "Delivery note", CARTON: "Carton", GALA: "Gala", INWARD: "Inward", ITEM: "Item" };
+const KIND: Record<FindHit["kind"], string> = { NOTE: "Delivery note", CARTON: "Carton", GALA: "Gala", INWARD: "Inward", ITEM: "Item", DISPATCH: "Dispatch order" };
 
 const typing = (t: EventTarget | null) => {
   const el = t as HTMLElement | null;
