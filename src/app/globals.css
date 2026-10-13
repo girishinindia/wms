@@ -192,6 +192,15 @@ html[data-theme="light"] .text-rose-300\/80,
 html[data-theme="light"] .text-rose-300\/85 {
   color: #9f1239;
 }
+/* Sky (loading, LR attached) and violet (loaded) are the outward
+   board's own tints: the same dark-on-white treatment. */
+html[data-theme="light"] .text-sky-100,
+html[data-theme="light"] .text-sky-200 {
+  color: #075985;
+}
+html[data-theme="light"] .text-violet-100 {
+  color: #5b21b6;
+}
 /* Emerald was missed when amber and rose were done, and it is the tint
    the APPROVED pill is drawn in — so "approved" was pale mint on white
    in every expense list. The same green carries the Allow side of a

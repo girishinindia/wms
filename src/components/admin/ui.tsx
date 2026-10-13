@@ -118,9 +118,17 @@ const STATUS_TONE: Record<string, string> = {
   PACKAGED: "border-verdigris-300/35 bg-verdigris-500/15 text-verdigris-100",
   VERIFICATION_PENDING: "border-verdigris-300/35 bg-verdigris-500/15 text-verdigris-100",
   READY_FOR_DISPATCH: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
+  PARTIALLY_DISPATCHED: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
+  DISPATCHED: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
   RETURNING: "border-rose-400/35 bg-rose-500/10 text-rose-200",
   ON_HOLD: "border-amber-400/50 bg-amber-500/15 text-amber-100",
   OPEN: "border-amber-400/35 bg-amber-500/10 text-amber-200",
+};
+
+/** Where the stored key reads badly, the words shown instead. */
+const STATUS_TEXT: Record<string, string> = {
+  READY_FOR_DISPATCH: "ready for outward",
+  PARTIALLY_DISPATCHED: "partly dispatched",
 };
 
 /** Status pills. Unknown values fall back to neutral rather than throwing —
@@ -131,7 +139,7 @@ export function StatusBadge({ value }: { value: string }) {
     <span
       className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.78rem] font-medium ${tone}`}
     >
-      {value.toLowerCase().replace(/_/g, " ")}
+      {STATUS_TEXT[value] ?? value.toLowerCase().replace(/_/g, " ")}
     </span>
   );
 }

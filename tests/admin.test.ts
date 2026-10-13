@@ -268,6 +268,8 @@ describe("admin navigation: grouping", () => {
       "Delivery notes",
       // The warehouse side of the same note: pick, pack, verify.
       "Pick & pack",
+      // Dispatch orders: loading the vehicle, departure, the Lorry Receipt.
+      "Outward",
       // Stickers and scanning, right under the requests they belong to.
       "QR codes",
       // Cartons into galas, and the floors and galas themselves.

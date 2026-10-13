@@ -346,12 +346,20 @@ export default function WorkStation({ initial }: { initial: WorkDetail }) {
         ) : null}
         {w.status === "PENDING" ? (
           <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/5 p-3 text-sm text-amber-100">
-            Not approved by the importer yet. You can pick and pack; it becomes ready for dispatch only after approval.
+            Not approved by the importer yet. You can pick and pack; it becomes ready for outward only after approval.
           </p>
         ) : null}
         {w.workStatus === "READY_FOR_DISPATCH" ? (
           <p className="mt-3 rounded-lg border border-emerald-400/40 bg-emerald-500/10 p-3 text-sm text-emerald-100" id="work-ready">
-            Ready for dispatch — {n(w.packages)} package{w.packages === 1 ? "" : "s"}, all verified.
+            Ready for outward — {n(w.packages)} package{w.packages === 1 ? "" : "s"}, all verified.
+            {w.can.makeDo ? (
+              <>
+                {" "}
+                <Link href={`/admin/outward/new?note=${initial.id}`} id="work-make-do" className="font-semibold underline">
+                  Make dispatch order
+                </Link>
+              </>
+            ) : null}
           </p>
         ) : null}
         {!live ? (

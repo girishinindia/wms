@@ -444,7 +444,7 @@ export default function StoreStation({
                     <span className="text-amber-300">{fmt(p.cartons)} to put back</span>
                   </Link>
                   <p className="text-xs text-verdigris-200/55">
-                    {p.importer} · {p.status === "CANCELLED" ? "cancelled" : "rejected"}
+                    {p.importer} · {p.status === "CANCELLED" ? "cancelled" : p.status === "CLOSED_SHORT" ? "closed short" : "rejected"}
                   </p>
                   <p className="break-words font-mono text-[11px] text-verdigris-200/45">{p.cartonNos.slice(0, 12).join(", ")}{p.cartons > 12 ? " …" : ""}</p>
                 </li>

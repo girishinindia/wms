@@ -13,7 +13,7 @@ import { downloadCsv, remember, type CsvColumn } from "../csv";
 const VIEWS = [
   { value: "OPEN", label: "To do" },
   { value: "MINE", label: "Assigned to me" },
-  { value: "READY", label: "Ready for dispatch" },
+  { value: "READY", label: "Ready for outward" },
   { value: "PUTBACK", label: "Put back" },
   { value: "ALL", label: "All" },
 ] as const;

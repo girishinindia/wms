@@ -395,6 +395,20 @@ export const ADMIN_NAV: AdminNavNode[] = [
     icon: "stack",
   },
   /**
+   * Outward — Dispatch Orders: load the vehicle by scan, confirm it left,
+   * attach the Lorry Receipt. Keyed on `outward.order.read`, with `own`
+   * and `agent`: the importer and the agent follow their own DOs and LRs;
+   * the LR collector, package, dispatch and warehouse staff work them.
+   */
+  {
+    href: "/admin/outward",
+    label: "Outward",
+    permission: "outward.order.read",
+    own: true,
+    agent: true,
+    icon: "truck",
+  },
+  /**
    * QR codes — carton numbers, stickers and scanning, reached without
    * opening the request first. Keyed on `inward.goods.update`, which only
    * the super admin (ALL), warehouse admin and inward manager (WAREHOUSE)

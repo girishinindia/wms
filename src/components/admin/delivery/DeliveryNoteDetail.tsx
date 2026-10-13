@@ -11,6 +11,8 @@ import { HANDLING_LABEL, PACKING_LABEL } from "@/lib/delivery/labels";
 import type { NoteDetail } from "@/lib/delivery/ops";
 import { fmtDateTime, fmtDay } from "@/lib/format/datetime";
 
+import NoteOutwardCard from "../outward/NoteOutwardCard";
+
 import { FieldError, input, label } from "./HeaderFields";
 
 const n = (v: number) => v.toLocaleString("en-IN");
@@ -207,6 +209,8 @@ export default function DeliveryNoteDetail({ note, workLink = false }: { note: N
           ) : null}
         </Card></div>
       ) : null}
+
+      <NoteOutwardCard note={note} />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card className="p-5">
