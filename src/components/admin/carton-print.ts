@@ -15,11 +15,16 @@ import { initials, kg } from "@/lib/inward/carton-format";
  * vehicle and driver.
  */
 
-export type StickerSize = "t100x50" | "t100x75" | "a4";
+export type StickerSize = "t100x50" | "t100x75" | "t100x150" | "a4";
 
+/**
+ * The thermal rolls as they are sold — 4 × 2, 4 × 3 and 4 × 6 inch (the
+ * courier size) — and an A4 sheet for any office printer.
+ */
 export const STICKER_SIZES: { id: StickerSize; label: string; hint: string }[] = [
-  { id: "t100x50", label: "Thermal 100 × 50 mm", hint: "4 × 2 inch roll" },
-  { id: "t100x75", label: "Thermal 100 × 75 mm", hint: "4 × 3 inch roll" },
+  { id: "t100x50", label: "4 × 2 in · 100 × 50 mm", hint: "Thermal roll, small cartons" },
+  { id: "t100x75", label: "4 × 3 in · 100 × 75 mm", hint: "Thermal roll" },
+  { id: "t100x150", label: "4 × 6 in · 100 × 150 mm", hint: "Thermal courier roll, big QR — scans from a metre away" },
   { id: "a4", label: "A4 sheet · 14 per page", hint: "Any office printer, 99 × 38 mm stickers" },
 ];
 
@@ -56,6 +61,14 @@ const CSS: Record<StickerSize, string> = {
     .label { width: 100mm; height: 75mm; padding: 3.5mm 3mm; break-after: page; grid-template-columns: 1fr 42mm; }
     .qr { width: 42mm; height: 42mm; }
     .no { font-size: 15pt; } .name { font-size: 11pt; } .meta { font-size: 9.5pt; } .logo { width: 13mm; height: 13mm; font-size: 12pt; }`,
+  t100x150: `
+    @page { size: 100mm 150mm; margin: 0; }
+    .sheet { display: block; }
+    .label { width: 100mm; height: 150mm; padding: 5mm 5mm; break-after: page; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 2mm; }
+    .left { display: contents; }
+    .head { order: 1; justify-content: center; max-width: 100%; } .no { order: 2; width: 100%; text-align: center; }
+    .qr { order: 3; width: 80mm; height: 80mm; margin: 1mm 0; } .meta { order: 4; }
+    .no { font-size: 22pt; } .name { font-size: 13pt; } .meta { font-size: 11pt; } .logo { width: 14mm; height: 14mm; font-size: 13pt; }`,
   a4: `
     @page { size: A4; margin: 10.7mm 4.6mm; }
     .sheet { display: grid; grid-template-columns: 99.1mm 99.1mm; grid-auto-rows: 38.1mm; column-gap: 2.5mm; }
@@ -105,6 +118,7 @@ const BASE_CSS = `
 export const STICKER_MM: Record<StickerSize, { w: number; h: number; note: string }> = {
   t100x50: { w: 100, h: 50, note: "100 × 50 mm sticker" },
   t100x75: { w: 100, h: 75, note: "100 × 75 mm sticker" },
+  t100x150: { w: 100, h: 150, note: "100 × 150 mm sticker (4 × 6 in)" },
   a4: { w: 99.1, h: 38.1, note: "99 × 38 mm sticker · 14 on one A4 page" },
 };
 
@@ -220,12 +234,35 @@ export function qrSvg(text: string): Promise<string> {
 
 // ── Gala labels ───────────────────────────────────────────────────
 
-export type GalaLabelSize = "a4" | "t100x75";
+export type GalaLabelSize = "a4" | "t100x50" | "t100x75" | "t100x150";
 
 export const GALA_LABEL_SIZES: { id: GalaLabelSize; label: string; hint: string }[] = [
   { id: "a4", label: "A4 · 4 per page", hint: "Wall labels, readable from a distance" },
-  { id: "t100x75", label: "Thermal 100 × 75 mm", hint: "Sticker roll" },
+  { id: "t100x50", label: "4 × 2 in · 100 × 50 mm", hint: "Thermal roll, for shelf edges" },
+  { id: "t100x75", label: "4 × 3 in · 100 × 75 mm", hint: "Thermal roll" },
+  { id: "t100x150", label: "4 × 6 in · 100 × 150 mm", hint: "Thermal courier roll — code and QR big enough to read across the floor" },
 ];
+
+/** Each gala size's page and layout. */
+const GALA_CSS: Record<GalaLabelSize, string> = {
+  a4: `@page { size: A4; margin: 8mm; }
+    .sheet { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 138mm; gap: 4mm; }
+    .gl { border: 0.6mm solid #000; border-radius: 3mm; padding: 6mm; }
+    .gc { font-size: 46pt; } .gq { width: 72mm; height: 72mm; } .gw { font-size: 12pt; }`,
+  t100x50: `@page { size: 100mm 50mm; margin: 0; }
+    .sheet { display: block; }
+    .gl { width: 100mm; height: 50mm; padding: 2.5mm 3mm; break-after: page; flex-direction: row; gap: 3mm; }
+    .gt { align-items: flex-start; text-align: left; flex: 1; min-width: 0; }
+    .gc { font-size: 22pt; } .gq { width: 42mm; height: 42mm; flex: none; } .gw { font-size: 8pt; }`,
+  t100x75: `@page { size: 100mm 75mm; margin: 0; }
+    .sheet { display: block; }
+    .gl { width: 100mm; height: 75mm; padding: 3mm 4mm; break-after: page; flex-direction: row; gap: 4mm; }
+    .gc { font-size: 26pt; } .gq { width: 48mm; height: 48mm; } .gw { font-size: 9pt; }`,
+  t100x150: `@page { size: 100mm 150mm; margin: 0; }
+    .sheet { display: block; }
+    .gl { width: 100mm; height: 150mm; padding: 6mm 5mm; break-after: page; flex-direction: column; gap: 4mm; }
+    .gc { font-size: 48pt; } .gq { width: 85mm; height: 85mm; } .gw { font-size: 13pt; }`,
+};
 
 export type PrintableGala = { code: string; fullId: string; qr: string; warehouseName: string; floorName: string; galaName: string };
 
@@ -237,17 +274,7 @@ export async function printGalaLabels(galas: PrintableGala[], size: GalaLabelSiz
   const svgs = await Promise.all(
     galas.map((g) => QRCode.toString(g.qr, { type: "svg", errorCorrectionLevel: "M", margin: 0 })),
   );
-  const css =
-    BASE_CSS_GALA +
-    (size === "a4"
-      ? `@page { size: A4; margin: 8mm; }
-         .sheet { display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 138mm; gap: 4mm; }
-         .gl { border: 0.6mm solid #000; border-radius: 3mm; padding: 6mm; }
-         .gc { font-size: 46pt; } .gq { width: 72mm; height: 72mm; } .gw { font-size: 12pt; }`
-      : `@page { size: 100mm 75mm; margin: 0; }
-         .sheet { display: block; }
-         .gl { width: 100mm; height: 75mm; padding: 3mm 4mm; break-after: page; flex-direction: row; gap: 4mm; }
-         .gc { font-size: 26pt; } .gq { width: 48mm; height: 48mm; } .gw { font-size: 9pt; }`);
+  const css = BASE_CSS_GALA + GALA_CSS[size];
   const body = `<div class="sheet">${galas
     .map(
       (g, i) => `<div class="gl"><div class="gt"><div class="gc">${esc(g.code)}</div>

@@ -711,8 +711,9 @@ function PrintDialog({
 
 /**
  * The first chosen sticker, drawn by the print template itself at the
- * picked size — a wide 100 × 50 strip, a taller 100 × 75 label, or the
- * small 99 × 38 A4 sticker — scaled down only if the column is narrower.
+ * picked size — a wide 100 × 50 strip, a taller 100 × 75 label, an
+ * upright 100 × 150 one, or the small 99 × 38 A4 sticker — scaled down
+ * only if the column is narrower (or, for 4 × 6, the dialog shorter).
  */
 function StickerPreview({ label, qr, size }: { label: CartonLabel; qr: string; size: StickerSize }) {
   const box = useRef<HTMLDivElement>(null);
@@ -728,7 +729,8 @@ function StickerPreview({ label, qr, size }: { label: CartonLabel; qr: string; s
   const PX = 96 / 25.4; // CSS pixels per millimetre
   const w = mm.w * PX;
   const h = mm.h * PX;
-  const scale = room ? Math.min(1, room / w) : 1;
+  // A 4 × 6 sticker would run off the dialog at full size: cap its height too.
+  const scale = Math.min(1, room ? room / w : 1, 440 / h);
   const doc = useMemo(() => (qr ? stickerPreviewDoc(label, qr, size) : ""), [label, qr, size]);
   return (
     <div ref={box} id="sticker-preview" data-size={size} className="w-full min-w-0">
