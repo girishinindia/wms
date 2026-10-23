@@ -16,11 +16,12 @@ import { printHtml } from "../carton-print";
  * code, so any scanner that reads it gives back PK-000123.
  */
 
-export type PackageLabelSize = "t100x75" | "t100x50" | "t100x150" | "a4";
+export type PackageLabelSize = "t100x75" | "t100x50" | "t100x125" | "t100x150" | "a4";
 
 export const PACKAGE_LABEL_SIZES: { id: PackageLabelSize; label: string; hint: string }[] = [
   { id: "t100x50", label: "4 × 2 in · 100 × 50 mm", hint: "Thermal roll" },
   { id: "t100x75", label: "4 × 3 in · 100 × 75 mm", hint: "Thermal roll" },
+  { id: "t100x125", label: "4 × 5 in · 100 × 125 mm", hint: "Thermal roll, upright" },
   { id: "t100x150", label: "4 × 6 in · 100 × 150 mm", hint: "Thermal courier roll — the usual shipping label" },
   { id: "a4", label: "A4 sheet · 4 per page", hint: "Any office printer" },
 ];
@@ -46,6 +47,11 @@ const CSS: Record<PackageLabelSize, string> = {
     .sheet { display: block; }
     .pl { width: 100mm; height: 50mm; padding: 2.5mm 3mm; break-after: page; grid-template-columns: 1fr 34mm; }
     .qr { width: 34mm; height: 34mm; } .code { font-size: 16pt; } .big { font-size: 9pt; } .m { font-size: 7.5pt; } .warn { font-size: 9pt; }`,
+  t100x125: `
+    @page { size: 100mm 125mm; margin: 0; }
+    .sheet { display: block; }
+    .pl { width: 100mm; height: 125mm; padding: 4.5mm; break-after: page; grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .qr { width: 60mm; height: 60mm; justify-self: center; align-self: center; } .code { font-size: 26pt; } .big { font-size: 14pt; } .m { font-size: 10.5pt; } .warn { font-size: 14pt; }`,
   t100x150: `
     @page { size: 100mm 150mm; margin: 0; }
     .sheet { display: block; }
