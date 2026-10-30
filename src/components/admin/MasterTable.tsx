@@ -176,7 +176,16 @@ const asDraft = (row: MasterRow | null, spec: MasterSpec): Draft => {
  */
 function hiddenBy(field: MasterField, values: Record<string, unknown>): boolean {
   if (!field.showWhen) return false;
+  if ("oneOf" in field.showWhen) {
+    return !field.showWhen.oneOf.includes(String(values[field.showWhen.field] ?? ""));
+  }
   return (String(values[field.showWhen.field] ?? "") === "true") !== field.showWhen.equals;
+}
+
+/** The format guide for a box whose shape depends on another field. */
+function guideFor(field: MasterField, values: Record<string, unknown>): string | null {
+  if (!field.guideBy) return null;
+  return field.guideBy.guides[String(values[field.guideBy.field] ?? "")] ?? null;
 }
 
 /** Only send what the user actually typed; `""` means "leave it out",
@@ -1197,14 +1206,24 @@ function MasterDrawer({
                               : String(row!.values[f.key])}
                   </p>
                 ) : f.type === "textarea" ? (
-                  <textarea
-                    id={`f-${f.key}`}
-                    rows={8}
-                    value={draft[f.key] ?? ""}
-                    placeholder={f.hint}
-                    onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
-                    className={`${input} ${tone(f.key)} resize-y leading-relaxed`}
-                  />
+                  <>
+                    <textarea
+                      id={`f-${f.key}`}
+                      rows={f.guideBy ? 12 : 8}
+                      value={draft[f.key] ?? ""}
+                      placeholder={guideFor(f, draft) ?? f.hint}
+                      onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
+                      className={`${input} ${tone(f.key)} resize-y leading-relaxed`}
+                    />
+                    {guideFor(f, draft) ? (
+                      <div className="mt-2 rounded-lg border border-verdigris-300/15 bg-ink-900/60 px-3 py-2.5">
+                        <p className="text-[0.72rem] font-semibold uppercase tracking-wide text-verdigris-300">Format</p>
+                        <p className="mt-1 whitespace-pre-wrap font-mono text-[0.78rem] leading-relaxed text-verdigris-200/75">
+                          {guideFor(f, draft)}
+                        </p>
+                      </div>
+                    ) : null}
+                  </>
                 ) : f.type === "select" ? (
                   <select
                     id={`f-${f.key}`}

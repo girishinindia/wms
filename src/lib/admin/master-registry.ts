@@ -1,4 +1,5 @@
 import { formatPaise, inputToPaise, MAX_PAISE } from "@/lib/money";
+import { ABOUT_BUTTON_LINK, ABOUT_LAYOUT_GUIDE, ABOUT_LAYOUTS, parseAboutBody, type AboutLayout } from "@/lib/about/layout";
 import { z } from "@/lib/openapi/zod";
 
 /**
@@ -82,7 +83,13 @@ export type MasterField = {
    * send what it shows. The write route applies the same rule again,
    * because a screen is not a control.
    */
-  showWhen?: { field: string; equals: boolean };
+  showWhen?: { field: string; equals: boolean } | { field: string; oneOf: readonly string[] };
+  /**
+   * A format guide under a text box that changes with another field —
+   * the About page's body, read differently per layout. Shown in the
+   * drawer, and used as the empty box's placeholder.
+   */
+  guideBy?: { field: string; guides: Readonly<Record<string, string>> };
   /**
    * Never leaves the server whole.
    *
@@ -932,9 +939,38 @@ const faq: MasterResource = {
  * is_active, sort_order and the audit columns — so this screen and the
  * generic handler serve it without a special case.
  *
+ * One plain-text box per section; the LAYOUT says how it is read
+ * (lib/about/layout.ts): paragraphs, cards, numbered steps, a
+ * checklist, a numbers strip, or a call to action with a button. A
+ * body that does not fit its layout is refused with the line it is on.
+ *
  * `site_about`, not `master.*`, for the same reason as `faq`: the seed
  * hands `master.%.read` to every role. Super admin only (migration 44).
  */
+const aboutBody = prose(5, 4000);
+const aboutButtonLabel = blankOptional(prose(2, 40));
+const aboutButtonLink = blankOptional(
+  z
+    .string()
+    .trim()
+    .regex(ABOUT_BUTTON_LINK, "A page on this site (/contact, /warehouses …), mailto: or tel:"),
+);
+
+/** The body must fit its layout; a call to action must have its button. */
+function checkAboutSection(
+  v: { layout?: AboutLayout; body?: string; buttonLabel?: string; buttonLink?: string },
+  ctx: z.RefinementCtx,
+) {
+  if (v.layout && v.body !== undefined) {
+    const parsed = parseAboutBody(v.layout, v.body);
+    if (!parsed.ok) ctx.addIssue({ code: "custom", path: ["body"], message: parsed.message });
+  }
+  if (v.layout === "CALL_TO_ACTION") {
+    if (!v.buttonLabel) ctx.addIssue({ code: "custom", path: ["buttonLabel"], message: "A call to action needs a button label" });
+    if (!v.buttonLink) ctx.addIssue({ code: "custom", path: ["buttonLink"], message: "A call to action needs a button link" });
+  }
+}
+
 const aboutSection: MasterResource = {
   slug: "about",
   route: "/admin/website/about",
@@ -944,9 +980,19 @@ const aboutSection: MasterResource = {
   listNoun: "sections",
   permission: "site_about",
   intro:
-    "The sections of the public About page, shown in order. Text is plain — blank lines become paragraphs, and nothing is rendered as markup. Switch a section off to hide it without deleting it.",
+    "The sections of the public About page, shown in order. Pick a layout, then paste the text in the format shown under the box — cards, numbered steps, a checklist, a numbers strip or a call to action. Text is plain; nothing is rendered as markup. Switch a section off to hide it without deleting it.",
   hasAudit: true,
   fields: [
+    {
+      key: "layout",
+      column: "layout",
+      label: "Layout",
+      type: "select",
+      options: ABOUT_LAYOUTS,
+      required: true,
+      filterable: true,
+      width: 9,
+    },
     { key: "heading", column: "heading", label: "Heading", type: "text", required: true },
     {
       key: "body",
@@ -956,6 +1002,26 @@ const aboutSection: MasterResource = {
       required: true,
       hideInTable: true,
       hint: "Plain text. Leave a blank line between paragraphs.",
+      guideBy: { field: "layout", guides: ABOUT_LAYOUT_GUIDE },
+    },
+    {
+      key: "buttonLabel",
+      column: "button_label",
+      label: "Button label",
+      type: "text",
+      hideInTable: true,
+      hint: "Contact us",
+      showWhen: { field: "layout", oneOf: ["CALL_TO_ACTION"] },
+    },
+    {
+      key: "buttonLink",
+      column: "button_link",
+      label: "Button link",
+      type: "text",
+      mono: true,
+      hideInTable: true,
+      hint: "/contact  ·  /warehouses  ·  mailto:support@geniusitens.com  ·  tel:+919820011122",
+      showWhen: { field: "layout", oneOf: ["CALL_TO_ACTION"] },
     },
     {
       key: "sortOrder",
@@ -972,15 +1038,21 @@ const aboutSection: MasterResource = {
   publicTag: "public-about",
   orderBy: "sort_order, id",
   createSchema: withActive({
+    layout: z.enum(ABOUT_LAYOUTS).default("TEXT"),
     heading: prose(2, 120),
-    body: prose(5, 4000),
+    body: aboutBody,
+    buttonLabel: aboutButtonLabel,
+    buttonLink: aboutButtonLink,
     sortOrder: optionalNumber(9999),
-  }),
+  }).superRefine(checkAboutSection),
   updateSchema: withActive({
+    layout: z.enum(ABOUT_LAYOUTS).optional(),
     heading: prose(2, 120).optional(),
-    body: prose(5, 4000).optional(),
+    body: aboutBody.optional(),
+    buttonLabel: aboutButtonLabel,
+    buttonLink: aboutButtonLink,
     sortOrder: optionalNumber(9999),
-  }),
+  }).superRefine(checkAboutSection),
 };
 
 // ── transporter ───────────────────────────────────────────────────

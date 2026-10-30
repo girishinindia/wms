@@ -944,6 +944,9 @@ function switchedOff(
   // Only when the request actually decides the controlling field.
   // Otherwise a PATCH of one unrelated column would blank the reason.
   if (!(field.showWhen.field in input)) return false;
+  if ("oneOf" in field.showWhen) {
+    return !field.showWhen.oneOf.includes(String(input[field.showWhen.field] ?? ""));
+  }
   return Boolean(input[field.showWhen.field]) !== field.showWhen.equals;
 }
 

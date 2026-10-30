@@ -23,9 +23,9 @@ describe("the About page resource", () => {
   it("accepts ordinary prose and refuses markup", async () => {
     const { MASTER_RESOURCES } = await import("@/lib/admin/master-registry");
     const schema = MASTER_RESOURCES.about.createSchema;
-    expect(schema.safeParse({ heading: "Who we are", body: "Two warehouses in Thane.\n\nOpen since 2019 — 6 days a week." }).success).toBe(true);
-    expect(schema.safeParse({ heading: "Who we are", body: "<script>alert(1)</script> hello" }).success).toBe(false);
-    expect(schema.safeParse({ heading: "W", body: "Long enough body" }).success).toBe(false);
+    expect(schema.safeParse({ layout: "TEXT", heading: "Who we are", body: "Two warehouses in Thane.\n\nOpen since 2019 — 6 days a week." }).success).toBe(true);
+    expect(schema.safeParse({ layout: "TEXT", heading: "Who we are", body: "<script>alert(1)</script> hello" }).success).toBe(false);
+    expect(schema.safeParse({ layout: "TEXT", heading: "W", body: "Long enough body" }).success).toBe(false);
   });
 });
 
@@ -94,5 +94,64 @@ describe("who may write and who may moderate", () => {
     const writer = [{ permission: "review.create", scope: "OWN" as const }];
     expect(visibleNav(writer).map((i) => i.href)).toContain("/admin/my-review");
     expect(visibleNav(writer, { agentOnly: true }).map((i) => i.href)).toContain("/admin/my-review");
+  });
+});
+
+describe("About section layouts — the paste formats", () => {
+  it("reads cards, steps and a checklist as title line + text, blocks split by a blank line", async () => {
+    const { parseAboutBody } = await import("@/lib/about/layout");
+    const body = "Receive\nEvery carton gets its own QR.\n\nStore\nEach carton goes into a gala.\nFound in seconds.";
+    for (const layout of ["CARDS", "STEPS", "CHECKLIST"] as const) {
+      const r = parseAboutBody(layout, body);
+      expect(r.ok, layout).toBe(true);
+      if (r.ok && "items" in r.content) {
+        expect(r.content.items).toEqual([
+          { title: "Receive", text: "Every carton gets its own QR." },
+          { title: "Store", text: "Each carton goes into a gala. Found in seconds." },
+        ]);
+      }
+    }
+  });
+
+  it("says which block is wrong", async () => {
+    const { parseAboutBody } = await import("@/lib/about/layout");
+    expect(parseAboutBody("CARDS", "Only one\nCard here.")).toEqual({ ok: false, message: "Add at least 2 cards, separated by a blank line" });
+    const r = parseAboutBody("STEPS", "One\nFirst step.\n\nTwo");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/^Step 2 .*needs text/);
+  });
+
+  it("reads numbers as value | label, one per line", async () => {
+    const { parseAboutBody } = await import("@/lib/about/layout");
+    const r = parseAboutBody("NUMBERS", "3 | warehouses\n1,20,000 sqft | of storage\n2016 | in business since");
+    expect(r.ok && r.content.layout === "NUMBERS" && r.content.stats[1]).toEqual({ value: "1,20,000 sqft", label: "of storage" });
+    const bad = parseAboutBody("NUMBERS", "3 | warehouses\n1,20,000 sqft of storage");
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.message).toMatch(/^Line 2 needs/);
+  });
+
+  it("refuses a body that does not fit its layout, on the Text field", async () => {
+    const { MASTER_RESOURCES } = await import("@/lib/admin/master-registry");
+    const r = MASTER_RESOURCES.about.createSchema.safeParse({ layout: "NUMBERS", heading: "In numbers", body: "three warehouses and counting" });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues[0]!.path).toEqual(["body"]);
+  });
+
+  it("needs a button on a call to action, and only to this site, mail or phone", async () => {
+    const { MASTER_RESOURCES } = await import("@/lib/admin/master-registry");
+    const schema = MASTER_RESOURCES.about.createSchema;
+    const base = { layout: "CALL_TO_ACTION", heading: "Talk to us", body: "Storing imported stock? Talk to us." };
+    expect(schema.safeParse(base).success).toBe(false);
+    expect(schema.safeParse({ ...base, buttonLabel: "Contact us", buttonLink: "/contact" }).success).toBe(true);
+    expect(schema.safeParse({ ...base, buttonLabel: "Mail us", buttonLink: "mailto:support@geniusitens.com" }).success).toBe(true);
+    expect(schema.safeParse({ ...base, buttonLabel: "Call", buttonLink: "tel:+919820011122" }).success).toBe(true);
+    expect(schema.safeParse({ ...base, buttonLabel: "Go", buttonLink: "https://example.com" }).success).toBe(false);
+    expect(schema.safeParse({ ...base, buttonLabel: "Go", buttonLink: "javascript:alert(1)" }).success).toBe(false);
+  });
+
+  it("keeps the link rule the same as the database CHECK", async () => {
+    const { ABOUT_BUTTON_LINK } = await import("@/lib/about/layout");
+    const sqlText = readFileSync(new URL("../../sql/45_about_layouts.sql", import.meta.url), "utf8");
+    expect(sqlText).toContain(`button_link ~ '${ABOUT_BUTTON_LINK.source.replace(/\\\//g, "/")}'`);
   });
 });

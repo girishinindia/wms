@@ -111,7 +111,15 @@ describe("marketing pages hand off to the auth area with a real page load", () =
       const src = readFileSync(new URL(file, import.meta.url), "utf8");
       const bad = src.match(/<Link[^>]*href="\/sign-(in|up)"/g);
       expect(bad ?? []).toEqual([]);
-      expect(src).toMatch(/<a[^>]*href="\/sign-in"/);
+      // The Sign in button is <AccountLink> now — it turns into
+      // "Dashboard" once signed in — and that renders a plain <a>.
+      expect(src).toMatch(/<AccountLink\b|<a[^>]*href="\/sign-in"/);
     });
   }
+
+  it("AccountLink is a plain anchor to /sign-in or /admin", () => {
+    const src = readFileSync(new URL("../src/components/AccountLink.tsx", import.meta.url), "utf8");
+    expect(src).not.toMatch(/from "next\/link"/);
+    expect(src).toMatch(/<a href=\{signedIn \? "\/admin" : "\/sign-in"\}/);
+  });
 });
