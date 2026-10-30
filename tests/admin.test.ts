@@ -271,6 +271,9 @@ describe("admin navigation: grouping", () => {
       "Customers · Importers",
       "Customers · Sales agents",
       "Customers · Enquiries",
+      // Synthetic: this list holds every nav permission. A real super
+      // admin has no review.create, so never sees "My review".
+      "Customers · My review",
       "Money · Expenses",
       "People and access · Users",
       "People and access · Roles",
@@ -281,7 +284,7 @@ describe("admin navigation: grouping", () => {
       "Setup · Vehicles",
       "Setup · Drivers",
       "Setup · Master data",
-      "Setup · FAQs",
+      "Setup · Website",
     ]);
     // Every heading appears once, in `NAV_SECTIONS` order.
     const order = [...new Set(nodes.map((n) => n.section))];

@@ -926,6 +926,63 @@ const faq: MasterResource = {
   }),
 };
 
+// ── about_section ─────────────────────────────────────────────────
+/**
+ * The blocks of the public About page. Shaped like `faq` on purpose —
+ * is_active, sort_order and the audit columns — so this screen and the
+ * generic handler serve it without a special case.
+ *
+ * `site_about`, not `master.*`, for the same reason as `faq`: the seed
+ * hands `master.%.read` to every role. Super admin only (migration 44).
+ */
+const aboutSection: MasterResource = {
+  slug: "about",
+  route: "/admin/website/about",
+  table: "about_section",
+  label: "About page",
+  singular: "section",
+  listNoun: "sections",
+  permission: "site_about",
+  intro:
+    "The sections of the public About page, shown in order. Text is plain — blank lines become paragraphs, and nothing is rendered as markup. Switch a section off to hide it without deleting it.",
+  hasAudit: true,
+  fields: [
+    { key: "heading", column: "heading", label: "Heading", type: "text", required: true },
+    {
+      key: "body",
+      column: "body",
+      label: "Text",
+      type: "textarea",
+      required: true,
+      hideInTable: true,
+      hint: "Plain text. Leave a blank line between paragraphs.",
+    },
+    {
+      key: "sortOrder",
+      column: "sort_order",
+      label: "Order",
+      type: "number",
+      align: "right",
+      width: 5,
+      hint: "Lowest first on the page.",
+    },
+  ],
+  dependents: [],
+  conflict: "That section already exists",
+  publicTag: "public-about",
+  orderBy: "sort_order, id",
+  createSchema: withActive({
+    heading: prose(2, 120),
+    body: prose(5, 4000),
+    sortOrder: optionalNumber(9999),
+  }),
+  updateSchema: withActive({
+    heading: prose(2, 120).optional(),
+    body: prose(5, 4000).optional(),
+    sortOrder: optionalNumber(9999),
+  }),
+};
+
 // ── transporter ───────────────────────────────────────────────────
 /**
  * The carrier register. Not users — nobody signs in as a transporter;
@@ -1584,6 +1641,7 @@ export const MASTER_RESOURCES = Object.freeze({
   "measurement-units": measurementUnit,
   "faq-categories": faqCategory,
   faqs: faq,
+  about: aboutSection,
   "expense-categories": expenseCategory,
   expenses: expense,
   transporters: transporter,

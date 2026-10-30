@@ -84,6 +84,7 @@ export type AdminNavItem = {
 };
 
 export type AdminNavIcon =
+  | "about"
   | "agent"
   | "anchor"
   | "bell"
@@ -110,16 +111,19 @@ export type AdminNavIcon =
   | "pin"
   | "qr"
   | "report"
+  | "review"
   | "ruler"
   | "rupee"
   | "sitemap"
+  | "star"
   | "store"
   | "tags"
   | "transporter"
   | "users"
   | "vehicle"
   | "vehicleType"
-  | "warehouse";
+  | "warehouse"
+  | "website";
 
 /**
  * The sidebar's headings, in the order the work happens: goods come in,
@@ -335,6 +339,39 @@ export const TRANSPORT_ITEMS: AdminNavItem[] = [
  * user is not — a warehouse admin does it for their own people — so the
  * two entries in this one section are deliberately keyed differently.
  */
+/**
+ * "Website". Every entry is the super admin's alone, and `allOnly` so a
+ * narrower grant made from a console is not enough on its own.
+ *
+ *   About page   `site_about.create`  — the sections of /about
+ *   Reviews      `review.approve`     — approve, reject or hide; the
+ *                                       importers write them
+ *   FAQs         `faq.create`         — the questions on /faqs
+ */
+export const WEBSITE_ITEMS: AdminNavItem[] = [
+  {
+    href: "/admin/website/about",
+    label: "About page",
+    permission: "site_about.create",
+    allOnly: true,
+    icon: "about",
+  },
+  {
+    href: "/admin/website/reviews",
+    label: "Reviews",
+    permission: "review.approve",
+    allOnly: true,
+    icon: "star",
+  },
+  {
+    href: "/admin/faqs",
+    label: "FAQs",
+    permission: "faq.create",
+    allOnly: true,
+    icon: "help",
+  },
+];
+
 export const USERS_ITEMS: AdminNavItem[] = [
   { href: "/admin/users", label: "Users", permission: "user.read", icon: "users" },
   {
@@ -543,6 +580,22 @@ export const ADMIN_NAV: AdminNavNode[] = [
     badge: "enquiries",
     section: "Customers",
   },
+  /**
+   * My review — the importer's or sales agent's own review of the
+   * warehouse, for the public Reviews page. Keyed on `review.create`,
+   * which 44_site_content.sql grants to IMPORTER and SALES_AGENT at OWN
+   * and to nobody else: the super admin moderates reviews but does not
+   * write them. `own` and `agent` so both of them see it.
+   */
+  {
+    href: "/admin/my-review",
+    label: "My review",
+    permission: "review.create",
+    own: true,
+    agent: true,
+    icon: "review",
+    section: "Customers",
+  },
 
   // ── Money ─────────────────────────────────────────────────────────
   /**
@@ -578,17 +631,17 @@ export const ADMIN_NAV: AdminNavNode[] = [
     children: MASTER_ITEMS,
   },
   /**
-   * FAQs. Keyed on `faq.create`, and `allOnly` like the Warehouses
-   * group: the permission is held by the super admin alone, and the
-   * route behind the link asks the same question the link does.
+   * Website — what the public site shows that is written here: the About
+   * page, the reviews importers have written, and the FAQs. FAQs keeps
+   * its URL (`/admin/faqs`), so the group matches both prefixes. FAQ
+   * categories stay in Master data — a list behind the FAQs, not a page.
    */
   {
-    href: "/admin/faqs",
-    label: "FAQs",
-    permission: "faq.create",
-    allOnly: true,
-    icon: "help",
+    label: "Website",
+    icon: "website",
     section: "Setup",
+    match: "(?:/admin/website|/admin/faqs)",
+    children: WEBSITE_ITEMS,
   },
 ];
 
