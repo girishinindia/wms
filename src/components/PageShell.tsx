@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AccountLink from "@/components/AccountLink";
 import { ArrowIcon, LayersIcon } from "@/components/icons";
 
 /**
@@ -112,12 +113,7 @@ export function SiteHeader({ absolute = false }: { absolute?: boolean }) {
           ))}
         </div>
 
-        <a
-          href="/sign-in"
-          className="rounded-full border border-verdigris-300/20 bg-verdigris-100/5 px-4 py-2 text-sm font-medium text-verdigris-50 backdrop-blur-sm transition-colors hover:border-verdigris-300/40 hover:bg-verdigris-100/10"
-        >
-          Sign in
-        </a>
+        <AccountLink className="rounded-full border border-verdigris-300/20 bg-verdigris-100/5 px-4 py-2 text-sm font-medium text-verdigris-50 backdrop-blur-sm transition-colors hover:border-verdigris-300/40 hover:bg-verdigris-100/10" />
       </nav>
     </header>
   );

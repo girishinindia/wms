@@ -1,5 +1,6 @@
 
 import VerdigrisField from "@/components/VerdigrisField";
+import AccountLink from "@/components/AccountLink";
 import { SiteFooter, SiteHeader } from "@/components/PageShell";
 import {
   ArrowIcon,
@@ -160,12 +161,10 @@ export default function Home() {
                 Get started
                 <ArrowIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </a>
-              <a
-                href="/sign-in"
+              <AccountLink
+                signedOutLabel="Log in"
                 className="inline-flex items-center gap-2 rounded-full border border-verdigris-300/20 px-6 py-3 text-sm font-medium text-verdigris-100 transition-colors hover:border-verdigris-300/45 hover:bg-verdigris-100/5"
-              >
-                Log in
-              </a>
+              />
             </div>
           </div>
         </section>
@@ -348,12 +347,7 @@ export default function Home() {
                   Get started
                   <ArrowIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                 </a>
-                <a
-                  href="/sign-in"
-                  className="inline-flex items-center rounded-full border border-verdigris-300/20 px-6 py-3 text-sm font-medium text-verdigris-100 transition-colors hover:border-verdigris-300/45 hover:bg-verdigris-100/5"
-                >
-                  Sign in
-                </a>
+                <AccountLink className="inline-flex items-center rounded-full border border-verdigris-300/20 px-6 py-3 text-sm font-medium text-verdigris-100 transition-colors hover:border-verdigris-300/45 hover:bg-verdigris-100/5" />
               </div>
             </div>
           </div>

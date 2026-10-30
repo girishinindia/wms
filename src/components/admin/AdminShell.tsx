@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { LayersIcon, LockIcon, MenuIcon, MoonIcon, SidebarIcon, SunIcon } from "@/components/icons";
 import Spinner from "@/components/Spinner";
@@ -89,6 +89,9 @@ import { useNavigating, useNavStage } from "@/lib/admin/navigating";
  * One Font Awesome icon per menu entry — no two entries share one, so the
  * eye can find "Outward" without reading the word.
  */
+/** Per tab: the sidebar's scroll position between page loads. */
+const NAV_SCROLL_KEY = "wms.admin.navScroll";
+
 const ICONS: Record<AdminNavIcon, ReturnType<typeof faIcon>> = {
   dashboard: faIcon(faGaugeHigh),
   report: faIcon(faChartColumn),
@@ -236,6 +239,44 @@ export default function AdminShell({
    * screen. Remembered per browser so it stays the way it was left.
    */
   const [collapsed, setCollapsed] = useState(false);
+  /**
+   * The sidebar keeps its scroll position across pages.
+   *
+   * Menu links are plain anchors (a full page load — see the test that
+   * pins it), so every click rebuilt the sidebar scrolled to the top and
+   * an entry far down the menu had to be scrolled to again each time.
+   * The position is saved as the sidebar scrolls and put back before
+   * the first paint of the next page. With nothing saved (a new tab),
+   * the current entry is scrolled into view instead.
+   */
+  const asideRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const aside = asideRef.current;
+    if (!aside) return;
+    let saved: string | null = null;
+    try {
+      saved = window.sessionStorage.getItem(NAV_SCROLL_KEY);
+    } catch {
+      /* storage blocked: fall through to the current entry */
+    }
+    if (saved !== null) {
+      aside.scrollTop = Number(saved) || 0;
+    } else {
+      // Not scrollIntoView: that would scroll the page as well.
+      const active = aside.querySelector<HTMLElement>('[aria-current="page"]');
+      if (active) {
+        const top = active.getBoundingClientRect().top - aside.getBoundingClientRect().top;
+        aside.scrollTop = Math.max(0, top - aside.clientHeight / 2);
+      }
+    }
+  }, []);
+  function rememberNavScroll() {
+    try {
+      window.sessionStorage.setItem(NAV_SCROLL_KEY, String(asideRef.current?.scrollTop ?? 0));
+    } catch {
+      /* storage blocked: the menu just starts at the top */
+    }
+  }
   useEffect(() => {
     try {
       setCollapsed(window.localStorage.getItem("wms.admin.sidebar") === "hidden");
@@ -471,6 +512,8 @@ export default function AdminShell({
         stretching it back to the content's height.
       */}
       <aside
+        ref={asideRef}
+        onScroll={rememberNavScroll}
         className={`${
           menuOpen ? "flex" : "hidden"
         } fixed inset-y-0 left-0 z-40 w-64 shrink-0 flex-col overflow-y-auto border-r border-verdigris-300/10 bg-ink-850 lg:sticky lg:top-0 lg:h-screen lg:self-start ${
